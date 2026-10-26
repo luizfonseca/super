@@ -36,6 +36,9 @@ default = ["kubernetes"]
 kubernetes = ["dep:kube", "dep:k8s-openapi", "dep:futures-util"]
 store-sqlite = ["super_store/sqlite"]
 store-postgres = ["super_store/postgres"]
+# mimalloc instead of the system's allocator: faster with many threads (each keeps its own
+# heap), for memory given back later once traffic drops
+mimalloc = ["dep:mimalloc"]
 
 [dependencies]
 TinyUFO = "0.9.0"
@@ -94,6 +97,7 @@ regex = "1"
 regex-automata = "0.4"
 # Lists of values in rules, searched at once (already in the tree through regex)
 aho-corasick = "1"
+mimalloc = { version = "0.1.52", optional = true }
 # wasmtime = "31.0.0"
 
 [[bin]]
