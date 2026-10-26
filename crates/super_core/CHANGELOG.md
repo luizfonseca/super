@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/luizfonseca/super/compare/super_core-v0.2.0...super_core-v0.3.0) (2026-10-26)
+
+
+### Features
+
+* **core:** HTTP/3 (QUIC) service ([c4de676](https://github.com/luizfonseca/super/commit/c4de676e23f32104eb39bc580f25f150e442ea08))
+* **core:** websockets over HTTP/2 (RFC 8441) ([64b668e](https://github.com/luizfonseca/super/commit/64b668ee371d93186d1e28fdab54bc4a003e472d))
+
 ## [0.2.0](https://github.com/luizfonseca/super/compare/super_core-v0.1.0...super_core-v0.2.0) (2026-10-26)
 
 
