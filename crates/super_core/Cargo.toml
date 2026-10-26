@@ -1,0 +1,39 @@
+[package]
+name = "super_core"
+description = "Super's core on hyper: Pingora's request phases (the `ProxyHttp` trait), its server, load balancers and cache"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["The Super Contributors"]
+homepage = "https://github.com/luizfonseca/super"
+repository = "https://github.com/luizfonseca/super"
+rust-version.workspace = true
+workspace = "../.."
+
+[dependencies]
+arc-swap = "1.7.1"
+async-trait = "0.1.89"
+brotli = "8"
+bytes = "1.11.1"
+flate2 = "1"
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
+http = "1.2.0"
+http-body = "1"
+http-body-util = "0.1"
+httpdate = "1.0.3"
+hyper = { version = "1.6", features = ["server", "client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+nix = { version = "0.31.3", features = ["socket", "uio", "fs"] }
+openssl = { version = "0.10", features = ["vendored"] }
+openssl-sys = "0.9"
+socket2 = { version = "0.6", features = ["all"] }
+tokio = { version = "1.48.0", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal"] }
+tokio-openssl = "0.6.5"
+tracing = "0.1.43"
+zstd = "0.13"
+
+[dev-dependencies]
+tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "test-util"] }
+
+[lints]
+workspace = true
