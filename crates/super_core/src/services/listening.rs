@@ -8,7 +8,7 @@ use super::Service as ServiceTrait;
 use crate::{
     apps::ServerApp,
     protocols::{l4::stream::Stream as L4Stream, Stream},
-    server::{ListenFds, ShutdownWatch},
+    server::{ListenFds, ShutdownWatch, Workers},
     tls::{Acceptor, TlsSettings},
 };
 
@@ -128,27 +128,34 @@ async fn accept<A: ServerApp>(
     };
     let tls = endpoint.tls.clone();
     let Some(workers) = crate::server::workers() else {
-        accept_on(app, listener, tls, shutdown).await;
+        accept_on(app, listener, tls, shutdown, None).await;
         return;
     };
-    // The same socket on each thread: the first one to take a connection serves it
-    let accepting = workers
-        .iter()
-        .filter_map(|worker| {
+    // The same socket on each thread: the first one to take a connection serves it (or hands it
+    // to a thread serving fewer)
+    let accepting = (0..workers.len())
+        .filter_map(|index| {
             let listener = listener.try_clone().ok()?;
             let (app, tls, shutdown) = (app.clone(), tls.clone(), shutdown.clone());
-            Some(worker.spawn(accept_on(app, listener, tls, shutdown)))
+            let on = Some((workers, index));
+            Some(
+                workers
+                    .handle(index)?
+                    .spawn(accept_on(app, listener, tls, shutdown, on)),
+            )
         })
         .collect::<Vec<_>>();
     futures_util::future::join_all(accepting).await;
 }
 
-/// Accepts connections on `listener`, and serves them on this thread, until shutting down
+/// Accepts connections on `listener` until shutting down, and serves them on this thread (or,
+/// as thread `on` of the service's, on the one `Workers::serving` says)
 async fn accept_on<A: ServerApp>(
     app: Arc<A>,
     listener: std::net::TcpListener,
     tls: Option<Acceptor>,
     mut shutdown: ShutdownWatch,
+    on: Option<(&'static Workers, usize)>,
 ) {
     let listener = match TcpListener::from_std(listener) {
         Ok(listener) => listener,
@@ -172,7 +179,8 @@ async fn accept_on<A: ServerApp>(
                     }
                 };
                 let (app, tls, shutdown) = (app.clone(), tls.clone(), shutdown.clone());
-                tokio::spawn(serve(app, L4Stream::from(socket), tls, shutdown));
+                let serving = serve(app, L4Stream::from(socket), tls, shutdown);
+                spawn(serving, on.as_ref());
             }
             changed = shutdown.changed(), if watching => {
                 watching = changed.is_ok();
@@ -181,6 +189,27 @@ async fn accept_on<A: ServerApp>(
                 }
             }
         }
+    }
+}
+
+/// Serves a connection here, or on the thread of the service that serves fewer
+fn spawn<F>(serving: F, on: Option<&(&'static Workers, usize)>)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    let Some((workers, accepted)) = on else {
+        tokio::spawn(serving);
+        return;
+    };
+    let index = workers.serving(*accepted);
+    let open = workers.open(index);
+    let counted = async move {
+        let _open = open;
+        serving.await;
+    };
+    match workers.handle(index).filter(|_| index != *accepted) {
+        Some(handle) => drop(handle.spawn(counted)),
+        None => drop(tokio::spawn(counted)),
     }
 }
 

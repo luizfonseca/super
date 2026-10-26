@@ -295,6 +295,9 @@ fn set_up(stream: &TcpStream, options: &super::peer::PeerOptions) {
 async fn handshake_h1(stream: Stream) -> Result<http1::SendRequest<UpstreamBody>> {
     let (sender, connection) = http1::Builder::new()
         .preserve_header_case(true)
+        // Responses with as many headers as Pingora takes
+        .max_headers(crate::apps::MAX_HEADERS)
+        .max_buf_size(crate::apps::MAX_HEADER_SIZE)
         .handshake(TokioIo::new(stream))
         .await
         .or_err(ErrorType::H1Error, "HTTP/1.1 handshake")?;

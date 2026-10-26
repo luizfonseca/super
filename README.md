@@ -25,9 +25,17 @@ Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What 
 - **Header names** of HTTP/1.1 responses: those of upstreams keep their case, as Proksi; those
   Super adds are Title-Case (`X-Request-Id`), where Proksi keeps them as written. HTTP/2 is
   lowercase in both.
-- **Stale responses** in the cache are fetched again, not served while they're revalidated
-  (`stale_while_revalidate`); they're still served when the upstream fails within
-  `stale_if_error`.
+- **Stale responses** in the cache: within `stale_while_revalidate`, the first request after a
+  response expires revalidates it with the upstream while the others are served it (Pingora
+  revalidates in the background, and serves every request); they're served when the upstream
+  fails within `stale_if_error`.
+- **Hop-by-hop request headers** (`Connection`, `Keep-Alive`, `TE` but `TE: trailers`...) aren't
+  sent to upstreams, as RFC 9110 says (Pingora sends most of them to HTTP/1.1 upstreams).
+- **Logs**: errors read as Pingora's (`Fail to proxy: ..., status: 502, tries: 1, ...`), but
+  their target is `super_core::...` instead of `pingora_...`.
+- **An upstream that answers before reading a request body, then closes** may lose its answer
+  (502) when the close resets the connection before hyper's client reads it.
+- **`daemon = true`** writes its pid to `/tmp/super.pid` (Pingora's `/tmp/pingora.pid`).
 - **Upgrades** hand the listening sockets over the same way between Super workers, but not from a
   Proksi worker to a Super one (the socket is `super-upgrade-*.sock`): replace Proksi with Super
   by restarting, or behind a load balancer.

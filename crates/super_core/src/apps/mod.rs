@@ -11,6 +11,7 @@ use crate::{
 mod http;
 
 pub use http::serve;
+pub(crate) use http::{MAX_HEADERS, MAX_HEADER_SIZE};
 
 /// Serves the connections of a listening service
 pub trait ServerApp: Send + Sync + 'static {

@@ -17,9 +17,12 @@ const MAX_RETRIES: usize = 16;
 pub(super) async fn process<SV: ProxyHttp>(proxy: &Arc<HttpProxy<SV>>, downstream: ServerSession) {
     let mut session = Session::new(downstream);
     let mut ctx = proxy.inner.new_ctx();
-    let error = handle(proxy, &mut session, &mut ctx).await.err();
+    let mut progress = Progress::default();
+    let error = handle(proxy, &mut session, &mut ctx, &mut progress)
+        .await
+        .err();
     if let Some(error) = &error {
-        fail(proxy, &mut session, &mut ctx, error).await;
+        fail(proxy, &mut session, &mut ctx, error, &progress).await;
     }
     proxy
         .inner
@@ -31,10 +34,20 @@ pub(super) async fn process<SV: ProxyHttp>(proxy: &Arc<HttpProxy<SV>>, downstrea
     }
 }
 
+/// How far a request went, for its error log
+#[derive(Default)]
+struct Progress {
+    /// Past `request_filter`
+    proxying: bool,
+    /// Attempts at reaching an upstream
+    tries: usize,
+}
+
 async fn handle<SV: ProxyHttp>(
     proxy: &HttpProxy<SV>,
     session: &mut Session,
     ctx: &mut SV::CTX,
+    progress: &mut Progress,
 ) -> Result<()> {
     // What the client accepts, when compression is on (a block may turn it on later, and
     // tell it then)
@@ -45,10 +58,11 @@ async fn handle<SV: ProxyHttp>(
     if proxy.inner.request_filter(session, ctx).await? {
         return Ok(());
     }
+    progress.proxying = true;
     if session.cache.enabled() && cache_phase::lookup(proxy, session, ctx).await? {
         return Ok(());
     }
-    proxy_upstream(proxy, session, ctx).await
+    proxy_upstream(proxy, session, ctx, progress).await
 }
 
 /// Sends the request to the upstream `upstream_peer` chooses, again as long as errors allow
@@ -56,9 +70,11 @@ async fn proxy_upstream<SV: ProxyHttp>(
     proxy: &HttpProxy<SV>,
     session: &mut Session,
     ctx: &mut SV::CTX,
+    progress: &mut Progress,
 ) -> Result<()> {
     let mut retries = 0;
     loop {
+        progress.tries = retries + 1;
         let peer = proxy.inner.upstream_peer(session, ctx).await?;
         let Some((connection, reused)) = connect(proxy, session, ctx, &peer, &mut retries).await?
         else {
@@ -117,6 +133,7 @@ async fn fail<SV: ProxyHttp>(
     session: &mut Session,
     ctx: &mut SV::CTX,
     error: &crate::Error,
+    progress: &Progress,
 ) {
     if let Some(served) = cache_phase::serve_stale(proxy, session, ctx).await {
         match served {
@@ -128,7 +145,26 @@ async fn fail<SV: ProxyHttp>(
     if !failure.can_reuse_downstream {
         session.set_keepalive(None);
     }
-    if failure.error_code > 0 {
-        tracing::error!("{error}");
+    // As Pingora logs them, for whoever looks for these lines
+    let (code, summary) = (failure.error_code, summary(session));
+    if progress.proxying {
+        let tries = progress.tries;
+        tracing::error!(
+            "Fail to proxy: {error}, status: {code}, tries: {tries}, retry: false, {summary}"
+        );
+    } else {
+        tracing::error!("Fail to filter request: {error}, status: {code}, {summary}");
     }
+}
+
+/// The request, in error logs: `GET /path?query, Host: host` (as Pingora's)
+fn summary(session: &Session) -> String {
+    let request = session.req_header();
+    let host = request
+        .headers
+        .get(http::header::HOST)
+        .map(|host| String::from_utf8_lossy(host.as_bytes()))
+        .unwrap_or_default();
+    let path = String::from_utf8_lossy(request.raw_path());
+    format!("{} {path}, Host: {host}", request.method)
 }

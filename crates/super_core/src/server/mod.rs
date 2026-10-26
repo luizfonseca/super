@@ -18,6 +18,9 @@ use crate::services::{AnyService, BoxedService, ServiceHandle, ServiceReadyNotif
 
 pub mod configuration;
 mod transfer;
+pub mod workers;
+
+pub use workers::Workers;
 
 use configuration::{Opt, ServerConf};
 
@@ -249,40 +252,24 @@ async fn run(
 
 tokio::task_local! {
     /// The threads of the service running, when they don't steal work from each other
-    static WORKERS: Arc<Workers>;
-}
-
-/// Threads each running tasks of their own
-pub struct Workers {
-    handles: Vec<tokio::runtime::Handle>,
+    static WORKERS: &'static Workers;
 }
 
 /// The threads of the service running, when they don't steal work from each other
-pub fn workers() -> Option<Vec<tokio::runtime::Handle>> {
-    WORKERS.try_with(|workers| workers.handles.clone()).ok()
+pub fn workers() -> Option<&'static Workers> {
+    WORKERS.try_with(|workers| *workers).ok()
 }
 
-/// `threads` threads, each with a runtime of its own (running until the server exits)
-fn start_workers(threads: usize, name: &str) -> Option<Arc<Workers>> {
-    let handles = (0..threads)
-        .map(|index| worker(&format!("{name}-{index}")))
-        .collect::<std::io::Result<Vec<_>>>();
-    match handles {
-        Ok(handles) => Some(Arc::new(Workers { handles })),
+/// `threads` threads, each with a runtime of its own (they, and what counts their connections,
+/// last until the server exits)
+fn start_workers(threads: usize, name: &str) -> Option<&'static Workers> {
+    match Workers::start(threads, name) {
+        Ok(workers) => Some(Box::leak(Box::new(workers))),
         Err(err) => {
             tracing::error!("can't start the threads of {name}: {err}");
             None
         }
     }
-}
-
-fn worker(name: &str) -> std::io::Result<tokio::runtime::Handle> {
-    let runtime = runtime(1, name)?;
-    let handle = runtime.handle().clone();
-    std::thread::Builder::new()
-        .name(name.to_string())
-        .spawn(move || runtime.block_on(std::future::pending::<()>()))?;
-    Ok(handle)
 }
 
 fn runtime(threads: usize, name: &str) -> std::io::Result<tokio::runtime::Runtime> {
