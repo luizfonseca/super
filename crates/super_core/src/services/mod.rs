@@ -1,5 +1,5 @@
-//! Services the server runs, each on its own threads: listening ones ([`listening::Service`]),
-//! and background ones. A service can wait for others to be ready before it starts.
+//! Services the server runs, each on its own threads: listening ones ([`listening::Service`],
+//! and [`quic::Service`] for HTTP/3), and background ones. A service can wait for others to be ready before it starts.
 
 use std::future::Future;
 
@@ -8,6 +8,7 @@ use tokio::sync::watch;
 use crate::server::{ListenFds, ShutdownWatch};
 
 pub mod listening;
+pub mod quic;
 
 /// A service that starts right away
 pub trait Service: Send + Sync + 'static {

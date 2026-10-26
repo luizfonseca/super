@@ -1,5 +1,5 @@
-//! The body of a response to a client, as hyper sends it: none, whole, or parts written as the
-//! request's phases produce them
+//! The bodies of a client's request (read by hyper, or from an HTTP/3 stream), and of its
+//! response, as hyper sends it: none, whole, or parts written as the request's phases produce them
 
 use std::{
     future::Future,
@@ -7,10 +7,116 @@ use std::{
     task::{Context, Poll},
 };
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use http::HeaderMap;
 use http_body::{Body, Frame, SizeHint};
+use hyper::body::Incoming;
 use tokio::sync::mpsc;
+
+/// The receiving side of an HTTP/3 request's stream
+pub(crate) type H3Stream = h3::server::RequestStream<h3_quinn::RecvStream, Bytes>;
+
+/// Why a request body couldn't be read
+pub type BodyError = Box<dyn std::error::Error + Send + Sync>;
+
+/// The body of a client's request
+pub struct RequestBody {
+    kind: RequestKind,
+    /// What was read ahead (to know whether there's more)
+    pending: Option<Result<Frame<Bytes>, BodyError>>,
+}
+
+enum RequestKind {
+    /// HTTP/1.1 and HTTP/2
+    Hyper(Incoming),
+    /// HTTP/3: its data, then its trailers
+    H3 {
+        stream: H3Stream,
+        data_done: bool,
+    },
+    Done,
+}
+
+impl RequestBody {
+    pub(crate) fn hyper(body: Incoming) -> Self {
+        Self {
+            kind: RequestKind::Hyper(body),
+            pending: None,
+        }
+    }
+
+    /// The body of an HTTP/3 stream: what's there already is read, so that a stream that ended
+    /// with its headers (e.g. a `GET`) is known to have no body, as hyper knows it
+    pub(crate) fn h3(stream: H3Stream) -> Self {
+        let mut body = Self {
+            kind: RequestKind::H3 {
+                stream,
+                data_done: false,
+            },
+            pending: None,
+        };
+        let polled = futures_util::FutureExt::now_or_never(std::future::poll_fn(|cx| {
+            Pin::new(&mut body).poll_frame(cx)
+        }));
+        if let Some(Some(frame)) = polled {
+            body.pending = Some(frame);
+        }
+        body
+    }
+}
+
+impl Body for RequestBody {
+    type Data = Bytes;
+    type Error = BodyError;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, BodyError>>> {
+        if let Some(frame) = self.pending.take() {
+            return Poll::Ready(Some(frame));
+        }
+        let (stream, data_done) = match &mut self.kind {
+            RequestKind::Done => return Poll::Ready(None),
+            RequestKind::Hyper(body) => {
+                return Pin::new(body)
+                    .poll_frame(cx)
+                    .map(|frame| frame.map(|frame| frame.map_err(Into::into)));
+            }
+            RequestKind::H3 { stream, data_done } => (stream, data_done),
+        };
+        if !*data_done {
+            match stream.poll_recv_data(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err.into()))),
+                // quinn's parts are `Bytes` already: taken as they are
+                Poll::Ready(Ok(Some(mut data))) => {
+                    let data = data.copy_to_bytes(data.remaining());
+                    return Poll::Ready(Some(Ok(Frame::data(data))));
+                }
+                Poll::Ready(Ok(None)) => *data_done = true,
+            }
+        }
+        let frame = match stream.poll_recv_trailers(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(Err(err)) => Some(Err(err.into())),
+            Poll::Ready(Ok(trailers)) => trailers.map(|trailers| Ok(Frame::trailers(trailers))),
+        };
+        self.kind = RequestKind::Done;
+        Poll::Ready(frame)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        if self.pending.is_some() {
+            return false;
+        }
+        match &self.kind {
+            RequestKind::Hyper(body) => body.is_end_stream(),
+            RequestKind::H3 { .. } => false,
+            RequestKind::Done => true,
+        }
+    }
+}
 
 /// What the session writes to a streamed body
 pub(crate) enum Part {

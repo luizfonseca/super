@@ -6,10 +6,9 @@ use std::{sync::Arc, time::Duration};
 use bytes::Bytes;
 use http::{header, HeaderMap, HeaderValue, StatusCode, Version};
 use http_body_util::BodyExt;
-use hyper::body::Incoming;
 use tokio::sync::{mpsc, oneshot};
 
-use super::body::{Part, ResponseBody};
+use super::body::{BodyError, Part, RequestBody, ResponseBody};
 use crate::{
     http::{RequestHeader, ResponseHeader},
     protocols::{l4::socket::SocketAddr, Digest},
@@ -21,6 +20,8 @@ use crate::{
 pub struct Connection {
     pub digest: Digest,
     pub http2: bool,
+    /// Over QUIC
+    pub http3: bool,
 }
 
 /// What was written of the response
@@ -50,7 +51,7 @@ enum Responder {
 /// A request of a client, and its response
 pub struct ServerSession {
     request: RequestHeader,
-    body: Option<Incoming>,
+    body: Option<RequestBody>,
     body_bytes_read: usize,
     responder: Responder,
     written: Option<ResponseWritten>,
@@ -66,7 +67,7 @@ pub struct ServerSession {
 impl ServerSession {
     /// A session for `request`, whose response is sent through `responder`
     pub(crate) fn new(
-        mut request: http::Request<Incoming>,
+        mut request: http::Request<RequestBody>,
         connection: Arc<Connection>,
         responder: oneshot::Sender<http::Response<ResponseBody>>,
     ) -> Self {
@@ -308,7 +309,8 @@ impl ServerSession {
         if switching && self.connection.http2 {
             accept_extended_connect(&mut parts);
         }
-        if self.keepalive.is_none() && !self.connection.http2 && !switching {
+        let multiplexed = self.connection.http2 || self.connection.http3;
+        if self.keepalive.is_none() && !multiplexed && !switching {
             parts
                 .headers
                 .insert(header::CONNECTION, HeaderValue::from_static("close"));
@@ -364,6 +366,10 @@ impl ServerSession {
         self.connection.http2
     }
 
+    pub fn is_http3(&self) -> bool {
+        self.connection.http3
+    }
+
     /// Whether the client asks to switch protocols (e.g. a websocket, over HTTP/1.1 or HTTP/2)
     pub fn is_upgrade_req(&self) -> bool {
         self.upgrade.is_some()
@@ -375,7 +381,7 @@ impl ServerSession {
     }
 
     /// The request's body, to read it elsewhere (e.g. to stream it to the upstream)
-    pub fn take_body(&mut self) -> Option<Incoming> {
+    pub fn take_body(&mut self) -> Option<RequestBody> {
         self.body.take()
     }
 
@@ -386,9 +392,9 @@ impl ServerSession {
 
 /// The next frame of a request body: what's there already, else waiting at most `timeout`
 async fn next_frame(
-    body: &mut Incoming,
+    body: &mut RequestBody,
     timeout: Option<Duration>,
-) -> Result<Option<std::result::Result<http_body::Frame<Bytes>, hyper::Error>>> {
+) -> Result<Option<std::result::Result<http_body::Frame<Bytes>, BodyError>>> {
     // There already: no timer
     if let Some(frame) = futures_util::FutureExt::now_or_never(body.frame()) {
         return Ok(frame);

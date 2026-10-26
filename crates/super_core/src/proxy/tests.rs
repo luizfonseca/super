@@ -590,6 +590,182 @@ async fn test_websockets_over_http2() {
     assert_eq!(response.status(), 200);
 }
 
+/// A certificate for `a.test`, signed by itself
+fn certificate() -> Arc<rustls::sign::CertifiedKey> {
+    use openssl::{ec, nid::Nid, pkey::PKey, x509};
+
+    let group = ec::EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
+    let key = PKey::from_ec_key(ec::EcKey::generate(&group).unwrap()).unwrap();
+    let mut name = x509::X509NameBuilder::new().unwrap();
+    name.append_entry_by_text("CN", "a.test").unwrap();
+    let name = name.build();
+    let mut builder = x509::X509::builder().unwrap();
+    builder.set_version(2).unwrap();
+    builder.set_subject_name(&name).unwrap();
+    builder.set_issuer_name(&name).unwrap();
+    builder.set_pubkey(&key).unwrap();
+    builder
+        .set_not_before(&openssl::asn1::Asn1Time::days_from_now(0).unwrap())
+        .unwrap();
+    builder
+        .set_not_after(&openssl::asn1::Asn1Time::days_from_now(1).unwrap())
+        .unwrap();
+    builder
+        .sign(&key, openssl::hash::MessageDigest::sha256())
+        .unwrap();
+    crate::services::quic::certified_key(&builder.build(), &[], &key).unwrap()
+}
+
+/// Always the same certificate
+#[derive(Debug)]
+struct Certificate(Arc<rustls::sign::CertifiedKey>);
+
+impl rustls::server::ResolvesServerCert for Certificate {
+    fn resolve(
+        &self,
+        _: rustls::server::ClientHello<'_>,
+    ) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        Some(self.0.clone())
+    }
+}
+
+/// Trusts any certificate (the tests' own)
+#[derive(Debug)]
+struct Trusting;
+
+impl rustls::client::danger::ServerCertVerifier for Trusting {
+    fn verify_server_cert(
+        &self,
+        _: &rustls::pki_types::CertificateDer<'_>,
+        _: &[rustls::pki_types::CertificateDer<'_>],
+        _: &rustls::pki_types::ServerName<'_>,
+        _: &[u8],
+        _: rustls::pki_types::UnixTime,
+    ) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _: &[u8],
+        _: &rustls::pki_types::CertificateDer<'_>,
+        _: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _: &[u8],
+        _: &rustls::pki_types::CertificateDer<'_>,
+        _: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+type H3Client = h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>;
+
+/// A proxy to `upstreams` answering HTTP/3, and a client's connection to it
+async fn http3_proxy_to(upstreams: Vec<SocketAddr>) -> H3Client {
+    let phases = Phases {
+        upstreams,
+        logged: Logged::default(),
+        retry_on_502: false,
+    };
+    let proxy: Arc<HttpProxy<Phases>> =
+        Arc::new(http_proxy(&Arc::new(ServerConf::default()), phases));
+    let service = crate::services::quic::Service::new(
+        "h3".to_string(),
+        proxy,
+        Arc::new(Certificate(certificate())),
+    )
+    .unwrap();
+    let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let addr = socket.local_addr().unwrap();
+    let shutdown = tokio::sync::watch::channel(false).1;
+    tokio::spawn(service.serve_on(socket, shutdown));
+
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let mut tls = rustls::ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .unwrap()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(Trusting))
+        .with_no_client_auth();
+    tls.alpn_protocols = vec![b"h3".to_vec()];
+    let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls).unwrap();
+    let mut endpoint = quinn::Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
+    endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(crypto)));
+    let connection = endpoint.connect(addr, "a.test").unwrap().await.unwrap();
+    let (mut driver, sender) = h3::client::new(h3_quinn::Connection::new(connection))
+        .await
+        .unwrap();
+    tokio::spawn(async move {
+        let _endpoint = endpoint;
+        std::future::poll_fn(|cx| driver.poll_close(cx)).await
+    });
+    sender
+}
+
+/// Sends a request over HTTP/3, with `body`: its response's status and body
+async fn h3_request(
+    client: &mut H3Client,
+    method: &str,
+    path: &str,
+    body: &'static str,
+) -> (http::response::Parts, Bytes) {
+    let request = http::Request::builder()
+        .method(method)
+        .uri(format!("https://a.test{path}"))
+        .body(())
+        .unwrap();
+    let mut stream = client.send_request(request).await.unwrap();
+    if !body.is_empty() {
+        stream.send_data(Bytes::from(body)).await.unwrap();
+    }
+    stream.finish().await.unwrap();
+    let response = stream.recv_response().await.unwrap();
+    let mut received = Vec::new();
+    while let Some(mut data) = stream.recv_data().await.unwrap() {
+        use bytes::Buf;
+        received.extend_from_slice(&data.copy_to_bytes(data.remaining()));
+    }
+    (response.into_parts().0, Bytes::from(received))
+}
+
+#[tokio::test]
+async fn test_requests_over_http3() {
+    let mut client = http3_proxy_to(vec![upstream().await]).await;
+
+    let (parts, body) = h3_request(&mut client, "GET", "/a", "").await;
+    assert_eq!(parts.status, 200);
+    // Sent to the HTTP/1.1 upstream without a body, the header added by the phases
+    assert_eq!(body, "GET /a yes ");
+    assert_eq!(parts.headers["content-length"], "11");
+
+    let (parts, body) = h3_request(&mut client, "POST", "/b", "hello").await;
+    assert_eq!(parts.status, 200);
+    assert_eq!(body, "POST /b yes hello");
+
+    // Requests at once, on the connection's streams
+    let answers = futures_util::future::join_all((0..10).map(|i| {
+        let mut client = client.clone();
+        async move { h3_request(&mut client, "GET", &format!("/{i}"), "").await.1 }
+    }))
+    .await;
+    for (i, body) in answers.into_iter().enumerate() {
+        assert_eq!(body, format!("GET /{i} yes "));
+    }
+}
+
 /// Waits 50ms for its upstream
 struct Impatient(SocketAddr);
 
