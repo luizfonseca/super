@@ -1,20 +1,14 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use async_trait::async_trait;
 use http::{header, StatusCode};
 use openssl::base64;
 use super_core::{http::ResponseHeader, proxy::Session};
 
 use crate::{respond::respond, RequestCtx, RoutePlugin};
 
-use crate::filter::MiddlewarePlugin;
-
 pub struct BasicAuth;
-impl BasicAuth {
-    pub fn new() -> Self {
-        Self {}
-    }
 
+impl BasicAuth {
     /// Returns a WWW-Authenticate header response indicating to downstream that
     /// This request requires basic auth
     fn respond_with_authenticate(host: &str) -> anyhow::Result<Box<ResponseHeader>> {
@@ -43,9 +37,9 @@ impl BasicAuth {
     }
 }
 
-#[async_trait]
-impl MiddlewarePlugin for BasicAuth {
-    async fn request_filter(
+impl BasicAuth {
+    /// `true` when it answered the request (`401`)
+    pub(crate) async fn request_filter(
         &self,
         session: &mut Session,
         ctx: &mut dyn RequestCtx,
@@ -80,16 +74,6 @@ impl MiddlewarePlugin for BasicAuth {
             return Ok(true);
         }
 
-        Ok(false)
-    }
-
-    // Nothing to do after upstream response
-    async fn response_filter(
-        &self,
-        _: &mut Session,
-        _: &mut dyn RequestCtx,
-        _: &RoutePlugin,
-    ) -> anyhow::Result<bool> {
         Ok(false)
     }
 }

@@ -10,7 +10,6 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
-use async_trait::async_trait;
 use http::{header, StatusCode};
 use super_core::{http::ResponseHeader, proxy::Session};
 
@@ -69,7 +68,6 @@ impl OpenApi {
     }
 }
 
-#[async_trait]
 impl Middleware for OpenApi {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         let contract = self.source.contract();

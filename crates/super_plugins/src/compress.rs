@@ -1,7 +1,8 @@
 //! `compress { }`: compresses responses with gzip, brotli or zstd, as the client accepts
 
+use std::future::{ready, Future};
+
 use anyhow::Result;
-use async_trait::async_trait;
 use http::header;
 use super_core::{
     http::RequestHeader, modules::http::compression::ResponseCompression,
@@ -70,14 +71,24 @@ impl Compress {
     }
 }
 
-#[async_trait]
 impl Middleware for Compress {
-    async fn request(&self, session: &mut Session, _ctx: &mut dyn RequestCtx) -> Result<bool> {
+    fn request(
+        &self,
+        session: &mut Session,
+        _ctx: &mut dyn RequestCtx,
+    ) -> impl Future<Output = Result<bool>> + Send {
+        ready(self.choose(session).map(|()| false))
+    }
+}
+
+impl Compress {
+    /// Compresses the response with the best algorithm the client accepts, at the location's levels
+    fn choose(&self, session: &mut Session) -> Result<()> {
         let Some(compression) = session
             .downstream_modules_ctx
             .get_mut::<ResponseCompression>()
         else {
-            return Ok(false);
+            return Ok(());
         };
         let accepted = session
             .downstream_session
@@ -87,7 +98,7 @@ impl Middleware for Compress {
             .and_then(|value| value.to_str().ok())
             .and_then(|value| self.best(value));
         let Some(name) = accepted else {
-            return Ok(false);
+            return Ok(());
         };
         for (algorithm, level) in &self.levels {
             compression.adjust_algorithm_level(*algorithm, *level);
@@ -97,11 +108,9 @@ impl Middleware for Compress {
         let mut request = RequestHeader::build("GET", b"/", Some(1))?;
         request.insert_header(header::ACCEPT_ENCODING, name)?;
         compression.request_filter(&request);
-        Ok(false)
+        Ok(())
     }
-}
 
-impl Compress {
     /// The best algorithm of the location that `accept_encoding` accepts
     fn best(&self, accept_encoding: &str) -> Option<&'static str> {
         let accepts = |name: &str| {

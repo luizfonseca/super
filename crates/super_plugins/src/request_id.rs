@@ -2,10 +2,12 @@
 //! the client as `X-Request-Id` (or `header_name`), and logged. An ID sent by a trusted proxy is
 //! kept, so a request has one ID across the proxies it goes through.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    future::{ready, Future},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Result;
-use async_trait::async_trait;
 use bytes::BytesMut;
 use http::{HeaderName, HeaderValue};
 use rand::Rng;
@@ -98,36 +100,39 @@ fn kept(session: &Session, ctx: &dyn RequestCtx, name: &HeaderName) -> Option<He
     (printable && !id.is_empty() && id.len() <= MAX_KEPT).then(|| id.clone())
 }
 
-#[async_trait]
 impl Middleware for RequestId {
-    async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
+    fn request(
+        &self,
+        session: &mut Session,
+        ctx: &mut dyn RequestCtx,
+    ) -> impl Future<Output = Result<bool>> + Send {
         let id = kept(session, ctx, &self.name).unwrap_or_else(|| self.generate());
         ctx.set_request_id(id);
-        Ok(false)
+        ready(Ok(false))
     }
 
-    async fn upstream_request(
+    fn upstream_request(
         &self,
         _session: &mut Session,
         request: &mut RequestHeader,
         ctx: &mut dyn RequestCtx,
-    ) -> Result<()> {
-        if let Some(id) = ctx.request_id() {
-            request.insert_header(&self.name, id.clone())?;
-        }
-        Ok(())
+    ) -> impl Future<Output = Result<()>> + Send {
+        let sent = ctx
+            .request_id()
+            .map(|id| request.insert_header(&self.name, id.clone()));
+        ready(sent.unwrap_or(Ok(())).map_err(Into::into))
     }
 
-    async fn response(
+    fn response(
         &self,
         _session: &mut Session,
         response: &mut ResponseHeader,
         ctx: &mut dyn RequestCtx,
-    ) -> Result<()> {
-        if let Some(id) = ctx.request_id() {
-            response.insert_header(&self.name, id.clone())?;
-        }
-        Ok(())
+    ) -> impl Future<Output = Result<()>> + Send {
+        let sent = ctx
+            .request_id()
+            .map(|id| response.insert_header(&self.name, id.clone()));
+        ready(sent.unwrap_or(Ok(())).map_err(Into::into))
     }
 }
 

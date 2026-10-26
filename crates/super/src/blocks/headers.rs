@@ -1,9 +1,11 @@
 //! `headers { response { add = { ... }, remove = [...] } }`: changes response headers
 
-use std::str::FromStr;
+use std::{
+    future::{ready, Future},
+    str::FromStr,
+};
 
 use anyhow::Result;
-use async_trait::async_trait;
 use http::{HeaderName, HeaderValue};
 use super_core::{http::ResponseHeader, proxy::Session};
 
@@ -49,14 +51,20 @@ impl Headers {
     }
 }
 
-#[async_trait]
 impl Middleware for Headers {
-    async fn response(
+    fn response(
         &self,
         _session: &mut Session,
         response: &mut ResponseHeader,
         _ctx: &mut dyn RequestCtx,
-    ) -> Result<()> {
+    ) -> impl Future<Output = Result<()>> + Send {
+        ready(self.change(response))
+    }
+}
+
+impl Headers {
+    /// Adds and removes the location's response headers
+    fn change(&self, response: &mut ResponseHeader) -> Result<()> {
         for (name, value) in &self.add {
             response.insert_header(name, value.clone())?;
         }

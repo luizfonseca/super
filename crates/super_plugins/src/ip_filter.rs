@@ -5,7 +5,6 @@ use std::net::IpAddr;
 
 use crate::ip_set::{network, IpSet};
 use anyhow::Result;
-use async_trait::async_trait;
 use http::{header, StatusCode};
 use super_core::{http::ResponseHeader, proxy::Session};
 
@@ -48,7 +47,6 @@ impl IpFilter {
     }
 }
 
-#[async_trait]
 impl Middleware for IpFilter {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         let Some(client) = ctx.client(session) else {

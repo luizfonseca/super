@@ -1,9 +1,11 @@
 //! `cache { ... }`: serves responses from memory or disk
 
-use std::time::Duration;
+use std::{
+    future::{ready, Future},
+    time::Duration,
+};
 
 use anyhow::Result;
-use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use super_core::cache::lock::CacheLock;
 use super_core::proxy::Session;
@@ -46,13 +48,16 @@ impl Cache {
     }
 }
 
-#[async_trait]
 impl Middleware for Cache {
-    async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
+    fn request(
+        &self,
+        session: &mut Session,
+        ctx: &mut dyn RequestCtx,
+    ) -> impl Future<Output = Result<bool>> + Send {
         stores::insert_cache_routing(ctx.host(), &self.path);
         session
             .cache
             .enable(storage(&self.cache.cache_type), Some(&*CACHE_LOCK));
-        Ok(false)
+        ready(Ok(false))
     }
 }

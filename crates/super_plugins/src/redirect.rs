@@ -2,7 +2,6 @@
 //! `respond { status = 503, body = "..." }`: answers with a fixed response
 
 use anyhow::Result;
-use async_trait::async_trait;
 use bytes::Bytes;
 use http::header;
 use super_core::{http::ResponseHeader, proxy::Session};
@@ -107,7 +106,6 @@ fn parse(to: &str) -> Result<Vec<Part>, String> {
     Ok(parts)
 }
 
-#[async_trait]
 impl Middleware for Redirect {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         let uri = &session.req_header().uri;
@@ -149,7 +147,6 @@ impl Respond {
     }
 }
 
-#[async_trait]
 impl Middleware for Respond {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         let mut response = ResponseHeader::build_no_case(self.status, Some(3))?;

@@ -12,7 +12,6 @@ use std::{
 };
 
 use anyhow::Result;
-use async_trait::async_trait;
 use aws_lc_rs::{
     aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM},
     rand::{SecureRandom, SystemRandom},
@@ -244,7 +243,6 @@ impl WaitingRoom {
     }
 }
 
-#[async_trait]
 impl Middleware for WaitingRoom {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         let key = match self.key(ctx.store()).await {

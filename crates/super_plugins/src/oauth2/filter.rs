@@ -2,7 +2,6 @@ use std::time::SystemTime;
 use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
 
 use anyhow::{anyhow, bail, Result};
-use async_trait::async_trait;
 use cookie::Cookie;
 use http::StatusCode;
 use super_core::http::ResponseHeader;
@@ -13,7 +12,7 @@ use super::provider::{OauthType, OauthUser, Provider};
 use crate::{respond::respond, RequestCtx, RoutePlugin};
 
 use super::{claims as jwt, secure_cookie, shared};
-use crate::filter::{get_required_config, MiddlewarePlugin};
+use crate::filter::get_required_config;
 
 /// The HTTP client used to make requests to the Oauth provider.
 /// Lazy loaded to avoid creating a new client for each request.
@@ -168,14 +167,13 @@ impl Oauth2 {
     }
 }
 
-#[async_trait]
-impl MiddlewarePlugin for Oauth2 {
+impl Oauth2 {
     /// Oauth2 filters requests with/without the required Secure Cookie
     /// If the request has the required cookie, the request is allowed to pass through
     /// and we perform a JWT validation
     /// If the request does not have the required cookie, the request is blocked
     /// and we return a redirect to the oauth login flow (HTTP 307)
-    async fn request_filter(
+    pub(crate) async fn request_filter(
         &self,
         session: &mut Session,
         ctx: &mut dyn RequestCtx,
@@ -293,15 +291,5 @@ impl MiddlewarePlugin for Oauth2 {
 
         self.redirect_to_oauth_callback(session, ctx, &oauth_provider)
             .await
-    }
-
-    // Nothing to do after upstream response
-    async fn response_filter(
-        &self,
-        _: &mut Session,
-        _: &mut dyn RequestCtx,
-        _: &RoutePlugin,
-    ) -> Result<bool> {
-        Ok(false)
     }
 }
