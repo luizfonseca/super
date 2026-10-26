@@ -1,0 +1,26 @@
+# A static (musl) binary, built here, so the image runs regardless of its glibc
+FROM node:24-alpine AS ui
+WORKDIR /ui
+COPY crates/super_admin_ui/package.json crates/super_admin_ui/package-lock.json ./
+RUN npm ci
+COPY crates/super_admin_ui/ ./
+RUN npm run build
+
+FROM rust:1.99-alpine AS build
+# OpenSSL is built from source (vendored)
+RUN apk add --no-cache musl-dev perl make
+WORKDIR /src
+COPY . .
+COPY --from=ui /ui/dist crates/super_admin_ui/dist
+RUN cargo build --release --locked -p super_proxy && cp target/release/super /super
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates && apt-get clean
+
+COPY --from=build /super /app/super
+
+WORKDIR /app
+
+EXPOSE 80 443
+
+ENTRYPOINT ["/app/super"]

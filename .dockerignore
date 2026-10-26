@@ -1,0 +1,4 @@
+target
+**/node_modules
+crates/super_admin_ui/dist
+.git

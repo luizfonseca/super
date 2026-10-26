@@ -1,0 +1,80 @@
+name: Versus Proksi
+
+# Super and Proksi proxying the same load, with the same configuration (they read the same
+# one): requests/s, latency, CPU and memory, for plain HTTP and HTTPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      proksi_ref:
+        description: The Proksi branch, tag or commit to compare with
+        default: main
+
+permissions:
+  contents: read
+
+env:
+  # Both binaries are built the same way, faster than the release profile (full LTO)
+  BUILD_FLAGS: --release --config profile.release.lto="thin" --config profile.release.codegen-units=16
+  OHA_VERSION: v1.16.0
+  OHA_SHA256: 620bb9e16fb53eabc9a3fc45f88bdb41fefa3fee5c05e75892011ce320391716
+
+jobs:
+  versus:
+    name: Super versus Proksi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: luizfonseca/proksi
+          ref: ${{ inputs.proksi_ref || 'main' }}
+          path: proksi
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build Super
+        run: |
+          cargo build $BUILD_FLAGS -p super_proxy
+          mkdir -p bench-bin
+          cp target/release/super bench-bin/super
+
+      - name: Build Proksi
+        working-directory: proksi
+        run: |
+          cargo build $BUILD_FLAGS -p proksi
+          cp target/release/proksi ../bench-bin/proksi
+
+      # On the host network: a service container's port mapping slows every request down
+      - name: Start the upstream
+        run: |
+          docker run -d --name upstream --network host nginx:alpine
+          until curl -sf http://127.0.0.1:80/ >/dev/null; do sleep 0.5; done
+
+      - name: Install oha
+        run: |
+          curl -sSL -o oha https://github.com/hatoo/oha/releases/download/$OHA_VERSION/oha-linux-amd64
+          echo "$OHA_SHA256  oha" | sha256sum --check
+          chmod +x oha
+
+      - name: Run the benchmark
+        run: |
+          mkdir -p results
+          python3 .github/benchmark/compare.py \
+            --base bench-bin/proksi --base-label Proksi \
+            --head bench-bin/super --head-label Super \
+            --oha ./oha \
+            --upstream 127.0.0.1:80 \
+            --workers "$(nproc)" \
+            --out results/report.md \
+            --raw results/raw.json
+          cat results/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: versus-proksi
+          path: results/
