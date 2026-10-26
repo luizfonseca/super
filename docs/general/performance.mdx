@@ -1,0 +1,73 @@
+---
+title: "Performance"
+description: "Proksi is built on Cloudflare Pingora, and most of the work of each request (parsing, connection pooling, I/O) happens there."
+---
+
+Proksi is built on [Cloudflare Pingora](https://github.com/cloudflare/pingora), and most of the work of each request (parsing, connection pooling, I/O) happens there. Proksi adds the routing, plugins, forwarded headers, metrics and logging on top of it, which costs around 3µs per request: proxying with one thread, Proksi uses 14.2µs of CPU per request where a bare Pingora proxy uses 11µs.
+
+Most of the difference with nginx comes from Pingora: it parses requests into owned headers and runs each step of a request as an async task, where nginx reuses its buffers and barely allocates. Pingora's threads also share one pool of upstream connections, so a connection opened on one thread is often reused from another, which costs more as threads are added.
+
+### Compared to nginx and Traefik
+
+All proxies forward plain HTTP and HTTPS requests to the same nginx upstream, with the same certificate (RSA 2048), access logs disabled and keep-alive connections to the upstream. The load comes from [oha](https://github.com/hatoo/oha) with 50 connections, on the same machine.
+
+```bash
+# Linux (arm64, 8 cores), at 2026-10-16
+# nginx 1.26.3, Traefik 3.7.15, Proksi (main, with mimalloc)
+# Threads: worker_threads (Proksi), worker_processes (nginx), GOMAXPROCS (Traefik)
+```
+
+**1 thread**
+
+| | Requests/s (HTTP / HTTPS) | CPU per request (HTTP / HTTPS) | Latency p99 (HTTP) | Memory (idle → under load) |
+| --- | ---: | ---: | ---: | ---: |
+| nginx | 112k / 84k | 8.9 / 11.9 µs | 0.65 ms | 15 → 15 MB |
+| **Proksi** | 57k / 45k | 17.6 / 22 µs | 1.35 ms | 37 → 43 MB |
+| Traefik | 34k / 33k | 29.5 / 30.5 µs | 4.6 ms | 89 → 111 MB |
+
+**4 threads**
+
+| | Requests/s (HTTP / HTTPS) | CPU per request (HTTP / HTTPS) | Latency p99 (HTTP) | Memory (idle → under load) |
+| --- | ---: | ---: | ---: | ---: |
+| nginx | 398k / 327k | 8.5 / 10.9 µs | 0.37 ms | 29 → 31 MB |
+| **Proksi** | 144k / 129k | 26.4 / 29.6 µs | 0.9 ms | 39 → 49 MB |
+| Traefik | 109k / 106k | 35.4 / 36.3 µs | 2.2 ms | 91 → 119 MB |
+
+These numbers were taken with [mimalloc](https://github.com/microsoft/mimalloc). Proksi now uses the system's allocator (musl's, in the release binaries and the Docker image), which gives memory back once traffic drops: in a container with 2 CPUs, under load it peaked at about 46 MB instead of 72 MB, and was back to about 30 MB a minute later instead of 40–60 MB, for about 9% fewer requests per second. With many cores busy at once the gap in requests per second grows, since musl's allocator serves one thread at a time.
+
+These numbers come from a single machine, where the proxy, the upstream and the load generator share the same CPUs. Treat them as a comparison, not as the throughput you will get in production.
+
+### Worker threads
+
+By default, worker threads take over each other's connections when they're idle. With `work_stealing = false`, each connection stays on the thread that accepted it instead:
+
+- With cores to spare (Proksi's threads each get a CPU), it uses about 15% less CPU per request with 4 threads.
+- When Proksi gets less CPU than it has threads (a container with a CPU limit below `worker_threads`, or a machine busy with other work), requests wait for their thread, and throughput drops (about 5% in the benchmark of pull requests).
+
+```hcl
+server {
+  work_stealing = false
+}
+```
+
+### Every pull request
+
+Every pull request is benchmarked against `main` on the same GitHub runner (requests per second, latency, CPU per request and peak memory, for plain HTTP and HTTPS). The results are posted as a comment on the pull request, so changes in performance are visible before they are merged. See [repository](/contributing/repository#performance-checks) to run it locally.
+
+
+
+### CDN performance
+
+Using the following configuration we can see that Proksi holds its own in regards to performance.
+
+```hcl
+cache {
+  enabled = true
+  path = "/tmp"
+  cache_type = "disk"
+}
+```
+
+1 minute test using 4000 concurrent clients.
+
+![Results of a 1 minute test with 4000 concurrent clients](/assets/one_minute_test.png)

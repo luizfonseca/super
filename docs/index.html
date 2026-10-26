@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Proksi documentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <link rel="canonical" href="https://docs.page/luizfonseca/proksi" />
+    <script>
+      // The documentation moved to docs.page: old links (`#/routing/tcp?id=plain-tcp`) go to
+      // the same page there (`/routing/tcp#plain-tcp`)
+      (function () {
+        var base = "https://docs.page/luizfonseca/proksi";
+        var route = location.hash.replace(/^#\/?/, "");
+        var parts = route.split("?id=");
+        var path = parts[0].replace(/\.md$/, "").replace(/(^|\/)README$/, "").replace(/\/$/, "");
+        location.replace(base + (path ? "/" + path : "") + (parts[1] ? "#" + parts[1] : ""));
+      })();
+    </script>
+  </head>
+  <body>
+    <p>The documentation moved to <a href="https://docs.page/luizfonseca/proksi">docs.page/luizfonseca/proksi</a>.</p>
+  </body>
+</html>
