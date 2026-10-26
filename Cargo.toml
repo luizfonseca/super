@@ -4,6 +4,7 @@ members = [
     "crates/plugins_api",
     "crates/super_admin_ui",
     "crates/super_core",
+    "crates/super_plugins",
     "crates/super_store",
 ]
 resolver = "2"
