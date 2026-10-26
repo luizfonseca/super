@@ -72,6 +72,8 @@ impl TlsAccept for CertStore {
                 tracing::error!("Failed to add chain certificate for host {host_name:?}: {err}");
             }
         }
+        // Ready for the client's HTTP/3 handshakes, when it's on
+        super::http3::CERTIFICATES.keep(&stores::lookup::certificate_name(&host_name), &cert);
     }
 
     async fn handshake_complete_callback(

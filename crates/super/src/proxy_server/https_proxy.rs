@@ -365,6 +365,17 @@ impl ProxyHttp for Router {
             upstream_response.append_header(name, value)?;
         }
 
+        // HTTP/3 is answered on this port too
+        if self.listener == Listener::Https {
+            let port = session
+                .server_addr()
+                .and_then(|addr| addr.as_inet())
+                .map(|addr| addr.port());
+            if let Some(alt_svc) = port.and_then(super::http3::alt_svc) {
+                upstream_response.insert_header(http::header::ALT_SVC, alt_svc)?;
+            }
+        }
+
         // A new client of a traffic split keeps its side
         for (name, id) in std::mem::take(&mut ctx.split_cookies) {
             let secure = if self.listener == Listener::Https {
@@ -590,7 +601,9 @@ impl ProxyHttp for Router {
         }
         let duration_ms = duration.as_millis();
 
-        let http_version = if session.is_http2() {
+        let http_version = if session.is_http3() {
+            "http/3"
+        } else if session.is_http2() {
             "http/2"
         } else {
             "http/1.1"

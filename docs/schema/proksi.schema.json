@@ -3656,6 +3656,13 @@
     },
     "ServerCfg": {
       "properties": {
+        "http3": {
+          "description": "Whether HTTP/3 (QUIC, over UDP) is answered on the HTTPS addresses (default: `false`).\nHTTPS responses tell clients it's there (`Alt-Svc`); their UDP port must be reachable.\nSuper only (Proksi ignores it).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "http_address": {
           "description": "The address used to solve challenges (only HTTP)",
           "type": [
