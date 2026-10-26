@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/logo-wordmark-dark.svg?v=11">
-    <img src="./docs/assets/logo-wordmark-light.svg?v=11" alt="Super proxy" width="360">
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/logo-wordmark-dark.svg?v=12">
+    <img src="./docs/assets/logo-wordmark-light.svg?v=12" alt="Super proxy" width="260">
   </picture>
 </p>
 
