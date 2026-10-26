@@ -35,6 +35,8 @@ pub(super) async fn proxy<SV: ProxyHttp>(
         .upstream_request_filter(session, &mut request, ctx)
         .await?;
     headers::set_target(&mut request, http2);
+    // A stale response kept for the request: does the upstream still have it?
+    let revalidating = cache_phase::ask(session, &mut request);
     let options = &peer.options;
     let (mut upload, body) =
         upload::Upload::start(proxy, session, ctx, options.write_timeout).await?;
@@ -48,6 +50,11 @@ pub(super) async fn proxy<SV: ProxyHttp>(
 
     let (parts, mut body) = response.into_parts();
     let mut header = ResponseHeader::from_parts(parts);
+    if revalidating && header.status == http::StatusCode::NOT_MODIFIED {
+        cache_phase::revalidated(proxy, session, ctx, header).await?;
+        finish(proxy, session, connection, &upload, options).await;
+        return Ok(());
+    }
     headers::downstream_response(&mut header, false);
     proxy
         .inner
@@ -77,15 +84,26 @@ pub(super) async fn proxy<SV: ProxyHttp>(
         )
         .await?;
     }
-    // The upstream answered before the whole request body was sent: the client's rest is read
-    upload::drain(&upload, session).await;
-    // Kept for the next request once both bodies are whole
+    finish(proxy, session, connection, &upload, options).await;
+    Ok(())
+}
+
+/// The response was sent: the rest of the client's body is read (if the upstream answered
+/// before it was all sent), and the connection is kept for the next request when both bodies
+/// are whole
+async fn finish<SV: ProxyHttp>(
+    proxy: &HttpProxy<SV>,
+    session: &mut Session,
+    connection: HttpSession,
+    upload: &upload::Upload,
+    options: &crate::upstreams::peer::PeerOptions,
+) {
+    upload::drain(upload, session).await;
     if upload.is_done() {
         proxy
             .connector
             .release_http_session(connection, options.idle_timeout);
     }
-    Ok(())
 }
 
 /// Streams the upstream's response body to the client
