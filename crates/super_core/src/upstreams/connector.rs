@@ -94,6 +94,49 @@ impl Connector {
         self.pool.keep(session.key, sender, session.fd, expires);
     }
 
+    /// Sends `request` with `body` to `peer`, and reads the whole response (its body is
+    /// dropped): for requests whose answer only matters by its status (e.g. mirrored copies)
+    ///
+    /// # Errors
+    ///
+    /// When `peer` can't be reached, or its response read.
+    pub async fn request(
+        &self,
+        peer: &HttpPeer,
+        request: crate::http::RequestHeader,
+        body: bytes::Bytes,
+    ) -> Result<crate::http::ResponseHeader> {
+        use http_body_util::BodyExt;
+
+        let (mut session, _) = self.get_http_session(peer).await?;
+        let mut request = request;
+        crate::proxy::set_target(&mut request, session.is_http2());
+        let request = hyper::Request::from_parts(request.into_parts(), UpstreamBody::full(body));
+        let response = match &mut session.sender {
+            Sender::H1(sender) => {
+                sender
+                    .ready()
+                    .await
+                    .or_err(ErrorType::ConnectionClosed, "sending")?;
+                sender.send_request(request).await
+            }
+            Sender::H2(sender, _) => {
+                sender
+                    .ready()
+                    .await
+                    .or_err(ErrorType::ConnectionClosed, "sending")?;
+                sender.send_request(request).await
+            }
+        }
+        .or_err(ErrorType::ReadError, "reading the response")?;
+        let (parts, body) = response.into_parts();
+        body.collect()
+            .await
+            .or_err(ErrorType::ReadError, "reading the response body")?;
+        self.release_http_session(session, peer.options.idle_timeout);
+        Ok(crate::http::ResponseHeader::from_parts(parts))
+    }
+
     async fn connect(&self, peer: &HttpPeer, key: u64) -> Result<HttpSession> {
         let options = &peer.options;
         let connecting = async {
@@ -235,6 +278,7 @@ fn set_up(stream: &TcpStream, options: &super::peer::PeerOptions) {
 
 async fn handshake_h1(stream: Stream) -> Result<http1::SendRequest<UpstreamBody>> {
     let (sender, connection) = http1::Builder::new()
+        .preserve_header_case(true)
         .handshake(TokioIo::new(stream))
         .await
         .or_err(ErrorType::H1Error, "HTTP/1.1 handshake")?;

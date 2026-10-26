@@ -1,0 +1,473 @@
+use crate::config::notify::Kind;
+use std::{sync::Arc, time::Duration};
+
+use acme_v2::{order::NewOrder, Account, DirectoryUrl};
+use anyhow::anyhow;
+use openssl::{pkey::PKey, x509::X509};
+use super_store::Certificate;
+use tokio::time;
+use tracing::info;
+
+use crate::{
+    config::{host::Challenge, Config},
+    stores::{self, lookup::TlsHost},
+};
+
+use super::{
+    dns::{self, DnsProvider},
+    lease::{with_lease, Outcome, LEASE_TTL},
+    storage::PersistType,
+};
+
+/// Default interval in days to attempt renewal of certificates
+const DEFAULT_RENEW_INTERVAL_DAYS: i64 = 30;
+
+/// Lease taken while creating (or reading) the Let's Encrypt account
+const ACCOUNT_LEASE: &str = "acme:account";
+
+/// Creates and renews certificates with the Let's Encrypt API
+pub struct Acme {
+    pub(crate) config: Arc<Config>,
+    /// Where DNS-01 challenges are written, if configured (ADR 0009)
+    dns: Option<Box<dyn DnsProvider>>,
+}
+
+impl Acme {
+    pub fn new(config: Arc<Config>) -> Self {
+        let dns = config.lets_encrypt.dns.as_ref().map(dns::provider);
+        Self { config, dns }
+    }
+
+    /// Parse a PEM-encoded private key from a string slice
+    fn parse_private_key(key_pem: &str) -> Result<PKey<openssl::pkey::Private>, anyhow::Error> {
+        Ok(PKey::private_key_from_pem(key_pem.as_bytes())?)
+    }
+
+    /// Update global certificate store with new `X509` and `PKey` for the
+    /// given domain also considering that the certificate could be a bundle file.
+    async fn insert_certificate(
+        domain: &str,
+        bundle: &str,
+        key_pem: &str,
+    ) -> Result<(), anyhow::Error> {
+        // The leaf, followed by its chain
+        let mut certificates = X509::stack_from_pem(bundle.as_bytes())?.into_iter();
+        let Some(leaf) = certificates.next() else {
+            return Err(anyhow::anyhow!("Certificate is empty"));
+        };
+        let chain = certificates.collect();
+
+        let key = Self::parse_private_key(key_pem)?;
+
+        stores::global::get_store()
+            .set_certificate(domain, Certificate { key, leaf, chain })
+            .await
+            .map_err(|o_err| anyhow!("failed to save certificate in the store: {o_err}"))?;
+
+        Ok(())
+    }
+
+    /// Start an HTTP-01 challenge for a given order
+    async fn handle_http_01_challenge(
+        order: &mut NewOrder<PersistType>,
+    ) -> Result<(), anyhow::Error> {
+        for auth in order.authorizations()? {
+            let challenge = auth.http_challenge()?;
+
+            info!("HTTP-01 challenge for domain: {}", auth.domain_name());
+
+            // Use the global store to set the challenge
+            // This allows multiple replicas of Proksi to handle challenges
+            if let Err(err) = stores::global::get_store()
+                .set_challenge(
+                    auth.domain_name(),
+                    challenge.http_token().to_string(),
+                    challenge.http_proof().clone(),
+                )
+                .await
+            {
+                tracing::error!("Failed to set challenge in store: {}", err);
+                return Err(anyhow!("Failed to set challenge in store: {err}"));
+            }
+
+            // Let's Encrypt will check the domain's URL to validate the challenge
+            tracing::info!("HTTP-01 validating (retry: 5s)...");
+            challenge.validate(5000)?; // Retry every 5000 ms
+        }
+        Ok(())
+    }
+
+    /// Writes the DNS-01 challenge of each authorization as a TXT record, waits until its
+    /// zone's name servers answer it, and has Let's Encrypt check it. Records are removed
+    /// afterwards, whatever happens.
+    async fn handle_dns_01_challenge(
+        order: &mut NewOrder<PersistType>,
+        provider: &dyn DnsProvider,
+    ) -> Result<(), anyhow::Error> {
+        for auth in order.authorizations()? {
+            let challenge = auth.dns_challenge()?;
+            let name = dns::challenge_name(auth.domain_name());
+            let proof = challenge.dns_proof();
+            info!("DNS-01 challenge for domain: {}", auth.domain_name());
+
+            dns::with_txt_record(
+                provider,
+                &name,
+                &proof,
+                async |record| dns::wait_until_visible(record, dns::PROPAGATION_TIMEOUT).await,
+                async {
+                    // Let's Encrypt will look the record up on the zone's name servers
+                    challenge.validate(5000).map_err(|err| err.to_string())
+                },
+            )
+            .await
+            .map_err(|err| anyhow!(err))?;
+        }
+        Ok(())
+    }
+
+    /// Creates an in-memory self-signed certificate for a domain if let's encrypt
+    /// cannot be used.
+    /// Note this is only useful for local development or testing purposes
+    /// and should be used sparingly
+    async fn create_self_signed_certificate(
+        domain: &str,
+        enabled: bool,
+    ) -> Result<(), anyhow::Error> {
+        // Generate self-signed certificate only if self_signed_on_failure is set to true
+        // If not provided, default to true
+        if !enabled {
+            // Nothing to do
+            return Ok(());
+        }
+
+        tracing::info!("creating an in-memory self-signed certificate for {domain}");
+
+        let rsa = openssl::rsa::Rsa::generate(2048)?;
+        let mut openssl_cert = openssl::x509::X509Builder::new()?;
+        let mut x509_name = openssl::x509::X509NameBuilder::new()?;
+
+        x509_name.append_entry_by_text("CN", domain)?;
+        x509_name.append_entry_by_text("ST", "TX")?;
+        x509_name.append_entry_by_text("O", "Proksi")?;
+        // x509_name.append_entry_by_text("CN", "Test")?;
+        let x509_name = x509_name.build();
+
+        let hash = super_core::tls::hash::MessageDigest::sha256();
+        let key = super_core::tls::pkey::PKey::from_rsa(rsa)?;
+        let one_year = openssl::asn1::Asn1Time::days_from_now(365)?;
+        let today = openssl::asn1::Asn1Time::days_from_now(0)?;
+        openssl_cert.set_version(2)?;
+        openssl_cert.set_subject_name(&x509_name)?;
+        openssl_cert.set_issuer_name(&x509_name)?;
+        openssl_cert.set_pubkey(&key)?;
+        openssl_cert.set_not_before(&today)?;
+        openssl_cert.set_not_after(&one_year)?;
+        openssl_cert.sign(&key, hash)?;
+
+        let openssl_cert = openssl_cert.build();
+
+        stores::global::get_store()
+            .set_certificate(
+                domain,
+                Certificate {
+                    key,
+                    leaf: openssl_cert,
+                    chain: vec![],
+                },
+            )
+            .await
+            .map_err(|o_err| anyhow!("failed to save self-signed certificate {o_err}"))?;
+
+        Ok(())
+    }
+
+    // Creates or retrieves the existing LetsEncrypt account
+    fn get_account(&self) -> Result<Account<PersistType>, anyhow::Error> {
+        let persist = crate::letsencrypt::storage::CertificatePersist::new(self.config.clone());
+
+        let dir = acme_v2::Directory::from_url(persist.get_persist()?, self.get_lets_encrypt_url())
+            .map_err(|err| anyhow!("failed to create LetsEncrypt directory: {err}"))?;
+
+        dir.account(&self.config.lets_encrypt.email)
+            .map_err(|err| anyhow!("failed to create or retrieve existing account: {err}"))
+    }
+
+    /// Creates or retrieves the account, holding a lease so replicas starting together don't
+    /// each create one. If another replica holds it, waits for it (up to a minute) and then
+    /// reads the account it created.
+    pub async fn get_account_with_lease(&self) -> Result<Account<PersistType>, anyhow::Error> {
+        let store = stores::global::get_store();
+        let holder = stores::replica_id();
+        for _ in 0..12 {
+            match store.try_lock(ACCOUNT_LEASE, holder, LEASE_TTL).await {
+                Ok(false) => time::sleep(Duration::from_secs(5)).await,
+                // Taken, or the store is unavailable (as without a lease)
+                Ok(true) | Err(_) => break,
+            }
+        }
+
+        let account = self.get_account();
+        if let Err(err) = store.unlock(ACCOUNT_LEASE, holder).await {
+            tracing::warn!("failed to release the lease {ACCOUNT_LEASE}: {err}");
+        }
+        account
+    }
+
+    // Based on the letsencrypt configuration, return the appropriate URL
+    fn get_lets_encrypt_url(&self) -> DirectoryUrl<'_> {
+        match self.config.lets_encrypt.staging {
+            Some(false) => DirectoryUrl::LetsEncrypt,
+            _ => DirectoryUrl::LetsEncryptStaging,
+        }
+    }
+
+    /// Create a new order for a domain (HTTP-01 challenge)
+    async fn create_order_for_domain(
+        domain: &str,
+        account: &Account<PersistType>,
+        challenge: Challenge,
+        dns: Option<&dyn DnsProvider>,
+    ) -> Result<(), anyhow::Error> {
+        let dns = match (challenge, dns) {
+            (Challenge::Dns01, None) => {
+                return Err(anyhow!(
+                    "challenge = \"dns-01\" needs lets_encrypt {{ dns {{ ... }} }}"
+                ))
+            }
+            (_, dns) => dns,
+        };
+        let mut order = account.new_order(domain, &[])?;
+
+        let order_csr = loop {
+            // Break if we are done confirming validations
+            if let Some(csr) = order.confirm_validations() {
+                break csr;
+            }
+
+            // Get the possible authorizations (for a single domain
+            // this will only be one element).
+            match (challenge, dns) {
+                (Challenge::Dns01, Some(provider)) => {
+                    // Boxed: it waits on the name servers, with buffers of its own
+                    Box::pin(Self::handle_dns_01_challenge(&mut order, provider))
+                        .await
+                        .map_err(|err| anyhow!("Failed to handle DNS-01 challenge: {err}"))?;
+                }
+                _ => Self::handle_http_01_challenge(&mut order)
+                    .await
+                    .map_err(|err| anyhow!("Failed to handle HTTP-01 challenge: {err}"))?,
+            }
+
+            order.refresh().unwrap_or_default();
+        };
+
+        // Order OK
+        let pkey = acme_v2::create_p384_key()?;
+        let order_cert = order_csr.finalize_pkey(pkey, 5000)?;
+
+        info!("certificate created for order {:?}", order_cert.api_order());
+
+        let cert = order_cert.download_and_save_cert()?;
+
+        Self::insert_certificate(domain, cert.certificate(), cert.private_key()).await?;
+
+        Ok(())
+    }
+
+    /// Watch for route changes and create or update certificates for new routes
+    pub async fn watch_for_route_changes(&self, account: &Account<PersistType>) {
+        let mut interval = time::interval(Duration::from_secs(20));
+
+        loop {
+            interval.tick().await;
+            tracing::debug!("checking for new routes to create certificates for");
+            let store = stores::global::get_store();
+            let existing = store
+                .get_certificates()
+                .await
+                .keys()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>();
+
+            // Hosts without TLS (and `*`) don't get certificates
+            let missing = stores::lookup::tls_hosts()
+                .into_iter()
+                .filter(|host| !existing.contains(&host.name));
+            for host in missing {
+                // Another replica may have just created it
+                let outcome = with_lease(
+                    store.as_ref(),
+                    stores::replica_id(),
+                    &format!("acme:{}", host.name),
+                    LEASE_TTL,
+                    async { store.get_certificate(&host.name).await.is_none() },
+                    Self::handle_certificate_for_domain(&host, account, self.dns.as_deref()),
+                )
+                .await;
+                log_outcome(&host.name, "creating", &outcome);
+            }
+        }
+    }
+
+    /// Check for certificates expiration and renew them if needed
+    pub async fn check_for_certificates_expiration(&self, account: &Account<PersistType>) {
+        let mut interval = time::interval(Duration::from_secs(
+            self.config
+                .lets_encrypt
+                .renew_interval_secs
+                .unwrap_or(84_600),
+        ));
+
+        loop {
+            tracing::debug!("checking for certificates to renew");
+            for host in stores::lookup::tls_hosts() {
+                self.renew_if_expiring(account, &host).await;
+            }
+
+            interval.tick().await;
+        }
+    }
+
+    /// Renews a host's certificate when it expires soon
+    async fn renew_if_expiring(&self, account: &Account<PersistType>, host: &TlsHost) {
+        let domain = host.name.as_str();
+        let Ok(Some(cert)) = account.certificate(domain) else {
+            return;
+        };
+
+        let valid_days_left = match cert.valid_days_left() {
+            Ok(days) => days,
+            Err(err) => {
+                tracing::warn!("failed to read the certificate of {domain}: {err}");
+                return;
+            }
+        };
+        tracing::info!("certificate for domain {domain} expires in {valid_days_left} days",);
+        // Each `notify` block says from how many days left it's told (`expiring_days`)
+        if valid_days_left <= crate::notify::EXPIRING_DAYS_MAX {
+            crate::notify::emit(|| crate::notify::Event {
+                host: Some(domain.to_string()),
+                days_left: Some(valid_days_left),
+                ..crate::notify::Event::new(Kind::CertificateExpiring)
+            });
+        }
+
+        // Nothing to do before the renewal interval
+        if valid_days_left > DEFAULT_RENEW_INTERVAL_DAYS {
+            return;
+        }
+
+        // Another replica may have just renewed it
+        let still_expiring = async {
+            account
+                .certificate(domain)
+                .ok()
+                .flatten()
+                .is_some_and(|cert| {
+                    cert.valid_days_left()
+                        .is_ok_and(|days| days <= DEFAULT_RENEW_INTERVAL_DAYS)
+                })
+        };
+        let outcome = with_lease(
+            stores::global::get_store().as_ref(),
+            stores::replica_id(),
+            &format!("acme:{domain}"),
+            LEASE_TTL,
+            still_expiring,
+            Self::create_order_for_domain(domain, account, host.challenge, self.dns.as_deref()),
+        )
+        .await;
+        log_outcome(domain, "renewing", &outcome);
+    }
+
+    /// Saves the domain's certificate in the store: the one Let's Encrypt already issued, a
+    /// new one, or a self-signed one if ordering fails (and `self_signed_on_failure`)
+    async fn handle_certificate_for_domain(
+        host: &TlsHost,
+        account: &Account<PersistType>,
+        dns: Option<&dyn DnsProvider>,
+    ) -> Result<(), anyhow::Error> {
+        let domain = host.name.as_str();
+        if let Some(cert) = account.certificate(domain)? {
+            return Self::insert_certificate(domain, cert.certificate(), cert.private_key()).await;
+        }
+
+        let ordered = Self::create_order_for_domain(domain, account, host.challenge, dns).await;
+        if ordered.is_err() {
+            Self::create_self_signed_certificate(domain, host.self_signed_on_failure).await?;
+        } else {
+            crate::notify::emit(|| crate::notify::Event {
+                host: Some(domain.to_string()),
+                ..crate::notify::Event::new(Kind::CertificateIssued)
+            });
+        }
+        ordered
+    }
+}
+
+/// Logs what happened to a domain's certificate, and tells `notify` blocks about renewals and
+/// failures (once: the replica holding the domain's lease)
+fn log_outcome(domain: &str, action: &str, outcome: &Outcome) {
+    let event = |kind: Kind, detail: Option<String>| {
+        crate::notify::emit(|| crate::notify::Event {
+            host: Some(domain.to_string()),
+            detail,
+            ..crate::notify::Event::new(kind)
+        });
+    };
+    match outcome {
+        Outcome::Done if action == "renewing" => event(Kind::CertificateRenewed, None),
+        Outcome::Failed(err) => event(Kind::CertificateFailed, Some(err.clone())),
+        _ => {}
+    }
+    match outcome {
+        Outcome::Done => info!("{action} certificate for {domain}: done"),
+        Outcome::Held => tracing::debug!(
+            "{action} certificate for {domain}: skipped, another replica is ordering it"
+        ),
+        Outcome::NotNeeded => {
+            tracing::debug!("{action} certificate for {domain}: another replica just did it");
+        }
+        Outcome::Failed(err) => {
+            tracing::error!("{action} certificate for {domain} failed: {err}");
+        }
+        Outcome::Unavailable(err) => tracing::warn!(
+            "{action} certificate for {domain}: the store is unavailable, retrying later: {err}"
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super_store::test_util::signed;
+
+    #[tokio::test]
+    async fn test_ordered_certificates_keep_their_whole_chain() {
+        let first = signed("intermediate 1", None);
+        let second = signed("intermediate 2", Some(&first));
+        let (leaf, key) = signed("acme-chain.test", Some(&second));
+        let bundle = [&leaf, &second.0, &first.0]
+            .map(|c| String::from_utf8(c.to_pem().unwrap()).unwrap())
+            .join("\n");
+        let key = String::from_utf8(key.private_key_to_pem_pkcs8().unwrap()).unwrap();
+
+        super::Acme::insert_certificate("acme-chain.test", &bundle, &key)
+            .await
+            .unwrap();
+
+        let stored = crate::stores::global::get_store()
+            .get_certificate("acme-chain.test")
+            .await
+            .unwrap();
+        assert_eq!(stored.leaf.to_pem().unwrap(), leaf.to_pem().unwrap());
+        assert_eq!(
+            stored
+                .chain
+                .iter()
+                .map(|c| c.to_pem().unwrap())
+                .collect::<Vec<_>>(),
+            vec![second.0.to_pem().unwrap(), first.0.to_pem().unwrap()]
+        );
+    }
+}

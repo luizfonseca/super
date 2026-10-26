@@ -1,0 +1,345 @@
+//! Forwards each connection to an upstream of its block
+
+use std::{
+    pin::Pin,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    task::{Context, Poll},
+    time::{Duration, Instant},
+};
+
+use prometheus::IntCounter;
+use super_core::{
+    apps::ServerApp,
+    protocols::{Stream, ALPN},
+    server::ShutdownWatch,
+};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    net::TcpStream,
+};
+
+use crate::{
+    metrics::TcpMetrics, proxy_server::cert_store::ServerName, routing::build::select_or_resolve,
+};
+
+use super::{choose, TcpTarget};
+
+pub struct TcpProxy {
+    targets: Arc<Vec<TcpTarget>>,
+}
+
+impl TcpProxy {
+    pub fn new(targets: Arc<Vec<TcpTarget>>) -> Self {
+        Self { targets }
+    }
+
+    pub fn targets(&self) -> &[TcpTarget] {
+        &self.targets
+    }
+
+    /// The block of a connection, by the address it was accepted on and, with TLS terminated,
+    /// the name the client asked for
+    pub fn target(&self, downstream: &Stream) -> Option<&TcpTarget> {
+        let local = downstream
+            .get_socket_digest()
+            .and_then(|digest| digest.local_addr().and_then(|addr| addr.as_inet()).copied())?;
+        // Set once TLS is terminated (see `CertStore`)
+        let sni = downstream.get_ssl_digest().and_then(|digest| {
+            digest
+                .extension
+                .get::<ServerName>()
+                .map(|name| name.0.clone())
+        });
+
+        let alpn = match downstream.selected_alpn_proto() {
+            Some(ALPN::Custom(protocol)) => Some(protocol),
+            _ => None,
+        };
+
+        let target = choose(
+            &self.targets,
+            &local,
+            sni.as_deref(),
+            alpn.as_ref()
+                .map(super_core::protocols::tls::CustomALPN::protocol),
+        );
+        if target.is_none() {
+            tracing::debug!("no tcp block for a connection on {local} (server name: {sni:?})");
+        }
+        target
+    }
+
+    /// Forwards the connection to an upstream of `target`, until either side closes it, then
+    /// writes its access log. `server_name`: the name the client asked for, when TLS isn't
+    /// terminated (passthrough)
+    pub async fn forward(
+        &self,
+        mut downstream: Stream,
+        target: &TcpTarget,
+        server_name: Option<String>,
+    ) {
+        let _connection = target.metrics.as_ref().map(TcpMetrics::connection);
+        let start = std::time::Instant::now();
+        let client_ip = downstream
+            .get_socket_digest()
+            .and_then(|digest| digest.peer_addr().map(ToString::to_string));
+        let server_name = server_name.or_else(|| {
+            downstream.get_ssl_digest().and_then(|digest| {
+                digest
+                    .extension
+                    .get::<ServerName>()
+                    .map(|name| name.0.clone())
+            })
+        });
+
+        let mut forwarded = Forwarded::default();
+        let error = Self::copy(&mut downstream, target, &mut forwarded)
+            .await
+            .err();
+        if !crate::logger::access_logs_enabled() {
+            return;
+        }
+
+        tracing::info!(
+            protocol = "tcp",
+            block = target.label,
+            client_ip,
+            server_name,
+            upstream = forwarded.upstream.map(|addr| addr.to_string()),
+            duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+            bytes_in = forwarded.bytes_in,
+            bytes_out = forwarded.bytes_out,
+            error,
+            access_log = true
+        );
+    }
+
+    /// Connects to an upstream and copies both ways, until either side closes the connection
+    async fn copy(
+        downstream: &mut Stream,
+        target: &TcpTarget,
+        forwarded: &mut Forwarded,
+    ) -> Result<(), String> {
+        let addr = select_or_resolve(&target.load_balancer)
+            .await
+            .and_then(|backend| backend.addr.as_inet().copied())
+            .ok_or_else(|| {
+                tracing::warn!("{}: no healthy upstream", target.label);
+                if let Some(metrics) = &target.metrics {
+                    metrics.upstream_error();
+                }
+                "no healthy upstream".to_string()
+            })?;
+        forwarded.upstream = Some(addr);
+
+        let connect = tokio::time::timeout(target.connect_timeout, TcpStream::connect(addr)).await;
+        let mut upstream = match connect {
+            Ok(Ok(upstream)) => upstream,
+            failed => {
+                let err = match failed {
+                    Ok(Err(err)) => err.to_string(),
+                    _ => format!("no answer within {:?}", target.connect_timeout),
+                };
+                tracing::warn!(
+                    "{}: could not connect to upstream {addr}: {err}",
+                    target.label
+                );
+                if let Some(metrics) = &target.metrics {
+                    metrics.upstream_error();
+                }
+                // The upstream's name may point elsewhere now (ADR 0006)
+                let load_balancer = target.load_balancer.clone();
+                tokio::spawn(async move { load_balancer.update().await });
+                return Err(format!("could not connect to the upstream: {err}"));
+            }
+        };
+
+        // Bytes are counted as they're read, so long connections show up while they're open
+        let activity = Activity::new();
+        let mut downstream = Counted {
+            inner: downstream,
+            bytes: target.metrics.as_ref().map(|metrics| &metrics.bytes_in),
+            read: &mut forwarded.bytes_in,
+            activity: &activity,
+        };
+        let mut upstream = Counted {
+            inner: &mut upstream,
+            bytes: target.metrics.as_ref().map(|metrics| &metrics.bytes_out),
+            read: &mut forwarded.bytes_out,
+            activity: &activity,
+        };
+        let copy = tokio::io::copy_bidirectional(&mut downstream, &mut upstream);
+        let copied = match target.idle_timeout {
+            Some(idle_timeout) => {
+                tokio::select! {
+                    copied = copy => copied,
+                    () = activity.idle_for(idle_timeout) => {
+                        return Err(format!("idle for {idle_timeout:?}"));
+                    }
+                }
+            }
+            None => copy.await,
+        };
+        match copied {
+            Ok(_) => Ok(()),
+            Err(err) if closed_before_bytes(&err, forwarded.bytes_in, forwarded.bytes_out) => {
+                tracing::debug!(
+                    "{}: connection to {addr} closed before any bytes: {err}",
+                    target.label
+                );
+                Ok(())
+            }
+            Err(err) => {
+                tracing::debug!("{}: connection to {addr} ended: {err}", target.label);
+                Err(err.to_string())
+            }
+        }
+    }
+}
+
+/// Whether a connection was closed by one side before any bytes flowed (a client checking it
+/// can connect, say): a normal close, not an error
+fn closed_before_bytes(err: &std::io::Error, bytes_in: u64, bytes_out: u64) -> bool {
+    use std::io::ErrorKind::{BrokenPipe, ConnectionAborted, ConnectionReset};
+    bytes_in == 0
+        && bytes_out == 0
+        && matches!(err.kind(), BrokenPipe | ConnectionReset | ConnectionAborted)
+}
+
+/// What a connection forwarded, for its access log
+#[derive(Default)]
+struct Forwarded {
+    upstream: Option<std::net::SocketAddr>,
+    bytes_in: u64,
+    bytes_out: u64,
+}
+
+impl ServerApp for TcpProxy {
+    async fn process_new(
+        self: &Arc<Self>,
+        downstream: Stream,
+        _shutdown: &ShutdownWatch,
+    ) -> Option<Stream> {
+        let target = self.target(&downstream)?;
+        self.forward(downstream, target, None).await;
+        None
+    }
+}
+
+/// When a connection last read bytes, from either side
+struct Activity {
+    started: Instant,
+    /// Milliseconds since `started`
+    last_read: AtomicU64,
+}
+
+impl Activity {
+    fn new() -> Self {
+        Self {
+            started: Instant::now(),
+            last_read: AtomicU64::new(0),
+        }
+    }
+
+    fn read(&self) {
+        let elapsed = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.last_read.store(elapsed, Ordering::Relaxed);
+    }
+
+    /// Returns once nothing was read for `timeout`
+    async fn idle_for(&self, timeout: Duration) {
+        loop {
+            let last_read = Duration::from_millis(self.last_read.load(Ordering::Relaxed));
+            let last_read = self.started + last_read;
+            if last_read.elapsed() >= timeout {
+                return;
+            }
+            tokio::time::sleep_until((last_read + timeout).into()).await;
+        }
+    }
+}
+
+/// A stream counting the bytes read from it (in its metric, and for its connection)
+struct Counted<'a, S> {
+    inner: &'a mut S,
+    bytes: Option<&'a IntCounter>,
+    read: &'a mut u64,
+    activity: &'a Activity,
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for Counted<'_, S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        let poll = Pin::new(&mut *self.inner).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = poll {
+            let read = u64::try_from(buf.filled().len() - before).unwrap_or_default();
+            if let Some(bytes) = self.bytes {
+                bytes.inc_by(read);
+            }
+            *self.read += read;
+            self.activity.read();
+        }
+        poll
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for Counted<'_, S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut *self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut *self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut *self.inner).poll_shutdown(cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Error, ErrorKind};
+
+    use super::closed_before_bytes;
+
+    #[test]
+    fn test_connections_closed_before_any_bytes_are_normal() {
+        // A client checking it can connect, then closing
+        for kind in [
+            ErrorKind::BrokenPipe,
+            ErrorKind::ConnectionReset,
+            ErrorKind::ConnectionAborted,
+        ] {
+            assert!(closed_before_bytes(&Error::from(kind), 0, 0), "{kind:?}");
+        }
+        // Once bytes flowed, it ended early
+        assert!(!closed_before_bytes(
+            &Error::from(ErrorKind::BrokenPipe),
+            10,
+            0
+        ));
+        assert!(!closed_before_bytes(
+            &Error::from(ErrorKind::ConnectionReset),
+            0,
+            10
+        ));
+        // Other errors are errors
+        assert!(!closed_before_bytes(
+            &Error::from(ErrorKind::TimedOut),
+            0,
+            0
+        ));
+    }
+}

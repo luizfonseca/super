@@ -55,23 +55,7 @@ pub fn receive(path: &str, timeout: Duration) -> std::io::Result<Vec<(String, Ow
     let _ = std::fs::remove_file(path);
     let listener = UnixListener::bind(path)?;
     listener.set_nonblocking(true)?;
-    let started = Instant::now();
-    let stream = loop {
-        match listener.accept() {
-            Ok((stream, _)) => break stream,
-            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                if started.elapsed() >= timeout {
-                    let _ = std::fs::remove_file(path);
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "no process handed its listening sockets over",
-                    ));
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(err) => return Err(err),
-        }
-    };
+    let stream = accept(&listener, timeout, path)?;
     let _ = std::fs::remove_file(path);
     // The sender may be gone already (its sockets wait to be read): macOS then refuses changes
     // to the socket
@@ -106,6 +90,25 @@ pub fn receive(path: &str, timeout: Duration) -> std::io::Result<Vec<(String, Ow
         .map(ToString::to_string)
         .zip(fds)
         .collect())
+}
+
+/// The process handing its sockets over, once it connects (within `timeout`)
+fn accept(listener: &UnixListener, timeout: Duration, path: &str) -> std::io::Result<UnixStream> {
+    let started = Instant::now();
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => return Ok(stream),
+            Err(err) if err.kind() != std::io::ErrorKind::WouldBlock => return Err(err),
+            Err(_) if started.elapsed() >= timeout => {
+                let _ = std::fs::remove_file(path);
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "no process handed its listening sockets over",
+                ));
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(50)),
+        }
+    }
 }
 
 fn connect(path: &str, timeout: Duration) -> std::io::Result<UnixStream> {

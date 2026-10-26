@@ -71,30 +71,9 @@ pub(crate) fn upstream_request(
 
 /// The request's target, as its version wants it: a path (HTTP/1.1, with the host in `Host`),
 /// or the whole URI (HTTP/2)
-pub(crate) fn set_target(request: &mut RequestHeader, http2: bool) {
+pub fn set_target(request: &mut RequestHeader, http2: bool) {
     if http2 {
-        request.set_version(Version::HTTP_2);
-        // `:authority` comes from the URI: from `Host` when the client sent a path
-        if request.uri.authority().is_none() {
-            let host = request
-                .headers
-                .get(header::HOST)
-                .and_then(|host| host.to_str().ok())
-                .unwrap_or("localhost");
-            let path = request
-                .uri
-                .path_and_query()
-                .map_or("/", http::uri::PathAndQuery::as_str);
-            if let Ok(uri) = Uri::builder()
-                .scheme("http")
-                .authority(host)
-                .path_and_query(path)
-                .build()
-            {
-                request.set_uri(uri);
-            }
-        }
-        request.headers.remove(header::HOST);
+        http2_target(request);
         return;
     }
     request.set_version(Version::HTTP_11);
@@ -113,6 +92,32 @@ pub(crate) fn set_target(request: &mut RequestHeader, http2: bool) {
         .cloned()
         .unwrap_or_else(|| http::uri::PathAndQuery::from_static("/"));
     request.set_uri(Uri::from(path));
+}
+
+/// The whole URI, as HTTP/2 wants it: its host goes to `:authority`, from `Host` when the client
+/// sent a path
+fn http2_target(request: &mut RequestHeader) {
+    request.set_version(Version::HTTP_2);
+    if request.uri.authority().is_none() {
+        let host = request
+            .headers
+            .get(header::HOST)
+            .and_then(|host| host.to_str().ok())
+            .unwrap_or("localhost");
+        let path = request
+            .uri
+            .path_and_query()
+            .map_or("/", http::uri::PathAndQuery::as_str);
+        let uri = Uri::builder()
+            .scheme("http")
+            .authority(host)
+            .path_and_query(path)
+            .build();
+        if let Ok(uri) = uri {
+            request.set_uri(uri);
+        }
+    }
+    request.headers.remove(header::HOST);
 }
 
 /// The upstream's response, without its connection's headers (`upgrade`: a `101`)

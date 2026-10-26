@@ -1,0 +1,1789 @@
+use std::{borrow::Cow, collections::BTreeMap, path::PathBuf};
+
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use figment::{
+    providers::{Env, Format, Serialized, Yaml},
+    Figment, Provider,
+};
+use hcl::Hcl;
+
+use serde::{Deserialize, Deserializer, Serialize};
+use tracing::level_filters::LevelFilter;
+
+pub mod admin;
+pub mod blocks;
+pub mod check;
+pub mod deprecations;
+pub(crate) mod hcl;
+pub mod host;
+pub mod kubernetes;
+pub mod listeners;
+pub mod notify;
+pub mod schema;
+pub mod server_tls;
+pub mod tcp;
+pub mod validate;
+pub mod watch;
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, ValueEnum, schemars::JsonSchema)]
+pub enum StoreType {
+    Memory,
+    Redis,
+    Sqlite,
+    Postgres,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, schemars::JsonSchema)]
+pub struct StoreConfig {
+    #[serde(deserialize_with = "store_type_deser")]
+    #[schemars(schema_with = "schema::store_type")]
+    pub store_type: StoreType,
+    pub redis_url: Option<String>,
+
+    /// Connection string for SQL stores (sqlite, postgres)
+    #[serde(default)]
+    pub database_url: Option<String>,
+
+    /// How often (in seconds) routes are synced from the store
+    #[serde(default = "default_sync_interval_secs")]
+    pub sync_interval_secs: u64,
+
+    /// Versions kept for each host, to roll back to (besides the active one)
+    #[serde(default = "default_history_per_host")]
+    pub history_per_host: usize,
+}
+
+impl Default for StoreConfig {
+    fn default() -> Self {
+        Self {
+            store_type: StoreType::Memory,
+            redis_url: None,
+            database_url: None,
+            sync_interval_secs: default_sync_interval_secs(),
+            history_per_host: default_history_per_host(),
+        }
+    }
+}
+
+fn default_sync_interval_secs() -> u64 {
+    10
+}
+
+fn default_history_per_host() -> usize {
+    super_store::DEFAULT_HISTORY
+}
+
+/// Cache settings shared by all routes
+#[derive(Debug, Serialize, Deserialize, Clone, schemars::JsonSchema)]
+pub struct CacheConfig {
+    /// Maximum size (in MB) of cached responses kept in memory, on top of the disk cache.
+    /// When reached, the least popular responses are only served from disk.
+    /// `0` disables keeping responses in memory.
+    #[serde(default = "default_cache_memory_limit_mb")]
+    pub memory_limit_mb: usize,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            memory_limit_mb: default_cache_memory_limit_mb(),
+        }
+    }
+}
+
+fn default_cache_memory_limit_mb() -> usize {
+    crate::cache::disk::memory::DEFAULT_MEMORY_LIMIT_MB
+}
+
+/// Default fn for boolean values
+fn bool_true() -> bool {
+    true
+}
+
+fn default_proto_version() -> ProtoVersion {
+    ProtoVersion::V1_3
+}
+
+fn default_proto_version_min() -> ProtoVersion {
+    ProtoVersion::V1_2
+}
+
+fn default_stale_secs() -> u32 {
+    60
+}
+
+fn default_cache_expire_secs() -> u64 {
+    3600
+}
+
+fn default_cache_type() -> RouteCacheType {
+    RouteCacheType::MemCache
+}
+
+fn default_cache_path() -> PathBuf {
+    PathBuf::from("/tmp")
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ValueEnum, schemars::JsonSchema)]
+pub(crate) enum DockerServiceMode {
+    Swarm,
+    Container,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Args, schemars::JsonSchema)]
+#[group(id = "docker")]
+pub struct Docker {
+    /// The interval (in seconds) to check for label updates
+    /// (default: every 15 seconds)
+    #[arg(
+        long = "docker.interval_secs",
+        required = false,
+        value_parser,
+        default_value = "15",
+        group = "docker",
+        id = "docker.interval_secs"
+    )]
+    pub interval_secs: Option<u64>,
+
+    /// The docker endpoint to connect to (can be a unix socket or a tcp address)
+    #[arg(
+        long = "docker.endpoint",
+        required = false,
+        value_parser,
+        default_value = "unix:///var/run/docker.sock"
+    )]
+    pub endpoint: Option<Cow<'static, str>>,
+
+    /// Enables the docker label service
+    /// (default: false)
+    #[arg(
+        long = "docker.enabled",
+        required = false,
+        value_parser,
+        default_value = "false",
+        id = "docker.enabled"
+    )]
+    pub enabled: Option<bool>,
+
+    /// Mode to use for the docker service
+    #[serde(deserialize_with = "docker_mode_deser")]
+    #[schemars(schema_with = "schema::docker_mode")]
+    #[arg(
+        long = "docker.mode",
+        required = false,
+        value_enum,
+        default_value = "container"
+    )]
+    pub mode: DockerServiceMode,
+}
+
+impl Default for Docker {
+    fn default() -> Self {
+        Self {
+            interval_secs: Some(15),
+            endpoint: Some(Cow::Borrowed("unix:///var/run/docker.sock")),
+            enabled: Some(false),
+            mode: DockerServiceMode::Container,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, schemars::JsonSchema)]
+pub struct LetsEncrypt {
+    /// The email to use for the let's encrypt account
+    pub email: Cow<'static, str>,
+    /// Whether to enable the background service that renews the certificates (default: true)
+    pub enabled: Option<bool>,
+
+    /// Use the staging let's encrypt server (default: true)
+    pub staging: Option<bool>,
+
+    /// Renewal check interval in seconds (default: 84600 - a day)
+    pub renew_interval_secs: Option<u64>,
+
+    /// The DNS provider for DNS-01 challenges (ADR 0009)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns: Option<DnsChallenge>,
+}
+
+/// `lets_encrypt { dns { ... } }`: where DNS-01 challenges' TXT records are written
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DnsChallenge {
+    pub provider: DnsProviderKind,
+    /// A token allowed to edit the DNS records of the zones served (`Zone:DNS:Edit`)
+    pub api_token: String,
+}
+
+/// The DNS providers supported for DNS-01 challenges
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DnsProviderKind {
+    Cloudflare,
+}
+
+impl Default for LetsEncrypt {
+    fn default() -> Self {
+        Self {
+            email: Cow::Borrowed("contact@example.com"),
+            enabled: Some(false),
+            staging: Some(true),
+            renew_interval_secs: Some(84_600),
+            dns: None,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, schemars::JsonSchema)]
+pub struct Path {
+    // TLS
+    /// Path to the certificates directory (where the certificates are stored)
+    pub lets_encrypt: PathBuf,
+    /// Where `openapi` keeps compiled contracts (default: `openapi` next to `lets_encrypt`)
+    #[serde(default)]
+    pub openapi: Option<PathBuf>,
+}
+
+impl Default for Path {
+    fn default() -> Self {
+        Self {
+            lets_encrypt: PathBuf::from("/etc/proksi/letsencrypt"),
+            openapi: None,
+        }
+    }
+}
+
+impl Path {
+    /// Where `openapi` keeps compiled contracts
+    pub fn openapi(&self) -> PathBuf {
+        self.openapi.clone().unwrap_or_else(|| {
+            self.lets_encrypt
+                .parent()
+                .map_or_else(|| PathBuf::from("openapi"), |parent| parent.join("openapi"))
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RouteHeaderAdd {
+    /// The name of the header
+    pub name: Cow<'static, str>,
+
+    /// The value of the header
+    pub value: Cow<'static, str>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RouteHeaderRemove {
+    /// The name of the header to remove (ex.: "Server")
+    pub name: Cow<'static, str>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RouteHeader {
+    /// The name of the header
+    pub add: Option<Vec<RouteHeaderAdd>>,
+
+    /// The value of the header
+    pub remove: Option<Vec<RouteHeaderRemove>>,
+
+    /// When response headers are changed, among the blocks of a location (0-100)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RouteUpstream {
+    /// The TCP address of the upstream (ex. 10.0.0.1/24 etc)
+    pub ip: Cow<'static, str>,
+
+    /// The port of the upstream (ex: 3000, 5000, etc.)
+    pub port: u16,
+
+    /// The network of the upstream (ex: 'public', 'shared') -- useful for docker discovery
+    pub network: Option<String>,
+
+    /// Optional: The weight of the upstream (ex: 1, 2, 3, etc.) --
+    /// used for weight-based load balancing.
+    pub weight: Option<i8>,
+
+    pub sni: Option<String>,
+
+    pub headers: Option<RouteHeader>,
+
+    /// What the address came from, when it isn't the one written: a docker label's upstream, or
+    /// a Kubernetes service (`name.namespace:port`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl Default for RouteUpstream {
+    fn default() -> Self {
+        RouteUpstream {
+            ip: Cow::Borrowed("127.0.0.1"),
+            port: 80,
+            network: None,
+            weight: None,
+            sni: None,
+            headers: None,
+            name: None,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RouteSslCertificate {
+    /// Whether to use a self-signed certificate if the certificate can't be
+    /// retrieved from the path or object storage (or generated from letsencrypt)
+    /// (defaults to true)
+    pub self_signed_on_failure: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RoutePathMatcher {
+    /// Optional: pattern to match the path
+    /// (ex: /api/v1/*)
+    pub patterns: Vec<Cow<'static, str>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RouteMatcher {
+    pub path: Option<RoutePathMatcher>,
+}
+
+pub use super_plugins::RoutePlugin;
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RouteSslPath {
+    /// Path to the certificate .key file (e.g. `/etc/proksi/certs/my-host.key`)
+    pub key: PathBuf,
+
+    /// Path to the certificate .pem file (e.g. `/etc/proksi/certs/my-host.pem`)
+    pub pem: PathBuf,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub enum ProtoVersion {
+    V1_1,
+    V1_2,
+    V1_3,
+}
+
+/// Converts a `super_core::tls::ssl::SslVersion` to a `ProtoVersion`
+impl From<super_core::tls::ssl::SslVersion> for ProtoVersion {
+    fn from(v: super_core::tls::ssl::SslVersion) -> Self {
+        match v {
+            super_core::tls::ssl::SslVersion::TLS1_1 => ProtoVersion::V1_1,
+            super_core::tls::ssl::SslVersion::TLS1_2 => ProtoVersion::V1_2,
+            _ => ProtoVersion::V1_3,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RouteSsl {
+    /// If provided, will be used instead of generating certificates from
+    /// Let's Encrypt or self-signed certificates.
+    pub path: Option<RouteSslPath>,
+
+    /// The minimum and maximum protocol versions that the client can use.
+    #[serde(
+        default = "default_proto_version_min",
+        deserialize_with = "proto_version_deser"
+    )]
+    #[schemars(schema_with = "schema::proto_version")]
+    pub min_proto: ProtoVersion,
+
+    /// The maximum protocol version that the client can use.
+    #[serde(
+        default = "default_proto_version",
+        deserialize_with = "proto_version_deser"
+    )]
+    #[schemars(schema_with = "schema::proto_version")]
+    pub max_proto: ProtoVersion,
+
+    /// If the `self_signed_on_failure` is set to <true>,
+    /// the server will use a self-signed certificate if the Let's Encrypt certificate
+    /// issuance fails. This is useful for development and testing purposes.
+    ///
+    /// If the `self_signed_on_failure` is set to <false>
+    /// and let's encrypt fails to issue a certificate,
+    /// the server will respond with a SNI error that closes the connection.
+    ///
+    /// The default value is <true>.
+    #[serde(default = "bool_true")]
+    pub self_signed_fallback: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, schemars::JsonSchema)]
+pub enum RouteCacheType {
+    Disk,
+    MemCache,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct RouteCache {
+    pub enabled: Option<bool>,
+
+    #[serde(
+        default = "default_cache_type",
+        deserialize_with = "deserialize_cache_type"
+    )]
+    #[schemars(schema_with = "schema::cache_type")]
+    pub cache_type: RouteCacheType,
+
+    #[serde(default = "default_cache_expire_secs")]
+    pub expires_in_secs: u64,
+    #[serde(default = "default_stale_secs")]
+    pub stale_if_error_secs: u32,
+    #[serde(default = "default_stale_secs")]
+    pub stale_while_revalidate_secs: u32,
+
+    #[serde(default = "default_cache_path")]
+    pub path: PathBuf,
+
+    /// When the cache is enabled for a request, among the blocks of a location (0-100)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
+pub struct Route {
+    /// The hostname that the proxy will accept
+    /// requests for the upstreams in the route.
+    /// (ex: 'example.com', 'www.example.com', etc.)
+    ///
+    /// This is the host header that the proxy will match and will
+    /// also be used to create the certificate for the domain when `letsencrypt` is enabled.
+    pub host: Cow<'static, str>,
+
+    pub cache: Option<RouteCache>,
+
+    /// Plugins that will be applied to the route/host
+    /// (ex: rate limiting, oauth2, etc.)
+    pub plugins: Option<Vec<RoutePlugin>>,
+
+    /// SSL certificate configurations for the given host
+    /// (ex: self-signed, path/object storage, etc.)
+    pub ssl_certificate: Option<RouteSslCertificate>,
+
+    /// SSL configuration for the route
+    pub ssl: Option<RouteSsl>,
+
+    /// Header modifications for the given route (remove, add, etc. )
+    pub headers: Option<RouteHeader>,
+
+    /// The upstreams to which the request will be proxied,
+    pub upstreams: Vec<RouteUpstream>,
+
+    /// The matcher for the route
+    /// (ex: path, query, etc.)
+    pub match_with: Option<RouteMatcher>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, ValueEnum, schemars::JsonSchema)]
+pub enum LogLevel {
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Trace,
+}
+
+/// Transforms our custom `LogLevel` enum into a `tracing::level_filters::LevelFilter`
+/// enum used by the `tracing` crate.
+impl From<&LogLevel> for tracing::level_filters::LevelFilter {
+    fn from(val: &LogLevel) -> Self {
+        match val {
+            LogLevel::Debug => LevelFilter::DEBUG,
+            LogLevel::Info => LevelFilter::INFO,
+            LogLevel::Warn => LevelFilter::WARN,
+            LogLevel::Error => LevelFilter::ERROR,
+            LogLevel::Trace => LevelFilter::TRACE,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, Eq, PartialEq, schemars::JsonSchema)]
+pub enum LogRotation {
+    #[default]
+    Never,
+    Daily,
+    Hourly,
+    Minutely,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, ValueEnum, schemars::JsonSchema)]
+pub enum LogFormat {
+    Json,
+    Pretty,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Args, schemars::JsonSchema)]
+#[group(id = "logging", requires = "level")]
+pub struct Logging {
+    /// If logging is enabled at all. Setting this to `false` will disable all logging output.
+    #[arg(
+        long = "log.enabled",
+        required = false,
+        value_parser,
+        default_value = "true",
+        id = "log.enabled"
+    )]
+    pub enabled: bool,
+
+    /// The level of logging to be used.
+    #[serde(deserialize_with = "log_level_deser")]
+    #[schemars(schema_with = "schema::log_level")]
+    #[arg(
+        long = "log.level",
+        required = false,
+        value_enum,
+        default_value = "info"
+    )]
+    pub level: LogLevel,
+
+    /// Whether to log access logs (request, duration, headers etc).
+    #[arg(
+        long = "log.access_logs_enabled",
+        required = false,
+        value_parser,
+        default_value = "true"
+    )]
+    pub access_logs_enabled: bool,
+
+    /// Whether to log error logs (errors, panics, etc) from the Rust runtime.
+    #[arg(
+        long = "log.error_logs_enabled",
+        required = false,
+        value_parser,
+        default_value = "true"
+    )]
+    pub error_logs_enabled: bool,
+
+    /// The format of the log output
+    #[serde(deserialize_with = "log_format_deser")]
+    #[schemars(schema_with = "schema::log_format")]
+    #[arg(
+        long = "log.format",
+        required = false,
+        value_enum,
+        default_value = "json"
+    )]
+    pub format: LogFormat,
+
+    /// If set, logs will be written to the specified file
+    #[arg(long = "log.path", required = false, value_parser)]
+    pub path: Option<PathBuf>,
+
+    #[clap(skip)]
+    #[serde(deserialize_with = "log_rotation_deser", default)]
+    #[schemars(schema_with = "schema::log_rotation")]
+    pub rotation: LogRotation,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Args, schemars::JsonSchema)]
+#[group(id = "auto_reload")]
+pub struct AutoReload {
+    /// Enables the auto-reload service
+    #[arg(long = "auto_reload.enabled", default_value = "false")]
+    pub enabled: Option<bool>,
+
+    /// The interval (in seconds) to check for changes in the configuration file
+    #[arg(
+        long = "auto_reload.interval_secs",
+        default_value = "30",
+        group = "auto_reload",
+        id = "auto_reload.interval_secs"
+    )]
+    pub interval_secs: Option<u64>,
+
+    #[clap(skip)]
+    pub paths: Vec<PathBuf>,
+}
+
+impl Default for AutoReload {
+    fn default() -> Self {
+        Self {
+            enabled: Some(false),
+            interval_secs: Some(30),
+            paths: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Parser, schemars::JsonSchema)]
+pub struct ServerCfg {
+    /// The address to bind the HTTPS server to.
+    #[arg(
+        long = "server.https_address",
+        required = false,
+        value_parser,
+        default_value = "0.0.0.0:443"
+    )]
+    pub https_address: Option<Cow<'static, str>>,
+
+    /// The address used to solve challenges (only HTTP)
+    #[arg(
+        long = "server.http_address",
+        required = false,
+        value_parser,
+        default_value = "0.0.0.0:80"
+    )]
+    pub http_address: Option<Cow<'static, str>>,
+
+    /// Proxies (addresses or networks) in front of proksi, whose `X-Forwarded-For` is trusted
+    /// to find the client of a request (for `rate_limit` and access logs)
+    #[arg(skip)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trusted_proxies: Vec<String>,
+
+    /// How long open connections are given to finish when proksi stops, in seconds (default:
+    /// 30). Proksi stops as soon as they're all closed.
+    #[arg(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shutdown_timeout_secs: Option<u64>,
+
+    /// Timeouts toward clients, and toward upstreams unless a host or location sets them
+    #[arg(skip)]
+    #[serde(default)]
+    pub timeouts: ClientTimeouts,
+
+    /// TLS versions and cipher suites accepted from clients
+    #[arg(skip)]
+    #[serde(default)]
+    pub tls: server_tls::ServerTls,
+
+    /// Whether worker threads take over each other's connections (default: `true`). Without it,
+    /// each connection stays on the thread that accepted it: less CPU per request with cores to
+    /// spare, less throughput when proksi gets less CPU than it has threads.
+    #[arg(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_stealing: Option<bool>,
+
+    /// `rule "<name>" { ... }`, in order: every request, before its host is chosen (ADR 0007)
+    #[arg(skip)]
+    #[serde(
+        default,
+        deserialize_with = "crate::rules::one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    #[schemars(with = "crate::rules::schema::RuleList")]
+    pub rule: Vec<crate::rules::Rule>,
+}
+
+impl ServerCfg {
+    /// How long open connections are given to finish when proksi stops
+    pub fn shutdown_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.shutdown_timeout_secs.unwrap_or(30))
+    }
+
+    /// Whether worker threads take over each other's connections (`server.work_stealing`)
+    pub fn work_stealing(&self) -> bool {
+        self.work_stealing.unwrap_or(true)
+    }
+}
+
+/// Timeouts toward clients (`server.timeouts`), in seconds, and the defaults toward upstreams
+// Named like the other durations of the configuration (`*_secs`)
+#[allow(clippy::struct_field_names)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(default)]
+pub struct ClientTimeouts {
+    /// How long a connection can wait for a request, or for each read of its headers, including
+    /// between requests on a kept-alive connection (HTTP/2: without any request)
+    pub idle_secs: u64,
+    /// How long each read of a request body can wait
+    pub read_secs: u64,
+    /// How long each write of a response can wait for the client to read
+    pub write_secs: u64,
+    /// How long the whole body of a request can take to arrive, after its headers (default: no
+    /// limit)
+    pub body_secs: Option<u64>,
+    /// Toward upstreams, unless a host or location sets them
+    pub upstream: host::UpstreamTimeouts,
+}
+
+impl Default for ClientTimeouts {
+    fn default() -> Self {
+        Self {
+            idle_secs: 60,
+            read_secs: 60,
+            write_secs: 60,
+            body_secs: None,
+            upstream: host::UpstreamTimeouts::default(),
+        }
+    }
+}
+
+/// What `proksi <command>` does instead of serving
+#[derive(Debug, Clone, PartialEq, Subcommand)]
+pub(crate) enum Command {
+    /// Loads and checks the configuration, as when starting, without starting anything
+    Check {
+        /// The configuration file, or a directory with `proksi.hcl` or `proksi.yaml`
+        #[arg(short, long)]
+        config_path: Option<String>,
+    },
+}
+
+/// The main configuration struct.
+/// A configuration file (YAML, TOML or through ENV) will be parsed into this struct.
+/// Example:
+///
+/// ```yaml
+///
+/// # Example configuration file
+/// service_name: "proksi"
+/// logging:
+///   level: "INFO"
+///   access_logs_enabled: true
+///   error_logs_enabled: false
+/// letsencrypt:
+///   enabled: true
+///   email: "youremail@example.com"
+///   production: true
+/// paths:
+///   config_file: "/etc/proksi/config.toml"
+///   lets_encrypt: "/etc/proksi/letsencrypt"
+/// routes:
+///   - host: "example.com"
+///     match_with:
+///       path:
+///         patterns:
+///          - "/api/v1/*"
+///     headers:
+///       add:
+///         - name: "X-Forwarded-For"
+///           value: "<value>"
+///         - name: "X-Api-Version"
+///           value: "1.0"
+///       remove:
+///         - name: "Server"
+///     upstreams:
+///       - ip: "10.1.2.24/24"
+///         port: 3000
+///         network: "public"
+///       - ip: "10.1.2.23/24"
+///         port: 3000
+///         network: "shared"
+/// ```
+///
+#[derive(Debug, Serialize, Deserialize, Parser, schemars::JsonSchema)]
+#[command(name = "Super")]
+#[command(version, about, long_about = None)]
+pub(crate) struct Config {
+    /// What to do instead of serving (nothing: serve)
+    #[command(subcommand)]
+    #[serde(skip)]
+    pub command: Option<Command>,
+
+    /// The name of the service (will appear as a log property)
+    #[serde(default)]
+    #[clap(short, long, default_value = "proksi")]
+    pub service_name: Cow<'static, str>,
+
+    /// Store configuration for certificate storage
+    #[clap(skip)]
+    pub store: StoreConfig,
+
+    /// Cache configuration (shared by all routes)
+    #[clap(skip)]
+    #[serde(default)]
+    pub cache: CacheConfig,
+
+    #[command(flatten)]
+    pub server: ServerCfg,
+
+    /// Runs the service in the background (daemon mode)
+    #[clap(short, long, default_value = "false")]
+    pub daemon: bool,
+
+    /// Upgrades the service from an existing running instance
+    #[clap(short, long, default_value = "false")]
+    pub upgrade: bool,
+
+    /// The number of worker threads to be used by the HTTPS proxy service.
+    /// Defaults to 80% of the available CPUs (at least 2).
+    ///
+    /// For background services the default is always (1) and cannot be changed.
+    #[clap(short, long, required = false)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_threads: Option<usize>,
+
+    /// The PATH to the configuration file to be used.
+    ///
+    /// The configuration file should be named either `proksi.hcl` or `proksi.yaml`
+    ///
+    /// and be present in that path. If no path is provided, a minimal default
+    /// configuration will be used.
+    #[clap(short, required = false, long)]
+    #[allow(clippy::struct_field_names)]
+    pub config_path: Option<Cow<'static, str>>,
+
+    /// General config
+    #[command(flatten)]
+    pub logging: Logging,
+
+    #[command(flatten)]
+    pub auto_reload: AutoReload,
+
+    #[command(flatten)]
+    pub docker: Docker,
+
+    #[clap(skip)]
+    pub lets_encrypt: LetsEncrypt,
+
+    /// Configuration for paths (TLS, config file, etc.)
+    #[clap(skip)]
+    pub paths: Path,
+
+    /// The routes to be proxied to (deprecated: use `host` blocks).
+    #[clap(skip)]
+    pub routes: Vec<Route>,
+
+    /// Hosts defined with `host "<name>" { ... }` blocks (ADR 0003)
+    #[clap(skip)]
+    #[serde(default)]
+    pub host: BTreeMap<String, blocks::HostBlock>,
+
+    /// TCP proxying without a host (`tcp "<name>" { ... }`, ADR 0003)
+    #[clap(skip)]
+    #[serde(default)]
+    pub tcp: BTreeMap<String, blocks::TcpBlock>,
+
+    /// The Kubernetes ingress controller (`kubernetes { ... }`, ADR 0005)
+    #[clap(skip)]
+    #[serde(default)]
+    pub kubernetes: kubernetes::KubernetesConfig,
+
+    /// The admin API and metrics (`admin { ... }`, ADR 0004), off without it
+    #[clap(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admin: Option<admin::AdminConfig>,
+
+    /// Webhooks told about what happens to Proksi (`notify "<name>" { ... }`)
+    #[clap(skip)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub notify: BTreeMap<String, notify::NotifyBlock>,
+    // Listeners -- a list of specific listeners and upstrems
+    // that don't necessarily need to be HTTP/HTTPS related
+    // pub listeners: Vec<ConfigListener>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            command: None,
+            config_path: Some(Cow::Borrowed("/etc/proksi/config")),
+            service_name: Cow::Borrowed("proksi"),
+            server: ServerCfg {
+                https_address: Some(Cow::Borrowed("0.0.0.0:443")),
+                http_address: Some(Cow::Borrowed("0.0.0.0:80")),
+                trusted_proxies: vec![],
+                timeouts: ClientTimeouts::default(),
+                tls: server_tls::ServerTls::default(),
+                shutdown_timeout_secs: None,
+                work_stealing: None,
+                rule: vec![],
+            },
+            worker_threads: Some(default_worker_threads()),
+            upgrade: false,
+            daemon: false,
+            docker: Docker::default(),
+            lets_encrypt: LetsEncrypt::default(),
+            routes: vec![],
+            host: BTreeMap::new(),
+            tcp: BTreeMap::new(),
+            admin: None,
+            notify: BTreeMap::new(),
+            kubernetes: kubernetes::KubernetesConfig::default(),
+            auto_reload: AutoReload::default(),
+            store: StoreConfig::default(),
+            cache: CacheConfig::default(),
+            logging: Logging {
+                enabled: true,
+                level: LogLevel::Info,
+                access_logs_enabled: true,
+                error_logs_enabled: true,
+                format: LogFormat::Json,
+                path: None,
+                rotation: LogRotation::Never,
+            },
+            paths: Path::default(),
+        }
+    }
+}
+
+impl Config {
+    /// Every host of the configuration file: `host` blocks, then `routes` (deprecated).
+    /// Invalid host blocks are skipped (`check_config` rejects them when loading).
+    pub fn hosts(&self) -> Vec<host::Host> {
+        let blocks = self.host.iter().filter_map(|(name, block)| {
+            block
+                .to_host(name)
+                .map_err(|err| tracing::warn!("skipping host {name}: {err}"))
+                .ok()
+        });
+        blocks
+            .chain(self.routes.iter().map(host::Host::from_route))
+            .collect()
+    }
+}
+
+// impl Config {
+//     // Allow the configuration to be extracted from any `Provider`.
+//     fn from<T: figment::Provider>(provider: T) -> Result<Config, figment::Error> {
+//         Figment::from(provider).extract()
+//     }
+
+//     // Provide a default provider, a `Figment`.
+//     fn figment() -> Figment {
+//         use figment::providers::Env;
+
+//         // In reality, whatever the library desires.
+//         Figment::from(Config::default()).merge(Env::prefixed("APP_"))
+//     }
+// }
+
+/// Implement the `Provider` trait for the `Config` struct.
+/// This allows the `Config` struct to be used as a configuration provider with *defaults*.
+impl Provider for Config {
+    fn metadata(&self) -> figment::Metadata {
+        figment::Metadata::named("proksi")
+    }
+
+    fn data(
+        &self,
+    ) -> Result<figment::value::Map<figment::Profile, figment::value::Dict>, figment::Error> {
+        Serialized::defaults(Config::default()).data()
+    }
+}
+
+/// Load the configuration from the configuration file(s) as a `Config` struct.
+/// In theory one could create all 3 configurations formats and they will overlap each other
+///
+/// Nested keys can be separated by double underscores (__) in the environment variables.
+/// E.g. `PROKSI__LOGGING__LEVEL=DEBUG` will set the `level` key in the
+/// `logging` key in the `proksi` key.
+#[allow(clippy::result_large_err)]
+pub fn load(fallback: &str) -> Result<Config, figment::Error> {
+    let parsed_commands = Config::parse();
+
+    let path_with_fallback = match &parsed_commands.config_path {
+        Some(path) => path.as_ref(),
+        None => fallback,
+    };
+
+    // Check if no explicit config path was provided by the user
+    let use_minimal_default = parsed_commands.config_path.is_none();
+
+    let config = load_from_path(path_with_fallback, &parsed_commands, use_minimal_default)?;
+    // The specs of `openapi` blocks are loaded once their cache is known
+    super_plugins::openapi::set_cache_dir(config.paths.openapi());
+    Ok(config)
+}
+
+/// Default number of worker threads: 80% of the available CPUs (respecting container
+/// CPU limits), but at least 2
+fn default_worker_threads() -> usize {
+    (num_cpus::get() * 4 / 5).max(2)
+}
+
+/// Test-friendly version of load that doesn't parse command line arguments
+#[cfg(test)]
+#[allow(clippy::result_large_err)]
+pub(crate) fn load_for_test(fallback: &str) -> Result<Config, figment::Error> {
+    let default_config = Config::default();
+
+    // For tests, always use the regular behavior (no minimal default)
+    // since tests should be explicit about what they're testing
+    load_from_path(fallback, &default_config, false)
+}
+
+/// Creates a minimal default configuration with Let's Encrypt disabled.
+/// This is used when no configuration file is found.
+fn create_minimal_default_config() -> Config {
+    let mut config = Config::default();
+    // Disable Let's Encrypt by default in minimal config
+    config.lets_encrypt.enabled = Some(false);
+    config
+}
+
+/// A configuration file, read by its extension: YAML, HCL, or both formats for others
+fn merge_file(figment: Figment, path: &str) -> Figment {
+    let extension = std::path::Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str());
+    match extension {
+        Some("yml" | "yaml") => figment.merge(Yaml::file(path)),
+        Some("hcl") => figment.merge(Hcl::file(path)),
+        _ => figment.merge(Yaml::file(path)).merge(Hcl::file(path)),
+    }
+}
+
+/// Load configuration from a specific path, used for testing and internal logic
+#[allow(clippy::result_large_err)]
+pub(crate) fn load_from_path(
+    config_path: &str,
+    parsed_commands: &Config,
+    use_minimal_default: bool,
+) -> Result<Config, figment::Error> {
+    let mut figment = Figment::new()
+        .merge(Config::default())
+        .merge(Serialized::defaults(parsed_commands));
+
+    // Check if the path is a file or directory
+    if std::path::Path::new(config_path).is_file() {
+        figment = merge_file(figment, config_path);
+    } else {
+        // If it's a directory, check if any config files exist
+        let config_files = [
+            format!("{config_path}/proksi.yml"),
+            format!("{config_path}/proksi.yaml"),
+            format!("{config_path}/proksi.hcl"),
+        ];
+
+        let config_files_found = config_files
+            .iter()
+            .any(|config_file| std::path::Path::new(config_file).exists());
+
+        if config_files_found {
+            // If at least one config file exists, use the original behavior
+            figment = figment
+                .merge(Yaml::file(format!("{config_path}/proksi.yml")))
+                .merge(Yaml::file(format!("{config_path}/proksi.yaml")))
+                .merge(Hcl::file(format!("{config_path}/proksi.hcl")));
+        } else if use_minimal_default {
+            // No config files found and user didn't explicitly provide a path
+            eprintln!(
+                "Warning: No configuration files found. Using minimal default configuration with Let's Encrypt disabled."
+            );
+            figment = figment.merge(Serialized::defaults(create_minimal_default_config()));
+        } else {
+            // Use original behavior - try to load the files anyway (figment will handle missing files)
+            figment = figment
+                .merge(Yaml::file(format!("{config_path}/proksi.yml")))
+                .merge(Yaml::file(format!("{config_path}/proksi.yaml")))
+                .merge(Hcl::file(format!("{config_path}/proksi.hcl")));
+        }
+    }
+
+    let config: Config = figment
+        .merge(Env::prefixed("PROKSI_").split("__"))
+        .extract()?;
+
+    // validate configuration and throw error upwards
+    validate::check_config(&config).map_err(|err| figment::Error::from(err.to_string()))?;
+
+    Ok(config)
+}
+
+/// Deserialize function to convert a string to a `LogLevel` Enum
+fn log_level_deser<'de, D>(deserializer: D) -> Result<LogLevel, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "debug" => Ok(LogLevel::Debug),
+        "info" => Ok(LogLevel::Info),
+        "warn" => Ok(LogLevel::Warn),
+        "error" => Ok(LogLevel::Error),
+        "trace" => Ok(LogLevel::Trace),
+        _ => Err(serde::de::Error::custom(
+            "expected one of DEBUG, INFO, WARN, ERROR, TRACE",
+        )),
+    }
+}
+
+/// Deserialize function to convert a string to a `DockerServiceMode` Enum
+fn docker_mode_deser<'de, D>(deserializer: D) -> Result<DockerServiceMode, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "swarm" => Ok(DockerServiceMode::Swarm),
+        "container" => Ok(DockerServiceMode::Container),
+        _ => Err(serde::de::Error::custom(
+            "expected one of: Swarm, Container",
+        )),
+    }
+}
+
+/// Deserialize function to convert a string to a `LogLevel` Enum
+fn log_format_deser<'de, D>(deserializer: D) -> Result<LogFormat, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "json" => Ok(LogFormat::Json),
+        "pretty" => Ok(LogFormat::Pretty),
+        _ => Err(serde::de::Error::custom("expected one of: json, pretty")),
+    }
+}
+
+fn log_rotation_deser<'de, D>(deserializer: D) -> Result<LogRotation, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "daily" => Ok(LogRotation::Daily),
+        "hourly" => Ok(LogRotation::Hourly),
+        "minutely" => Ok(LogRotation::Minutely),
+        "never" => Ok(LogRotation::Never),
+        _ => Err(serde::de::Error::custom(
+            "expected one of: daily, hourly, minutely, never",
+        )),
+    }
+}
+
+/// Deserialize function to convert a string to a `LogLevel` Enum
+fn proto_version_deser<'de, D>(deserializer: D) -> Result<ProtoVersion, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "v1.1" => Ok(ProtoVersion::V1_1),
+        "v1.2" => Ok(ProtoVersion::V1_2),
+        "v1.3" => Ok(ProtoVersion::V1_3),
+        _ => Err(serde::de::Error::custom(
+            "expected one of: v1.1, v1.2, v1.3",
+        )),
+    }
+}
+
+fn deserialize_cache_type<'de, D>(deserializer: D) -> Result<RouteCacheType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "disk" => Ok(RouteCacheType::Disk),
+        "memcache" => Ok(RouteCacheType::MemCache),
+        _ => Err(serde::de::Error::custom("expected one of: disk, memcache")),
+    }
+}
+
+fn store_type_deser<'de, D>(deserializer: D) -> Result<StoreType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "memory" => Ok(StoreType::Memory),
+        "redis" => Ok(StoreType::Redis),
+        "sqlite" => Ok(StoreType::Sqlite),
+        "postgres" => Ok(StoreType::Postgres),
+        _ => Err(serde::de::Error::custom(
+            "expected one of: memory, redis, sqlite, postgres",
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_work_stealing_is_on_unless_turned_off() {
+        let server = |value| serde_json::from_value::<ServerCfg>(value).unwrap();
+
+        assert!(server(json!({})).work_stealing());
+        assert!(!server(json!({ "work_stealing": false })).work_stealing());
+    }
+
+    #[test]
+    fn test_store_config() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+
+            jail.create_file(
+                format!("{}/proksi.yaml", tmp_dir),
+                r#"
+                lets_encrypt:
+                  email: "user@domain.net"
+                store:
+                  store_type: "redis"
+                  redis_url: "redis://localhost:6379"
+                "#,
+            )?;
+
+            let config = load_for_test(&tmp_dir);
+            let proxy_config = config.unwrap();
+
+            assert!(matches!(proxy_config.store.store_type, StoreType::Redis));
+            assert_eq!(
+                proxy_config.store.redis_url,
+                Some("redis://localhost:6379".to_string())
+            );
+
+            Ok(())
+        });
+
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+
+            jail.create_file(
+                format!("{}/proksi.yaml", tmp_dir),
+                r#"
+                lets_encrypt:
+                  email: "user@domain.net"
+                store:
+                  store_type: "memory"
+                "#,
+            )?;
+
+            let config = load_for_test(&tmp_dir);
+            let proxy_config = config.unwrap();
+
+            assert!(matches!(proxy_config.store.store_type, StoreType::Memory));
+            assert_eq!(proxy_config.store.redis_url, None);
+
+            Ok(())
+        });
+    }
+
+    fn helper_config_file() -> &'static str {
+        r#"
+        service_name: "proksi"
+        lets_encrypt:
+          email: "user@domain.net"
+        logging:
+          level: "INFO"
+          access_logs_enabled: true
+          error_logs_enabled: false
+        paths:
+          lets_encrypt: "/test/letsencrypt"
+        routes:
+          - host: "example.com"
+            plugins:
+              - name: "cors"
+                config:
+                  allowed_origins: ["*"]
+            headers:
+              add:
+                - name: "X-Forwarded-For"
+                  value: "<value>"
+                - name: "X-Api-Version"
+                  value: "1.0"
+              remove:
+                - name: "Server"
+            upstreams:
+              - ip: "10.0.1.3/25"
+                port: 3000
+                network: "public"
+      "#
+    }
+
+    #[test]
+    fn test_load_config_from_yaml() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+
+            jail.create_file(format!("{}/proksi.yaml", tmp_dir), helper_config_file())?;
+
+            let config = load_for_test(&tmp_dir);
+            let proxy_config = config.unwrap();
+            assert_eq!(proxy_config.service_name, "proksi");
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_load_config_from_direct_file_path_hcl() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+            let config_file_path = format!("{}/custom_config.hcl", tmp_dir);
+
+            jail.create_file(
+                &config_file_path,
+                r#"
+                lets_encrypt {
+                  enabled = false
+                  email = "test@domain.com"
+                }
+
+                routes = [
+                  {
+                    host = "example.localhost",
+                    upstreams = [
+                      {
+                        ip = "localhost"
+                        port = 3000
+                      }
+                    ]
+                  }
+                ]
+                "#,
+            )?;
+
+            // Create a default config to use as parsed_commands
+            let default_config = Config::default();
+            let config = load_from_path(&config_file_path, &default_config, false);
+            let proxy_config = config.unwrap();
+
+            assert_eq!(proxy_config.routes.len(), 1);
+            assert_eq!(proxy_config.routes[0].host, "example.localhost");
+            assert_eq!(proxy_config.routes[0].upstreams[0].port, 3000);
+            assert!(!proxy_config.lets_encrypt.enabled.unwrap_or(true));
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_load_config_from_direct_file_path_yaml() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+            let config_file_path = format!("{}/custom_config.yml", tmp_dir);
+
+            jail.create_file(
+                &config_file_path,
+                r#"
+                lets_encrypt:
+                  enabled: false
+                  email: "test@domain.com"
+
+                routes:
+                  - host: "yaml.localhost"
+                    upstreams:
+                      - ip: "localhost"
+                        port: 3001
+                "#,
+            )?;
+
+            // Create a default config to use as parsed_commands
+            let default_config = Config::default();
+            let config = load_from_path(&config_file_path, &default_config, false);
+            let proxy_config = config.unwrap();
+
+            assert_eq!(proxy_config.routes.len(), 1);
+            assert_eq!(proxy_config.routes[0].host, "yaml.localhost");
+            assert_eq!(proxy_config.routes[0].upstreams[0].port, 3001);
+            assert!(!proxy_config.lets_encrypt.enabled.unwrap_or(true));
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_lets_encrypt_validation_when_disabled() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+
+            jail.create_file(
+                format!("{}/proksi.yaml", tmp_dir),
+                r#"
+                lets_encrypt:
+                  enabled: false
+                  email: "contact@example.com"  # This should not cause validation error when disabled
+
+                routes:
+                  - host: "test.localhost"
+                    upstreams:
+                      - ip: "localhost"
+                        port: 3000
+                "#,
+            )?;
+
+            let config = load_for_test(&tmp_dir);
+            // This should not panic or return error due to @example.com email when Let's Encrypt is disabled
+            assert!(config.is_ok());
+            let proxy_config = config.unwrap();
+            assert!(!proxy_config.lets_encrypt.enabled.unwrap_or(true));
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_lets_encrypt_validation_when_enabled() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+
+            jail.create_file(
+                format!("{}/proksi.yaml", tmp_dir),
+                r#"
+                lets_encrypt:
+                  enabled: true
+                  email: "contact@example.com"  # This should cause validation error when enabled
+
+                routes:
+                  - host: "test.localhost"
+                    upstreams:
+                      - ip: "localhost"
+                        port: 3000
+                "#,
+            )?;
+
+            let config = load_for_test(&tmp_dir);
+            // This should return an error due to @example.com email when Let's Encrypt is enabled
+            assert!(config.is_err());
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_load_config_from_yaml_and_env_vars() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                format!("{}/proksi.yaml", jail.directory().to_str().unwrap()),
+                helper_config_file(),
+            )?;
+            jail.set_env("PROKSI_SERVICE_NAME", "new_name");
+            jail.set_env("PROKSI_LOGGING__ENABLED", "false");
+            jail.set_env("PROKSI_LOGGING__LEVEL", "warn");
+            jail.set_env("PROKSI_DOCKER__ENABLED", "true");
+            jail.set_env("PROKSI_DOCKER__INTERVAL_SECS", "30");
+            jail.set_env("PROKSI_DOCKER__ENDPOINT", "http://localhost:2375");
+            jail.set_env("PROKSI_LETS_ENCRYPT__STAGING", "false");
+            jail.set_env("PROKSI_LETS_ENCRYPT__EMAIL", "my-real-email@domain.com");
+            jail.set_env("PROKSI_LETS_ENCRYPT__RENEW_INTERVAL_SECS", "60");
+            jail.set_env(
+                "PROKSI_ROUTES",
+                r#"[{
+              host="changed.example.com",
+              match_with={ path={ patterns=["/api/v1/:entity/:action*"] } },
+              plugins=[{ name="cors", config={ allowed_origins=["*"] } }],
+              upstreams=[{ ip="10.0.1.2/24", port=3000, weight=1 }] }]
+            "#,
+            );
+
+            let config = load_for_test(jail.directory().to_str().unwrap());
+
+            let proxy_config = config.unwrap();
+            assert_eq!(proxy_config.service_name, "new_name");
+            assert!(!proxy_config.logging.enabled);
+            assert_eq!(proxy_config.logging.level, LogLevel::Warn);
+
+            assert_eq!(proxy_config.docker.enabled, Some(true));
+            assert_eq!(proxy_config.docker.interval_secs, Some(30));
+            assert_eq!(
+                proxy_config.docker.endpoint,
+                Some(Cow::Borrowed("http://localhost:2375"))
+            );
+
+            assert_eq!(proxy_config.lets_encrypt.staging, Some(false));
+            assert_eq!(proxy_config.lets_encrypt.email, "my-real-email@domain.com");
+            assert_eq!(proxy_config.lets_encrypt.renew_interval_secs, Some(60));
+
+            assert_eq!(proxy_config.routes[0].host, "changed.example.com");
+            assert_eq!(proxy_config.routes[0].upstreams[0].ip, "10.0.1.2/24");
+
+            let matcher = proxy_config.routes[0].match_with.as_ref().unwrap();
+
+            assert_eq!(
+                matcher.path.as_ref().unwrap().patterns,
+                vec![Cow::Borrowed("/api/v1/:entity/:action*")]
+            );
+
+            assert_eq!(
+                proxy_config.paths.lets_encrypt,
+                PathBuf::from("/test/letsencrypt")
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_load_config_with_defaults_only() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("PROKSI_LETS_ENCRYPT__EMAIL", "my-real-email@domain.com");
+            let config = load_for_test("/non-existent");
+            let proxy_config = config.unwrap();
+
+            let logging = proxy_config.logging;
+            assert_eq!(proxy_config.service_name, "proksi");
+            assert_eq!(logging.level, LogLevel::Info);
+            assert!(logging.access_logs_enabled);
+            assert!(logging.error_logs_enabled);
+
+            assert_eq!(proxy_config.routes.len(), 0);
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_store_sync_config() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy().to_string();
+            jail.create_file(format!("{tmp_dir}/proksi.hcl"), r#"service_name = "store""#)?;
+            let config = load_for_test(&tmp_dir).unwrap();
+            assert_eq!(config.store.sync_interval_secs, 10);
+            assert_eq!(config.store.database_url, None);
+
+            jail.create_file(
+                format!("{tmp_dir}/proksi.hcl"),
+                r#"
+                store {
+                  store_type = "redis"
+                  redis_url = "redis://localhost:6379"
+                  sync_interval_secs = 30
+                }
+                "#,
+            )?;
+            let config = load_for_test(&tmp_dir).unwrap();
+            assert_eq!(config.store.sync_interval_secs, 30);
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_sql_store_types() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy().to_string();
+            for (store_type, expected) in [
+                ("sqlite", StoreType::Sqlite),
+                ("Postgres", StoreType::Postgres),
+            ] {
+                jail.create_file(
+                    format!("{tmp_dir}/proksi.hcl"),
+                    &format!(
+                        "store {{\n  store_type = \"{store_type}\"\n  database_url = \"db://url\"\n}}"
+                    ),
+                )?;
+                let config = load_for_test(&tmp_dir).unwrap();
+                assert_eq!(config.store.store_type, expected);
+                assert_eq!(config.store.database_url.as_deref(), Some("db://url"));
+            }
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_default_worker_threads() {
+        let expected = (num_cpus::get() * 4 / 5).max(2);
+
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy().to_string();
+            jail.create_file(
+                format!("{tmp_dir}/proksi.hcl"),
+                r#"service_name = "no-worker-threads""#,
+            )?;
+
+            // Nothing set (no CLI flag, nothing in the file)
+            let cli = Config::parse_from(["proksi"]);
+            let config = load_from_path(&tmp_dir, &cli, false).unwrap();
+            assert_eq!(config.worker_threads, Some(expected));
+            assert!(config.worker_threads.unwrap() >= 2);
+
+            // CLI flag
+            let cli = Config::parse_from(["proksi", "--worker-threads", "7"]);
+            let config = load_from_path(&tmp_dir, &cli, false).unwrap();
+            assert_eq!(config.worker_threads, Some(7));
+
+            // Configuration file
+            jail.create_file(format!("{tmp_dir}/proksi.hcl"), "worker_threads = 3")?;
+            let cli = Config::parse_from(["proksi"]);
+            let config = load_from_path(&tmp_dir, &cli, false).unwrap();
+            assert_eq!(config.worker_threads, Some(3));
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_cache_memory_limit() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy().to_string();
+            jail.create_file(format!("{tmp_dir}/proksi.hcl"), r#"service_name = "cache""#)?;
+            let config = load_for_test(&tmp_dir).unwrap();
+            assert_eq!(config.cache.memory_limit_mb, 256);
+
+            jail.create_file(
+                format!("{tmp_dir}/proksi.hcl"),
+                "cache {\n  memory_limit_mb = 32\n}",
+            )?;
+            let config = load_for_test(&tmp_dir).unwrap();
+            assert_eq!(config.cache.memory_limit_mb, 32);
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_load_config_with_defaults_and_yaml() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+
+            jail.create_file(
+                format!("{}/proksi.yaml", tmp_dir),
+                r#"
+                lets_encrypt:
+                  email: "domain@valid.com"
+                routes:
+                  - host: "example.com"
+                    upstreams:
+                      - ip: "10.1.2.24/24"
+                        port: 3000
+                    plugins:
+                      - name: "cors"
+                        config:
+                          allowed_origins: ["*"]
+                    ssl:
+                      path:
+                        key: "/etc/proksi/certs/my-host.key"
+                        pem: "/etc/proksi/certs/my-host.pem"
+                "#,
+            )?;
+
+            let config = load_for_test(&tmp_dir);
+            let proxy_config = config.unwrap();
+            let logging = proxy_config.logging;
+            let paths = proxy_config.paths;
+            let letsencrypt = proxy_config.lets_encrypt;
+
+            assert_eq!(proxy_config.service_name, "proksi");
+            assert_eq!(logging.level, LogLevel::Info);
+            assert!(logging.access_logs_enabled);
+            assert!(logging.error_logs_enabled);
+            assert_eq!(proxy_config.routes.len(), 1);
+
+            assert_eq!(proxy_config.docker.enabled, Some(false));
+            assert_eq!(proxy_config.docker.interval_secs, Some(15));
+            assert_eq!(
+                proxy_config.docker.endpoint,
+                Some(Cow::Borrowed("unix:///var/run/docker.sock"))
+            );
+
+            assert_eq!(letsencrypt.email, "domain@valid.com");
+            assert_eq!(letsencrypt.enabled, Some(false));
+            assert_eq!(letsencrypt.staging, Some(true));
+
+            assert_eq!(paths.lets_encrypt.as_os_str(), "/etc/proksi/letsencrypt");
+
+            let route = &proxy_config.routes[0];
+            let plugins = route.plugins.as_ref().unwrap();
+            let plugin_config = plugins[0].config.as_ref().unwrap();
+            assert_eq!(plugins[0].name, "cors");
+            assert_eq!(plugin_config.get("allowed_origins"), Some(&json!(["*"])));
+
+            let ssl = route.ssl.as_ref().unwrap();
+            let path = ssl.path.as_ref().unwrap();
+            assert!(ssl.self_signed_fallback);
+            assert_eq!(path.key.as_os_str(), "/etc/proksi/certs/my-host.key");
+            assert_eq!(path.pem.as_os_str(), "/etc/proksi/certs/my-host.pem");
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_load_config_from_hcl() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+
+            jail.create_file(
+                format!("{}/proksi.hcl", tmp_dir),
+                r#"
+                service_name = "hcl-service"
+                worker_threads = 8
+
+                server {
+                    address = "0.0.0.0:443"
+                    http_address = "0.0.0.0:80"
+                }
+
+                docker {
+                    enabled = true
+                    interval_secs = 30
+                    endpoint = "unix:///var/run/docker.sock"
+                }
+                lets_encrypt {
+                    email = "domain@valid.com"
+                    enabled = true
+                    staging = false
+                }
+                paths {
+                    lets_encrypt = "/etc/proksi/letsencrypt"
+                }
+                    "#,
+            )?;
+
+            let config = load_for_test(&tmp_dir);
+            let proxy_config = config.unwrap();
+
+            assert_eq!(proxy_config.service_name, "hcl-service");
+
+            assert_eq!(
+                proxy_config.server.https_address,
+                Some(Cow::Borrowed("0.0.0.0:443"))
+            );
+            assert_eq!(
+                proxy_config.server.http_address,
+                Some(Cow::Borrowed("0.0.0.0:80"))
+            );
+
+            assert_eq!(proxy_config.worker_threads, Some(8));
+            assert_eq!(proxy_config.docker.enabled, Some(true));
+            assert_eq!(proxy_config.docker.interval_secs, Some(30));
+            assert_eq!(
+                proxy_config.docker.endpoint,
+                Some(Cow::Borrowed("unix:///var/run/docker.sock"))
+            );
+
+            assert_eq!(proxy_config.lets_encrypt.email, "domain@valid.com");
+            assert_eq!(proxy_config.lets_encrypt.enabled, Some(true));
+            assert_eq!(proxy_config.lets_encrypt.staging, Some(false));
+            assert_eq!(proxy_config.lets_encrypt.renew_interval_secs, Some(84600));
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_fallback_to_minimal_default_when_no_config_files() {
+        figment::Jail::expect_with(|jail| {
+            let tmp_dir = jail.directory().to_string_lossy();
+
+            // Don't create any config files - directory exists but is empty
+
+            // Create a default config to use as parsed_commands
+            let default_config = Config::default();
+            let config = load_from_path(&tmp_dir, &default_config, true);
+            let proxy_config = config.unwrap();
+
+            // Should use default service name
+            assert_eq!(proxy_config.service_name, "proksi");
+
+            // Should have Let's Encrypt disabled in minimal config
+            assert_eq!(proxy_config.lets_encrypt.enabled, Some(false));
+
+            // Should still have the default email (validation won't run since Let's Encrypt is disabled)
+            assert_eq!(proxy_config.lets_encrypt.email, "contact@example.com");
+
+            // Should have empty routes
+            assert_eq!(proxy_config.routes.len(), 0);
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_minimal_default_config_creation() {
+        let minimal_config = create_minimal_default_config();
+
+        // Verify that Let's Encrypt is disabled
+        assert_eq!(minimal_config.lets_encrypt.enabled, Some(false));
+
+        // Should still have default values for other fields
+        assert_eq!(minimal_config.service_name, "proksi");
+        assert_eq!(minimal_config.routes.len(), 0);
+
+        // Logging should have the correct defaults
+        assert!(minimal_config.logging.enabled);
+        assert!(minimal_config.logging.access_logs_enabled);
+        assert!(minimal_config.logging.error_logs_enabled);
+    }
+}
