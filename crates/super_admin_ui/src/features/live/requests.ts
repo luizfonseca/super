@@ -11,6 +11,10 @@ export type Served = {
   path: string;
   status: number;
   duration_ms: number;
+  /** The proxy's own time, before the upstream (or all of it without one) */
+  proxy_ms: number;
+  /** The upstream's, until its response headers came */
+  upstream_ms: number | null;
   client_ip: string;
   location: string | null;
   upstream: string | null;

@@ -31,6 +31,10 @@ pub struct Served {
     pub path: String,
     pub status: u16,
     pub duration_ms: f64,
+    /// The proxy's own time: before the first attempt at an upstream, or all of it without one
+    pub proxy_ms: f64,
+    /// The upstream's, until its response headers came (attempts and connecting included)
+    pub upstream_ms: Option<f64>,
     pub client_ip: String,
     /// The location that served it, if any
     pub location: Option<String>,
@@ -138,6 +142,8 @@ mod tests {
             path: path.to_string(),
             status: 200,
             duration_ms: 1.5,
+            proxy_ms: 0.1,
+            upstream_ms: Some(1.2),
             client_ip: "127.0.0.1".to_string(),
             location: Some("/".to_string()),
             upstream: None,

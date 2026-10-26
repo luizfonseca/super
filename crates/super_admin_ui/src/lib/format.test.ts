@@ -8,6 +8,7 @@ describe('format', () => {
     expect(bytes(null)).toBe('—');
     expect(ms(3.25)).toBe('3.3 ms');
     expect(ms(1500)).toBe('1.5 s');
+    expect(ms(0.084)).toBe('84 µs');
     expect(rate(0.4)).toBe('0.4/s');
     // One decimal under 100/s, even when it's 0: the width doesn't change as it rolls
     expect(rate(24)).toBe('24.0/s');

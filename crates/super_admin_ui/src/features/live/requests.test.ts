@@ -8,6 +8,8 @@ const served = (path: string): Served => ({
   path,
   status: 200,
   duration_ms: 1,
+  proxy_ms: 0.1,
+  upstream_ms: 0.8,
   client_ip: '127.0.0.1',
   location: '/',
   upstream: null,

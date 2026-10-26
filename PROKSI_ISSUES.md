@@ -78,3 +78,17 @@ after the version.
 
 Fix: supervise only command lines that serve: read them with `Config::try_parse_from` (no
 configuration files), and supervise when that succeeds without a subcommand (as Super does).
+
+### Access logs can't tell the proxy's time from the upstream's — improvement
+
+`crates/proksi/src/proxy_server/https_proxy.rs` (`logging`): `duration_ms` runs from
+`request_filter` to `logging`, so it's the whole request (plugins, the upstream, the response
+body's transfer). Nothing says how much of it was proksi's own (routing, rules, `forward_auth`
+and other plugins) or the upstream's: the upstream's time is only in the metrics' percentiles.
+
+Fix (as Super does): keep when the first attempt at an upstream starts (`upstream_peer`) and when
+its response headers come (`upstream_response_filter`), and log `proxy_ms` (until the first
+attempt, or all of it without an upstream) and `upstream_ms` (until the response headers,
+attempts and connecting included), with microsecond precision. The same two fields in the
+requests stream (`/api/v1/requests/stream`), and in the admin UI's request log (a `Proxy`
+column, both times in a request's details). The UI's `ms()` shows times under 1 ms in µs.

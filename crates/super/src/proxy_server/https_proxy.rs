@@ -86,8 +86,30 @@ pub struct RouterContext {
     pub timings: RouterTimings,
 }
 
+/// When a request went through its phases, for its access log
 pub struct RouterTimings {
     request_filter_start: std::time::Instant,
+    /// The first attempt at an upstream
+    upstream_start: Option<std::time::Instant>,
+    /// When the (last) upstream's response headers came
+    upstream_answered: Option<std::time::Instant>,
+}
+
+impl RouterTimings {
+    /// Super's own time (`proxy_ms`): until the first attempt at an upstream, or all of
+    /// `duration` without one (e.g. from the cache). Then the upstream's (`upstream_ms`): until
+    /// its response headers came, attempts and connecting included.
+    fn split(&self, duration: std::time::Duration) -> (f64, Option<f64>) {
+        let ms = |duration: std::time::Duration| duration.as_secs_f64() * 1000.0;
+        let Some(upstream_start) = self.upstream_start else {
+            return (ms(duration), None);
+        };
+        let proxy = upstream_start.saturating_duration_since(self.request_filter_start);
+        let upstream = self
+            .upstream_answered
+            .map(|answered| ms(answered.saturating_duration_since(upstream_start)));
+        (ms(proxy), upstream)
+    }
 }
 
 // The phases are async, as the core runs them, whether or not they wait
@@ -124,6 +146,8 @@ impl ProxyHttp for Router {
 
             timings: RouterTimings {
                 request_filter_start: std::time::Instant::now(),
+                upstream_start: None,
+                upstream_answered: None,
             },
         }
     }
@@ -327,7 +351,9 @@ impl ProxyHttp for Router {
 
         ctx.upstream_index = Some(index);
         ctx.tried.add(index);
-        ctx.upstream_start = Some(std::time::Instant::now());
+        let now = std::time::Instant::now();
+        ctx.upstream_start = Some(now);
+        ctx.timings.upstream_start.get_or_insert(now);
 
         let mut peer = HttpPeer::new(
             picked.addr,
@@ -529,6 +555,7 @@ impl ProxyHttp for Router {
         // If there's no host matching, returns a 404
         // let route_container = process_route(ctx);
 
+        ctx.timings.upstream_answered = Some(std::time::Instant::now());
         if let Some(location) = ctx.route_container.clone() {
             if let (Some(upstream), Some(start)) = (upstream_metrics(ctx), ctx.upstream_start) {
                 upstream.record(start.elapsed());
@@ -600,6 +627,7 @@ impl ProxyHttp for Router {
             return;
         }
         let duration_ms = duration.as_millis();
+        let (proxy_ms, upstream_ms) = ctx.timings.split(duration);
 
         let http_version = if session.is_http3() {
             "http/3"
@@ -644,6 +672,8 @@ impl ProxyHttp for Router {
             query,
             host,
             duration_ms,
+            proxy_ms,
+            upstream_ms,
             user_agent = user_agent.to_str().unwrap_or(""),
             referer = referer.to_str().unwrap_or(""),
             client_ip,
@@ -902,6 +932,7 @@ fn served(
     duration: Duration,
 ) -> crate::metrics::requests::Served {
     let request = session.req_header();
+    let (proxy_ms, upstream_ms) = ctx.timings.split(duration);
     crate::metrics::requests::Served {
         time: crate::metrics::requests::Served::now(),
         method: request.method.to_string(),
@@ -909,6 +940,8 @@ fn served(
         path: request.uri.path().to_string(),
         status,
         duration_ms: duration.as_secs_f64() * 1000.0,
+        proxy_ms,
+        upstream_ms,
         client_ip: client_ip(session),
         location: ctx
             .route_container
@@ -952,7 +985,30 @@ mod tests {
     use super_core::cache::key::CacheHashKey;
     use super_core::proxy::ProxyHttp;
 
-    use super::{cache_key_for, Listener, Router};
+    use super::{cache_key_for, Listener, Router, RouterTimings};
+
+    #[test]
+    fn test_timings_split_between_proxy_and_upstream() {
+        use std::time::{Duration, Instant};
+
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        let mut timings = RouterTimings {
+            request_filter_start: start,
+            upstream_start: None,
+            upstream_answered: None,
+        };
+        // Answered by Super itself
+        assert_eq!(timings.split(Duration::from_millis(7)), (7.0, None));
+
+        timings.upstream_start = Some(at(2));
+        timings.upstream_answered = Some(at(12));
+        assert_eq!(timings.split(Duration::from_millis(20)), (2.0, Some(10.0)));
+
+        // The upstream never answered (e.g. it timed out)
+        timings.upstream_answered = None;
+        assert_eq!(timings.split(Duration::from_millis(20)), (2.0, None));
+    }
 
     #[test]
     fn test_cache_key_matches_pre_pingora_0_9_hash() {
