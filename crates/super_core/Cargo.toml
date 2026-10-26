@@ -10,6 +10,10 @@ repository = "https://github.com/luizfonseca/super"
 rust-version.workspace = true
 workspace = "../.."
 
+[features]
+# The counting allocator of tests that check the hot path doesn't allocate
+test-util = []
+
 [dependencies]
 arc-swap = "1.9.3"
 async-trait = "0.1.92"
