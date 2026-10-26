@@ -6,10 +6,12 @@
 //! a plugin needs from Super for a request (its host, its client, applying the location's
 //! response blocks to an answer) it asks through [`RequestCtx`].
 
-use std::{any::Any, borrow::Cow, collections::HashMap, net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    any::Any, borrow::Cow, collections::HashMap, future::Future, net::IpAddr, pin::Pin, sync::Arc,
+    time::Duration,
+};
 
 use anyhow::Result;
-use async_trait::async_trait;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use super_core::{
@@ -79,7 +81,6 @@ pub struct RoutePlugin {
 }
 
 /// What a plugin can ask of Super about the request it's handling
-#[async_trait]
 pub trait RequestCtx: Send {
     /// The host the request is for, without its port
     fn host(&self) -> &str;
@@ -102,8 +103,13 @@ pub trait RequestCtx: Send {
     fn normalize_path<'a>(&self, path: &'a str) -> Cow<'a, str>;
 
     /// Changes `response`, an answer of Super itself, as the location's response blocks and the
-    /// rules change upstreams' responses (its `headers`, its CORS headers...)
-    async fn response_blocks(&mut self, session: &mut Session, response: &mut ResponseHeader);
+    /// rules change upstreams' responses (its `headers`, its CORS headers...). Boxed: blocks answer
+    /// through it, and it runs blocks (only answers of Super itself take it).
+    fn response_blocks<'a>(
+        &'a mut self,
+        session: &'a mut Session,
+        response: &'a mut ResponseHeader,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
     /// Adds a header to the response, whoever answers the request
     fn add_response_header(&mut self, name: http::HeaderName, value: http::HeaderValue);
@@ -120,13 +126,14 @@ pub trait RequestCtx: Send {
 }
 
 /// The stages of a request a block can take part in
-// `async_trait` marks the generated methods as `#[must_use]`
-#[allow(clippy::double_must_use)]
-#[async_trait]
 pub trait Middleware: Send + Sync {
     /// Before the request is proxied. `true` when the block answered the request, which ends it.
-    async fn request(&self, _session: &mut Session, _ctx: &mut dyn RequestCtx) -> Result<bool> {
-        Ok(false)
+    fn request(
+        &self,
+        _session: &mut Session,
+        _ctx: &mut dyn RequestCtx,
+    ) -> impl Future<Output = Result<bool>> + Send {
+        async { Ok(false) }
     }
 
     /// Each part of the request body, as it's proxied, which a block can change (the last one
@@ -145,13 +152,13 @@ pub trait Middleware: Send + Sync {
     }
 
     /// Changes the request sent to the upstream
-    async fn upstream_request(
+    fn upstream_request(
         &self,
         _session: &mut Session,
         _request: &mut RequestHeader,
         _ctx: &mut dyn RequestCtx,
-    ) -> Result<()> {
-        Ok(())
+    ) -> impl Future<Output = Result<()>> + Send {
+        async { Ok(()) }
     }
 
     /// Changes the response of the upstream, before it's cached
@@ -180,13 +187,13 @@ pub trait Middleware: Send + Sync {
     }
 
     /// Changes the response sent to the client (including responses served from the cache)
-    async fn response(
+    fn response(
         &self,
         _session: &mut Session,
         _response: &mut ResponseHeader,
         _ctx: &mut dyn RequestCtx,
-    ) -> Result<()> {
-        Ok(())
+    ) -> impl Future<Output = Result<()>> + Send {
+        async { Ok(()) }
     }
 }
 
@@ -318,7 +325,107 @@ impl Kind {
 pub struct Plugin {
     pub kind: Kind,
     pub priority: u8,
-    pub middleware: Arc<dyn Middleware>,
+    pub middleware: AnyPlugin,
+}
+
+/// Any plugin of this crate: its stages are this crate's, called without boxing them
+#[derive(Clone)]
+pub struct AnyPlugin(Arc<Built>);
+
+enum Built {
+    RequestId(RequestId),
+    IpFilter(IpFilter),
+    Cors(Cors),
+    RateLimit(RateLimit),
+    BandwidthLimit(BandwidthLimit),
+    WaitingRoom(WaitingRoom),
+    BodyLimit(BodyLimit),
+    Redirect(Redirect),
+    Respond(Respond),
+    BasicAuth(BasicAuth),
+    Jwt(Jwt),
+    Oauth2(Oauth2),
+    ForwardAuth(ForwardAuth),
+    BodyRewrite(BodyRewrite),
+    OpenApi(OpenApi),
+    Compress(Compress),
+    StaticFiles(StaticFiles),
+}
+
+/// `$call` with `$plugin`, whichever plugin `$built` is
+macro_rules! each {
+    ($built:expr, $plugin:ident => $call:expr) => {
+        match $built {
+            Built::RequestId($plugin) => $call,
+            Built::IpFilter($plugin) => $call,
+            Built::Cors($plugin) => $call,
+            Built::RateLimit($plugin) => $call,
+            Built::BandwidthLimit($plugin) => $call,
+            Built::WaitingRoom($plugin) => $call,
+            Built::BodyLimit($plugin) => $call,
+            Built::Redirect($plugin) => $call,
+            Built::Respond($plugin) => $call,
+            Built::BasicAuth($plugin) => $call,
+            Built::Jwt($plugin) => $call,
+            Built::Oauth2($plugin) => $call,
+            Built::ForwardAuth($plugin) => $call,
+            Built::BodyRewrite($plugin) => $call,
+            Built::OpenApi($plugin) => $call,
+            Built::Compress($plugin) => $call,
+            Built::StaticFiles($plugin) => $call,
+        }
+    };
+}
+
+impl Middleware for AnyPlugin {
+    async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
+        each!(&*self.0, plugin => plugin.request(session, ctx).await)
+    }
+
+    fn request_body(
+        &self,
+        body: &mut Option<Bytes>,
+        end_of_stream: bool,
+        ctx: &mut dyn RequestCtx,
+    ) -> super_core::Result<()> {
+        each!(&*self.0, plugin => plugin.request_body(body, end_of_stream, ctx))
+    }
+
+    async fn upstream_request(
+        &self,
+        session: &mut Session,
+        request: &mut RequestHeader,
+        ctx: &mut dyn RequestCtx,
+    ) -> Result<()> {
+        each!(&*self.0, plugin => plugin.upstream_request(session, request, ctx).await)
+    }
+
+    fn upstream_response(
+        &self,
+        session: &mut Session,
+        response: &mut ResponseHeader,
+        ctx: &mut dyn RequestCtx,
+    ) -> Result<()> {
+        each!(&*self.0, plugin => plugin.upstream_response(session, response, ctx))
+    }
+
+    fn response_body(
+        &self,
+        session: &Session,
+        body: Option<&Bytes>,
+        ctx: &mut dyn RequestCtx,
+    ) -> Option<Duration> {
+        each!(&*self.0, plugin => plugin.response_body(session, body, ctx))
+    }
+
+    async fn response(
+        &self,
+        session: &mut Session,
+        response: &mut ResponseHeader,
+        ctx: &mut dyn RequestCtx,
+    ) -> Result<()> {
+        each!(&*self.0, plugin => plugin.response(session, response, ctx).await)
+    }
 }
 
 /// The plugin `plugin` configures in the location at `location_path`, `None` for names that
@@ -329,45 +436,41 @@ pub fn build(
     location_path: &str,
     id: &str,
 ) -> Option<Result<Plugin, String>> {
-    let built = |kind, middleware: Result<Arc<dyn Middleware>, String>| {
+    let built = |kind, middleware: Result<Built, String>| {
         Some(middleware.and_then(|middleware| {
             Ok(Plugin {
                 kind,
                 priority: plugin_priority(kind, plugin)?,
-                middleware,
+                middleware: AnyPlugin(Arc::new(middleware)),
             })
         }))
     };
     // Other plugins of `routes = [...]` and docker labels are ignored, as before
     let kind = Kind::from_name(&plugin.name)?;
     let middleware = match kind {
-        Kind::RequestId => arc(RequestId::new(plugin)),
-        Kind::IpFilter => arc(IpFilter::new(plugin)),
-        Kind::Cors => arc(Cors::new(plugin)),
-        Kind::RateLimit => arc(RateLimit::new(plugin, id).map_err(|err| err.to_string())),
-        Kind::BandwidthLimit => arc(BandwidthLimit::new(plugin)),
-        Kind::WaitingRoom => arc(WaitingRoom::new(plugin, location_path)),
-        Kind::BodyLimit => arc(BodyLimit::new(plugin)),
-        Kind::Redirect => arc(Redirect::new(plugin)),
-        Kind::Respond => arc(Respond::new(plugin)),
-        Kind::BasicAuth => arc(BasicAuth::new(plugin)),
-        Kind::Jwt => arc(Jwt::new(plugin)),
-        Kind::Oauth2 => arc(Oauth2::new(plugin)),
-        Kind::ForwardAuth => arc(ForwardAuth::new(plugin)),
-        Kind::BodyRewrite => arc(BodyRewrite::new(plugin)),
-        Kind::OpenApi => arc(OpenApi::new(plugin)),
-        Kind::Compress => arc(Compress::new(plugin)),
-        Kind::StaticFiles => arc(StaticFiles::new(plugin, location_path)),
+        Kind::RequestId => RequestId::new(plugin).map(Built::RequestId),
+        Kind::IpFilter => IpFilter::new(plugin).map(Built::IpFilter),
+        Kind::Cors => Cors::new(plugin).map(Built::Cors),
+        Kind::RateLimit => RateLimit::new(plugin, id)
+            .map_err(|err| err.to_string())
+            .map(Built::RateLimit),
+        Kind::BandwidthLimit => BandwidthLimit::new(plugin).map(Built::BandwidthLimit),
+        Kind::WaitingRoom => WaitingRoom::new(plugin, location_path).map(Built::WaitingRoom),
+        Kind::BodyLimit => BodyLimit::new(plugin).map(Built::BodyLimit),
+        Kind::Redirect => Redirect::new(plugin).map(Built::Redirect),
+        Kind::Respond => Respond::new(plugin).map(Built::Respond),
+        Kind::BasicAuth => BasicAuth::new(plugin).map(Built::BasicAuth),
+        Kind::Jwt => Jwt::new(plugin).map(Built::Jwt),
+        Kind::Oauth2 => Oauth2::new(plugin).map(Built::Oauth2),
+        Kind::ForwardAuth => ForwardAuth::new(plugin).map(Built::ForwardAuth),
+        Kind::BodyRewrite => BodyRewrite::new(plugin).map(Built::BodyRewrite),
+        Kind::OpenApi => OpenApi::new(plugin).map(Built::OpenApi),
+        Kind::Compress => Compress::new(plugin).map(Built::Compress),
+        Kind::StaticFiles => StaticFiles::new(plugin, location_path).map(Built::StaticFiles),
         // Super's own blocks, built by Super
         Kind::Headers | Kind::Cache => return None,
     };
     built(kind, middleware)
-}
-
-fn arc<M: Middleware + 'static>(
-    middleware: Result<M, String>,
-) -> Result<Arc<dyn Middleware>, String> {
-    middleware.map(|middleware| Arc::new(middleware) as Arc<dyn Middleware>)
 }
 
 #[cfg(test)]

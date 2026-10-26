@@ -5,7 +5,6 @@ pub mod jwks;
 mod verifier;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use http::{header, HeaderName, HeaderValue};
 use serde_json::{Map, Value};
 use super_core::{http::ResponseHeader, proxy::Session};
@@ -125,7 +124,6 @@ async fn unauthorized(
     Ok(())
 }
 
-#[async_trait]
 impl Middleware for Jwt {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         let Some(token) = self.token(session) else {

@@ -1,8 +1,9 @@
 //! `cors { origins = ["https://app.example.com"] }`: answers preflight requests and adds the CORS
 //! headers to responses, for the origins a location accepts
 
+use std::future::{ready, Future};
+
 use anyhow::Result;
-use async_trait::async_trait;
 use http::{header, HeaderValue, Method, StatusCode};
 use super_core::{
     http::{RequestHeader, ResponseHeader},
@@ -138,7 +139,6 @@ fn is_preflight(request: &RequestHeader) -> bool {
             .contains_key(header::ACCESS_CONTROL_REQUEST_METHOD)
 }
 
-#[async_trait]
 impl Middleware for Cors {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         let request = session.req_header();
@@ -169,12 +169,19 @@ impl Middleware for Cors {
         Ok(true)
     }
 
-    async fn response(
+    fn response(
         &self,
         session: &mut Session,
         response: &mut ResponseHeader,
         _ctx: &mut dyn RequestCtx,
-    ) -> Result<()> {
+    ) -> impl Future<Output = Result<()>> + Send {
+        ready(self.allow(session, response))
+    }
+}
+
+impl Cors {
+    /// The CORS headers of a response to `session`'s request
+    fn allow(&self, session: &Session, response: &mut ResponseHeader) -> Result<()> {
         if self.varies() {
             response.append_header(header::VARY, "Origin")?;
         }

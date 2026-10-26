@@ -1,13 +1,11 @@
 //! `oauth2 { provider = "github", ... }`: signs users in with an `OAuth2` provider
 
-use anyhow::Result;
-use async_trait::async_trait;
-use super_core::{http::ResponseHeader, proxy::Session};
+use std::sync::LazyLock;
 
-use crate::{
-    filter::{MiddlewarePlugin, PLUGINS},
-    RequestCtx, RoutePlugin,
-};
+use anyhow::Result;
+use super_core::proxy::Session;
+
+use crate::{RequestCtx, RoutePlugin};
 
 use crate::Middleware;
 
@@ -20,6 +18,9 @@ mod workos;
 mod provider;
 mod secure_cookie;
 mod shared;
+
+/// The flows of every location: its key encrypts their states
+static FILTER: LazyLock<filter::Oauth2> = LazyLock::new(filter::Oauth2::new);
 
 pub(crate) struct Oauth2 {
     plugin: RoutePlugin,
@@ -43,25 +44,8 @@ impl Oauth2 {
     }
 }
 
-#[async_trait]
 impl Middleware for Oauth2 {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
-        PLUGINS
-            .oauth2
-            .request_filter(session, ctx, &self.plugin)
-            .await
-    }
-
-    async fn response(
-        &self,
-        session: &mut Session,
-        _response: &mut ResponseHeader,
-        ctx: &mut dyn RequestCtx,
-    ) -> Result<()> {
-        PLUGINS
-            .oauth2
-            .response_filter(session, ctx, &self.plugin)
-            .await
-            .map(|_| ())
+        FILTER.request_filter(session, ctx, &self.plugin).await
     }
 }

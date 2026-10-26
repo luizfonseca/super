@@ -1,8 +1,7 @@
 //! What plugins can ask of proksi about a request ([`RequestCtx`]), from its [`RouterContext`]
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc, time::Duration};
+use std::{borrow::Cow, future::Future, net::IpAddr, pin::Pin, sync::Arc, time::Duration};
 
-use async_trait::async_trait;
 use bytes::Bytes;
 use http::{HeaderName, HeaderValue};
 use super_core::{http::ResponseHeader, proxy::Session};
@@ -11,7 +10,6 @@ use super_store::Store;
 
 use crate::proxy_server::{client, https_proxy::RouterContext};
 
-#[async_trait]
 impl RequestCtx for RouterContext {
     fn host(&self) -> &str {
         &self.host
@@ -42,14 +40,20 @@ impl RequestCtx for RouterContext {
         crate::routing::paths::normalize_path(path)
     }
 
-    async fn response_blocks(&mut self, session: &mut Session, response: &mut ResponseHeader) {
-        if let Some(location) = self.route_container.clone() {
-            location.blocks.response(session, response, self).await;
-        }
-        crate::rules::response(session, response, self).await;
-        for (name, value) in std::mem::take(&mut self.response_headers) {
-            let _ = response.append_header(name, value);
-        }
+    fn response_blocks<'a>(
+        &'a mut self,
+        session: &'a mut Session,
+        response: &'a mut ResponseHeader,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            if let Some(location) = self.route_container.clone() {
+                location.blocks.response(session, response, self).await;
+            }
+            crate::rules::response(session, response, self).await;
+            for (name, value) in std::mem::take(&mut self.response_headers) {
+                let _ = response.append_header(name, value);
+            }
+        })
     }
 
     fn add_response_header(&mut self, name: HeaderName, value: HeaderValue) {

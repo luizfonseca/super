@@ -10,7 +10,6 @@ use std::{
 };
 
 use anyhow::Result;
-use async_trait::async_trait;
 use http::{header, StatusCode};
 use super_core::{http::ResponseHeader, proxy::Session};
 
@@ -106,7 +105,6 @@ impl RateLimit {
     }
 }
 
-#[async_trait]
 impl Middleware for RateLimit {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         let Some(client) = ctx.client(session) else {

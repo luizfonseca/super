@@ -7,7 +7,6 @@ mod resolve;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use super_core::{http::ResponseHeader, proxy::Session};
 
 use crate::{
@@ -111,7 +110,6 @@ fn status(code: u16) -> Result<ResponseHeader> {
     Ok(response)
 }
 
-#[async_trait]
 impl Middleware for StaticFiles {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         use ::http::{header, Method};

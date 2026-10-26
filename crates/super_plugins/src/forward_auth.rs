@@ -5,7 +5,6 @@
 use std::{sync::OnceLock, time::Duration};
 
 use anyhow::Result;
-use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use http::{header, HeaderMap, HeaderName, HeaderValue};
 use super_core::{http::ResponseHeader, proxy::Session};
@@ -190,7 +189,6 @@ async fn body(mut response: reqwest::Response) -> Result<Bytes, String> {
     Ok(body.freeze())
 }
 
-#[async_trait]
 impl Middleware for ForwardAuth {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
         let checked = client()

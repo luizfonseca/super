@@ -12,8 +12,8 @@ use super_core::{
     http::{RequestHeader, ResponseHeader},
     proxy::Session,
 };
-use super_plugins::priority;
 pub use super_plugins::{jwt, settings, Kind, Middleware};
+use super_plugins::{priority, AnyPlugin, RequestCtx};
 
 use crate::{config::host::Location, proxy_server::https_proxy::RouterContext};
 
@@ -35,7 +35,81 @@ pub fn location_id(host: &str, path: &str) -> String {
 pub struct Block {
     pub kind: Kind,
     pub priority: u8,
-    middleware: Arc<dyn Middleware>,
+    middleware: Stages,
+}
+
+/// What a block does at each stage: a plugin's, or Super's own `headers` and `cache`
+#[derive(Clone)]
+enum Stages {
+    Plugin(AnyPlugin),
+    Headers(Arc<Headers>),
+    Cache(Arc<Cache>),
+}
+
+/// `$call` with `$block`, whichever block `$stages` is
+macro_rules! each {
+    ($stages:expr, $block:ident => $call:expr) => {
+        match $stages {
+            Stages::Plugin($block) => $call,
+            Stages::Headers($block) => $call,
+            Stages::Cache($block) => $call,
+        }
+    };
+}
+
+impl Middleware for Stages {
+    async fn request(
+        &self,
+        session: &mut Session,
+        ctx: &mut dyn RequestCtx,
+    ) -> anyhow::Result<bool> {
+        each!(self, block => block.request(session, ctx).await)
+    }
+
+    fn request_body(
+        &self,
+        body: &mut Option<Bytes>,
+        end_of_stream: bool,
+        ctx: &mut dyn RequestCtx,
+    ) -> super_core::Result<()> {
+        each!(self, block => block.request_body(body, end_of_stream, ctx))
+    }
+
+    async fn upstream_request(
+        &self,
+        session: &mut Session,
+        request: &mut RequestHeader,
+        ctx: &mut dyn RequestCtx,
+    ) -> anyhow::Result<()> {
+        each!(self, block => block.upstream_request(session, request, ctx).await)
+    }
+
+    fn upstream_response(
+        &self,
+        session: &mut Session,
+        response: &mut ResponseHeader,
+        ctx: &mut dyn RequestCtx,
+    ) -> anyhow::Result<()> {
+        each!(self, block => block.upstream_response(session, response, ctx))
+    }
+
+    fn response_body(
+        &self,
+        session: &Session,
+        body: Option<&Bytes>,
+        ctx: &mut dyn RequestCtx,
+    ) -> Option<Duration> {
+        each!(self, block => block.response_body(session, body, ctx))
+    }
+
+    async fn response(
+        &self,
+        session: &mut Session,
+        response: &mut ResponseHeader,
+        ctx: &mut dyn RequestCtx,
+    ) -> anyhow::Result<()> {
+        each!(self, block => block.response(session, response, ctx).await)
+    }
 }
 
 /// The blocks of a location, in the order they run
@@ -61,7 +135,7 @@ impl Blocks {
             blocks.push(Block {
                 kind: plugin.kind,
                 priority: plugin.priority,
-                middleware: plugin.middleware,
+                middleware: Stages::Plugin(plugin.middleware),
             });
         }
 
@@ -70,7 +144,7 @@ impl Blocks {
                 blocks.push(Block {
                     kind: Kind::Headers,
                     priority: priority(Kind::Headers, headers.priority.map(u64::from))?,
-                    middleware: Arc::new(middleware),
+                    middleware: Stages::Headers(Arc::new(middleware)),
                 });
             }
         }
@@ -80,7 +154,7 @@ impl Blocks {
                 blocks.push(Block {
                     kind: Kind::Cache,
                     priority: priority(Kind::Cache, cache.priority.map(u64::from))?,
-                    middleware: Arc::new(middleware),
+                    middleware: Stages::Cache(Arc::new(middleware)),
                 });
             }
         }

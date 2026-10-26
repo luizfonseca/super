@@ -1,13 +1,9 @@
 //! `basic_auth { user = "...", pass = "..." }`: answers `401` without valid credentials
 
 use anyhow::Result;
-use async_trait::async_trait;
 use super_core::proxy::Session;
 
-use crate::{
-    filter::{MiddlewarePlugin, PLUGINS},
-    RequestCtx, RoutePlugin,
-};
+use crate::{RequestCtx, RoutePlugin};
 
 use crate::Middleware;
 
@@ -26,11 +22,9 @@ impl BasicAuth {
     }
 }
 
-#[async_trait]
 impl Middleware for BasicAuth {
     async fn request(&self, session: &mut Session, ctx: &mut dyn RequestCtx) -> Result<bool> {
-        PLUGINS
-            .basic_auth
+        filter::BasicAuth
             .request_filter(session, ctx, &self.plugin)
             .await
     }

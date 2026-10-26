@@ -17,7 +17,6 @@ test-util = ["super_core/test-util"]
 [dependencies]
 anyhow = "1.0.104"
 arc-swap = "1.9.3"
-async-trait = "0.1.92"
 base64 = "0.23"
 bytes = "1.12.1"
 cookie = { version = "0.18.2", features = ["private"] }

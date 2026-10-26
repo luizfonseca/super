@@ -4,8 +4,9 @@
 //! request is sent upstream, so it's sent without `Content-Length` (chunked to HTTP/1.1
 //! upstreams).
 
+use std::future::{ready, Future};
+
 use anyhow::Result;
-use async_trait::async_trait;
 use bytes::Bytes;
 use http::{header, Version};
 use super_core::{http::RequestHeader, proxy::Session};
@@ -158,16 +159,10 @@ fn has_body(request: &RequestHeader) -> bool {
         || request.headers.contains_key(header::TRANSFER_ENCODING)
 }
 
-#[async_trait]
-impl Middleware for BodyRewrite {
+impl BodyRewrite {
     /// Decides whether the body is changed, and sends the request without its length if so.
     /// Runs for each upstream tried: a retried body starts again.
-    async fn upstream_request(
-        &self,
-        _session: &mut Session,
-        request: &mut RequestHeader,
-        ctx: &mut dyn RequestCtx,
-    ) -> Result<()> {
+    fn prepare(&self, request: &mut RequestHeader, ctx: &mut dyn RequestCtx) -> Result<()> {
         if !has_body(request) || is_encoded(request) {
             return Ok(());
         }
@@ -192,6 +187,17 @@ impl Middleware for BodyRewrite {
         };
         set_block_state(ctx, self.id(), rewriting);
         Ok(())
+    }
+}
+
+impl Middleware for BodyRewrite {
+    fn upstream_request(
+        &self,
+        _session: &mut Session,
+        request: &mut RequestHeader,
+        ctx: &mut dyn RequestCtx,
+    ) -> impl Future<Output = Result<()>> + Send {
+        ready(self.prepare(request, ctx))
     }
 
     fn request_body(
