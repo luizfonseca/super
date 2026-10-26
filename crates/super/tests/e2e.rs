@@ -199,6 +199,23 @@ async fn test_websocket_echo() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_websocket_echo_over_http2() {
+    let mut proksi = Harness::start(vec![
+        Route::new("ws.test", Upstream::WebSocket),
+        Route::new("app.test", Upstream::Http),
+    ])
+    .await;
+
+    // On the stream of an HTTP/2 connection (RFC 8441), to an HTTP/1.1 upstream
+    let mut ws = proksi.websocket_h2("ws.test", "/ws").await.unwrap();
+    for message in ["hello", "world"] {
+        assert_eq!(websocket_echo(&mut ws, message).await.unwrap(), message);
+    }
+
+    proksi.assert_healthy();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_many_concurrent_websockets() {
     const CONNECTIONS: usize = 500;
 

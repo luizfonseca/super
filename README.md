@@ -48,6 +48,11 @@ Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What 
   borrows another thread's idle connection (as Pingora's shared pool would): as fast as pools of
   their own, with more connections kept open than Proksi's single pool when every thread sends
   requests to every upstream.
+- **Websockets over HTTP/2** (RFC 8441): HTTP/2 clients (browsers) can open websockets on their
+  connection, as an extended `CONNECT`; the phases and the upstream see it as the HTTP/1.1
+  upgrade it stands for (`GET` with `Upgrade: websocket`). Upgrades always go to upstreams over
+  HTTP/1.1, even those that speak HTTP/2. Proksi's HTTP/2 clients open a separate HTTP/1.1
+  connection for each websocket.
 
 ## Benchmarks
 
