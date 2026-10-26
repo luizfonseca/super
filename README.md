@@ -65,17 +65,32 @@ proxy's private memory (without its executable's pages).
 
 | | Requests/s (HTTP / HTTPS) | CPU per request (HTTP / HTTPS) | Latency p99 (HTTP) | Memory (idle → under load) |
 | --- | ---: | ---: | ---: | ---: |
-| nginx | 113k / 84k | 8.8 / 11.8 µs | 0.64 ms | 7 → 10 MB |
-| Proksi | 49k / 41k | 20.3 / 24.4 µs | 1.58 ms | 10 → 17 MB |
-| **Super** | 71k / 60k | 14.0 / 16.6 µs | 1.05 ms | 5 → 11 MB |
+| nginx | 112k / 85k | 8.9 / 11.7 µs | 0.68 ms | 7 → 10 MB |
+| Proksi | 50k / 41k | 20.1 / 24.6 µs | 1.54 ms | 10 → 17 MB |
+| **Super** | 72k / 61k | 14.0 / 16.4 µs | 1.06 ms | 5 → 10 MB |
 
 **4 threads**
 
 | | Requests/s (HTTP / HTTPS) | CPU per request (HTTP / HTTPS) | Latency p99 (HTTP) | Memory (idle → under load) |
 | --- | ---: | ---: | ---: | ---: |
-| nginx | 419k / 360k | 8.1 / 10.1 µs | 0.33 ms | 22 → 26 MB |
-| Proksi | 82k / 75k | 41.6 / 45.6 µs | 1.10 ms | 10 → 20 MB |
-| **Super** | 298k / 259k | 13.0 / 15.3 µs | 0.39 ms | 5 → 12 MB |
+| nginx | 412k / 353k | 8.2 / 10.2 µs | 0.35 ms | 22 → 26 MB |
+| Proksi | 85k / 80k | 40.1 / 43.5 µs | 1.06 ms | 10 → 20 MB |
+| **Super** | 318k / 261k | 12.0 / 14.7 µs | 0.33 ms | 5 → 12 MB |
+
+**Other workloads** (4 threads)
+
+| | nginx | Proksi | Super |
+| --- | ---: | ---: | ---: |
+| A new connection for each request (HTTP) | 193k req/s | 63k req/s | 140k req/s |
+| A new connection for each request (TLS) | 20k req/s | 14k req/s | 16k req/s |
+| 1 MB downloads | 10.4 GB/s | 2.6 GB/s | 19.4 GB/s |
+| 10 MB downloads | 7.8 GB/s | 2.4 GB/s | 21.0 GB/s |
+| 1 MB uploads | 7.0 GB/s | 13.9 GB/s | 23.0 GB/s |
+| HTTP/2, 10 connections × 10 streams | 409k req/s | 99k req/s | 336k req/s |
+
+With TLS, most of a new connection's cost is OpenSSL's handshake (RSA, and the post-quantum key
+exchange Proksi and Super build with). Proksi reads bodies from upstreams 8 KiB at a time (see
+`PROKSI_ISSUES.md`).
 
 These come from a single machine, where the proxy, the upstream and the load generator share
 the same CPUs: a comparison, not the throughput of production.
