@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.0](https://github.com/luizfonseca/super/compare/super-v0.2.0...super-v0.3.0) (2026-10-26)
+
+
+### Features
+
+* **core:** websockets over HTTP/2 (RFC 8441) ([64b668e](https://github.com/luizfonseca/super/commit/64b668ee371d93186d1e28fdab54bc4a003e472d))
+* HTTP/3 on the HTTPS addresses (server.http3) ([15b30fa](https://github.com/luizfonseca/super/commit/15b30fada2cca85ca38e978a74ebb9ad33f4cff4))
+
+
+### Bug Fixes
+
+* pedantic lints of the HTTP/3 code ([013f83d](https://github.com/luizfonseca/super/commit/013f83dff9e579e7237739088c993673e5ccebd8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.2.0 to 0.3.0
+    * super_plugins bumped from 0.2.0 to 0.3.0
+    * super_core bumped from 0.2.0 to 0.3.0
+    * super_store bumped from 0.2.0 to 0.3.0
+  * dev-dependencies
+    * super_plugins bumped from 0.2.0 to 0.3.0
+    * super_store bumped from 0.2.0 to 0.3.0
+
 ## [0.2.0](https://github.com/luizfonseca/super/compare/super-v0.1.0...super-v0.2.0) (2026-10-26)
 
 
