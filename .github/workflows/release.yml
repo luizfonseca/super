@@ -220,7 +220,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_SECRET }}
           repository: luizfonseca/super
-          short-description: Proksi on hyper: reverse proxy and load balancer with automatic HTTPS
+          short-description: "Proksi on hyper: reverse proxy and load balancer with automatic HTTPS"
           readme-filepath: docker.README.md
 
   upload-artifacts:
