@@ -21,6 +21,9 @@ mod transfer;
 
 use configuration::{Opt, ServerConf};
 
+/// How long a process keeps accepting after handing its listening sockets over (Pingora's)
+const ACCEPTING_AFTER_UPGRADE: Duration = Duration::from_secs(5);
+
 /// Whether the server is shutting down (`true`), for services to stop
 pub type ShutdownWatch = watch::Receiver<bool>;
 
@@ -151,6 +154,7 @@ impl Server {
             shutdown,
             ..
         } = self;
+        close_undeclared(&services, &fds);
         for pending in services {
             start(pending, &configuration, &fds, shutdown.subscribe());
         }
@@ -163,6 +167,23 @@ impl Server {
         };
         std::process::exit(code);
     }
+}
+
+/// Closes the sockets handed over that no service listens on anymore (e.g. a `tcp` block
+/// removed before the upgrade)
+fn close_undeclared(services: &[Pending], fds: &ListenFds) {
+    let declared = services
+        .iter()
+        .filter_map(|pending| pending.service.service_listen_addresses())
+        .flatten()
+        .collect::<std::collections::HashSet<_>>();
+    fds.fds().handed_over.retain(|address, _| {
+        let kept = declared.contains(address);
+        if !kept {
+            tracing::info!("closing {address}, which nothing listens on anymore");
+        }
+        kept
+    });
 }
 
 /// Starts `pending` on threads of its own, once its dependencies are ready
@@ -260,6 +281,8 @@ fn signals(
                     Ok(Err(err)) => tracing::error!("can't hand the listening sockets over: {err}"),
                     Err(err) => tracing::error!("can't hand the listening sockets over: {err}"),
                 }
+                // Both processes accept for a while: the new one may still be starting
+                tokio::time::sleep(ACCEPTING_AFTER_UPGRADE).await;
             }
         }
         shutdown.send_replace(true);

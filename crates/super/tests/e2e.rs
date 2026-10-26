@@ -3397,7 +3397,7 @@ tcp "web" {
 
     /// Waits until the previous worker has stopped, its connections closed
     async fn wait_for_previous_to_stop(proksi: &Harness) {
-        // Pingora keeps accepting for 5 seconds after handing its sockets over
+        // The previous worker keeps accepting for 5 seconds after handing its sockets over
         for _ in 0..100 {
             if proksi.logs().contains("stopped (exit code 0)") {
                 return;
