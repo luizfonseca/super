@@ -29,7 +29,6 @@ hyper = { version = "1.12", features = ["server", "client", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 nix = { version = "0.31.3", features = ["socket", "uio", "fs"] }
 openssl = { version = "0.10", features = ["vendored"] }
-openssl-sys = "0.9"
 socket2 = { version = "0.6", features = ["all"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal"] }
 tokio-openssl = "0.6.5"

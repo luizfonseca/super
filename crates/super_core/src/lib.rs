@@ -17,6 +17,7 @@ pub mod error;
 pub mod http;
 pub mod lb;
 pub mod protocols;
+pub mod tls;
 
 pub use error::{Error, ErrorSource, ErrorType, OrErr, Result, RetryType};
 
