@@ -139,7 +139,7 @@ async fn accept<A: ServerApp>(
                     }
                 };
                 let (app, tls, shutdown) = (app.clone(), endpoint.tls.clone(), shutdown.clone());
-                tokio::spawn(serve(app, L4Stream::from(socket), tls, shutdown));
+                crate::server::spawn(serve(app, L4Stream::from(socket), tls, shutdown));
             }
             changed = shutdown.changed(), if watching => {
                 watching = changed.is_ok();

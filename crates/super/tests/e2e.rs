@@ -885,6 +885,23 @@ async fn test_request_ids_from_clients_are_replaced() {
     proksi.assert_healthy();
 }
 
+/// Without work stealing, each connection stays on a thread of its own
+#[tokio::test(flavor = "multi_thread")]
+async fn test_requests_are_served_without_work_stealing() {
+    let mut proksi = Harness::start_with_server(
+        vec![Route::new("app.test", Upstream::Http)],
+        "work_stealing = false",
+        "",
+    )
+    .await;
+
+    let responses = futures_util::future::join_all((0..20).map(|_| proksi.get("app.test", "/")));
+    for response in responses.await {
+        assert_eq!(response.unwrap().status, 200);
+    }
+    proksi.assert_healthy();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_request_ids_from_trusted_proxies_are_kept() {
     let mut proksi = Harness::start_with_server(

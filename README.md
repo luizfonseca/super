@@ -10,6 +10,51 @@ replaced, by `super_core`, which keeps Pingora's request phases (`ProxyHttp`) on
 
 The binary is `super`. Everything below is Proksi's guide, which applies as it is.
 
+## Layout
+
+- `crates/super_core`: the core on hyper, with Pingora's request phases (`ProxyHttp`), its
+  server and services, connections to upstreams, load balancers, cache and compression
+- `crates/super`: Proksi itself (package `super_proxy`, binary `super`)
+- `crates/super_plugins`, `crates/super_store`, `crates/super_admin_ui`: Proksi's plugins,
+  stores and admin UI
+
+## How it differs from Proksi
+
+Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What still differs:
+
+- **Header names** of HTTP/1.1 responses: those of upstreams keep their case, as Proksi; those
+  Super adds are Title-Case (`X-Request-Id`), where Proksi keeps them as written. HTTP/2 is
+  lowercase in both.
+- **Stale responses** in the cache are fetched again, not served while they're revalidated
+  (`stale_while_revalidate`); they're still served when the upstream fails within
+  `stale_if_error`.
+- **Upgrades** hand the listening sockets over the same way between Super workers, but not from a
+  Proksi worker to a Super one (the socket is `super-upgrade-*.sock`): replace Proksi with Super
+  by restarting, or behind a load balancer.
+- **Certificates** are chosen with the name read from the client's `ClientHello`, before the
+  handshake, instead of an asynchronous OpenSSL callback (the same certificates are served).
+
+## Benchmarks
+
+`.github/workflows/versus-proksi.yml` runs Proksi's benchmark with Proksi and Super side by side
+(same configuration, same machine, alternating rounds); pull requests are benchmarked against
+`main` as in Proksi.
+
+A first run (Proksi's `compare.py`: medians of 3 alternating rounds, 10s at 50 connections with
+`oha`, 4 worker threads, access logs on, both built with thin LTO, proxying to nginx), in a
+Linux container on an 8-CPU VM, so indicative only:
+
+| | Proksi | Super | change |
+| --- | ---: | ---: | ---: |
+| HTTP requests/s | 85,931 | 114,494 | +33.2% |
+| HTTP latency p50 / p99 | 0.56 / 1.14 ms | 0.42 / 0.86 ms | -24% |
+| HTTP CPU per 10k requests | 354 ms | 238 ms | -32.7% |
+| HTTP peak memory | 50.5 MB | 41.2 MB | -18.4% |
+| HTTPS requests/s | 79,143 | 106,368 | +34.4% |
+| HTTPS latency p50 / p99 | 0.61 / 1.20 ms | 0.45 / 0.91 ms | -25% |
+| HTTPS CPU per 10k requests | 392 ms | 268 ms | -31.6% |
+| HTTPS peak memory | 51.9 MB | 42.7 MB | -17.8% |
+
 ---
 
 <p align="center">
