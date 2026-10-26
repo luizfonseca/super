@@ -548,3 +548,54 @@ async fn test_uploads_answered_early() {
         assert_eq!(answer, "ok");
     }
 }
+
+/// An upstream whose body stops coming after its first bytes
+async fn stalling_upstream() -> SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let mut head = [0u8; 1024];
+                let _ = socket.read(&mut head).await;
+                let response = b"HTTP/1.1 200 OK\r\ncontent-length: 10\r\n\r\nab";
+                let _ = socket.write_all(response).await;
+                tokio::time::sleep(Duration::from_secs(30)).await;
+            });
+        }
+    });
+    addr
+}
+
+#[tokio::test]
+async fn test_bodies_that_stop_coming_time_out() {
+    let proxy = Arc::new(http_proxy(
+        &Arc::new(ServerConf::default()),
+        Impatient(stalling_upstream().await),
+    ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let shutdown = tokio::sync::watch::channel(false).1;
+        serve(&proxy, Box::new(Stream::from(socket)), &shutdown).await;
+    });
+    let socket = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+    let (mut client, connection) = hyper::client::conn::http1::handshake(TokioIo::new(socket))
+        .await
+        .unwrap();
+    tokio::spawn(connection);
+    let request = hyper::Request::get("/")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let started = std::time::Instant::now();
+    let response = client.send_request(request).await.unwrap();
+    // Cut short within one to two timeouts (50ms each)
+    assert!(response.into_body().collect().await.is_err());
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+}

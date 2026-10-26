@@ -6,10 +6,12 @@
 //! upstream don't wait for each other's lock, and a connection's requests run on the thread its
 //! driver runs on (no thread wakes another for each request).
 //!
-//! A thread that never kept a connection to an upstream borrows another thread's idle one, as
-//! Pingora's shared pool would, rather than open one: an upstream little used, or a thread seldom
-//! sending it requests, doesn't get a connection per thread. A borrowed connection goes back to
-//! its thread after the request. A thread busy with an upstream has connections of its own.
+//! A thread without an idle connection to an upstream borrows another thread's, as Pingora's
+//! shared pool would, rather than open one: an upstream little used, or a thread seldom sending
+//! it requests, doesn't get a connection per thread. A borrowed connection goes back to its
+//! thread after the request. A thread that borrowed less than a second ago opens its own
+//! instead: a thread busy with an upstream has connections of its own (each part of a body on a
+//! borrowed one would wake its thread).
 
 use std::{
     cell::Cell,
@@ -52,6 +54,9 @@ pub(crate) fn own_shard() -> usize {
     })
 }
 
+/// A thread borrowing connections more often than this opens its own
+const BORROWING: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// Idle connections kept per upstream, at most (shared by the threads, as Pingora's pool)
 const MAX_IDLE: usize = 128;
 
@@ -78,6 +83,8 @@ struct Shared {
 struct Upstream {
     idle: VecDeque<Idle>,
     shared: Vec<Shared>,
+    /// When this thread last borrowed another thread's connection to it
+    borrowed_at: Option<Instant>,
 }
 
 /// A request on an HTTP/2 connection, counted until dropped
@@ -110,15 +117,24 @@ impl Pool {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// A connection kept for `key`: one of this thread's, or (when it never kept one) one
-    /// borrowed from another thread whose shard isn't busy
+    /// A connection kept for `key`: one of this thread's, else (when it didn't borrow one less
+    /// than `BORROWING` ago) one borrowed from another thread whose shard isn't busy
     pub fn checkout(&self, key: u64, max_h2_streams: usize) -> Option<HttpSession> {
         let own = own_shard();
         {
             let mut shard = self.lock(own);
-            if shard.contains_key(&key) {
-                return take(&mut shard, own, key, max_h2_streams);
+            if let Some(session) = take(&mut shard, own, key, max_h2_streams) {
+                return Some(session);
             }
+            let now = Instant::now();
+            let upstream = shard.entry(key).or_default();
+            let busy = upstream
+                .borrowed_at
+                .is_some_and(|at| now.duration_since(at) < BORROWING);
+            if busy {
+                return None;
+            }
+            upstream.borrowed_at = Some(now);
         }
         // The shards threads were given
         let used = NEXT_SHARD.load(Ordering::Relaxed).min(SHARDS);
@@ -263,15 +279,14 @@ mod tests {
     async fn test_busy_threads_use_their_own_connections() {
         let pool = std::sync::Arc::new(Pool::new());
         pool.keep(own_shard(), 8, connection().await, 0, None);
-        let theirs = connection().await;
+        pool.keep(own_shard(), 8, connection().await, 0, None);
 
         let borrowed = {
             let pool = pool.clone();
             std::thread::spawn(move || {
-                // It keeps connections of its own (all in use now): it opens another
-                pool.keep(own_shard(), 8, theirs, 0, None);
-                let own = pool.checkout(8, 1).is_some();
-                (own, pool.checkout(8, 1).is_some())
+                // Borrowed once, then (less than a second later) its own is opened
+                let first = pool.checkout(8, 1).is_some();
+                (first, pool.checkout(8, 1).is_some())
             })
             .join()
             .unwrap()

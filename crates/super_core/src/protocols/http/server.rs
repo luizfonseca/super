@@ -134,16 +134,7 @@ impl ServerSession {
             let Some(body) = &mut self.body else {
                 return Ok(None);
             };
-            let frame = match self.read_timeout {
-                Some(timeout) => {
-                    tokio::time::timeout(timeout, body.frame())
-                        .await
-                        .map_err(|_| {
-                            Error::explain(ErrorType::ReadTimedout, "reading the request body")
-                        })?
-                }
-                None => body.frame().await,
-            };
+            let frame = next_frame(body, self.read_timeout).await?;
             let frame = match frame {
                 None => {
                     self.body = None;
@@ -389,6 +380,23 @@ impl ServerSession {
     }
 }
 
+/// The next frame of a request body: what's there already, else waiting at most `timeout`
+async fn next_frame(
+    body: &mut Incoming,
+    timeout: Option<Duration>,
+) -> Result<Option<std::result::Result<http_body::Frame<Bytes>, hyper::Error>>> {
+    // There already: no timer
+    if let Some(frame) = futures_util::FutureExt::now_or_never(body.frame()) {
+        return Ok(frame);
+    }
+    let Some(timeout) = timeout else {
+        return Ok(body.frame().await);
+    };
+    tokio::time::timeout(timeout, body.frame())
+        .await
+        .map_err(|_| Error::explain(ErrorType::ReadTimedout, "reading the request body"))
+}
+
 /// Sends a part of a streamed body, waiting for room at most `timeout`
 async fn send_part(
     parts: &mpsc::Sender<Part>,
@@ -396,6 +404,12 @@ async fn send_part(
     timeout: Option<Duration>,
 ) -> Result<()> {
     let gone = || Error::explain(ErrorType::WriteError, "the client is gone").into_down();
+    // Room already (the client keeps up): no timer
+    let part = match parts.try_send(part) {
+        Ok(()) => return Ok(()),
+        Err(mpsc::error::TrySendError::Closed(_)) => return Err(gone()),
+        Err(mpsc::error::TrySendError::Full(part)) => part,
+    };
     let Some(timeout) = timeout else {
         return parts.send(part).await.map_err(|_| gone());
     };

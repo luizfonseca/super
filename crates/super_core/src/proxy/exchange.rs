@@ -97,13 +97,14 @@ async fn stream<SV: ProxyHttp>(
     upload: &mut upload::Upload,
     read_timeout: Option<Duration>,
 ) -> Result<()> {
+    let mut watchdog = Watchdog::new(read_timeout);
     loop {
         // The response's header goes first when its body takes time to come
         let frame = if let Some(frame) = body.frame().now_or_never() {
             frame
         } else {
             session.downstream_session.flush_header()?;
-            let next = with_timeout(body.frame().map(Ok), read_timeout);
+            let next = watchdog.frame(body);
             upload::alongside(next, upload, proxy, session, ctx).await??
         };
         let Some(frame) = frame else {
@@ -164,6 +165,53 @@ pub(super) async fn respond_body<SV: ProxyHttp>(
         tokio::time::sleep(wait).await;
     }
     session.write_response_body(data, end).await
+}
+
+/// Times out an upstream's body that stops coming, with one timer for the whole body (a timer
+/// for each part costs more than the part, at gigabytes a second): re-armed when it fires if
+/// parts came meanwhile, so a body is given up after one to two timeouts without any
+struct Watchdog {
+    timeout: Option<Duration>,
+    sleep: Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+    came: bool,
+}
+
+impl Watchdog {
+    fn new(timeout: Option<Duration>) -> Self {
+        Self {
+            timeout,
+            sleep: None,
+            came: false,
+        }
+    }
+
+    /// The next frame of `body`
+    async fn frame(
+        &mut self,
+        body: &mut Incoming,
+    ) -> Result<Option<std::result::Result<hyper::body::Frame<Bytes>, hyper::Error>>> {
+        let Some(timeout) = self.timeout else {
+            return Ok(body.frame().await);
+        };
+        let Self { sleep, came, .. } = self;
+        let sleep = sleep.get_or_insert_with(|| Box::pin(tokio::time::sleep(timeout)));
+        loop {
+            tokio::select! {
+                biased;
+                frame = body.frame() => {
+                    *came = true;
+                    return Ok(frame);
+                }
+                () = sleep.as_mut() => {
+                    if !std::mem::take(came) {
+                        let e = Error::explain(ErrorType::ReadTimedout, "reading the upstream's body");
+                        return Err(e.into_up());
+                    }
+                    sleep.as_mut().reset(tokio::time::Instant::now() + timeout);
+                }
+            }
+        }
+    }
 }
 
 /// Sends `request` once the connection takes it

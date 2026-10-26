@@ -206,6 +206,12 @@ async fn reserve(
     timeout: Option<Duration>,
 ) -> Result<mpsc::Permit<'_, Part>> {
     let gone = || Error::explain(ErrorType::WriteError, "the upstream stopped reading").into_up();
+    // Room already (the upstream keeps up): no timer
+    match sender.try_reserve() {
+        Ok(permit) => return Ok(permit),
+        Err(mpsc::error::TrySendError::Closed(())) => return Err(gone()),
+        Err(mpsc::error::TrySendError::Full(())) => {}
+    }
     let Some(timeout) = timeout else {
         return sender.reserve().await.map_err(|_| gone());
     };
