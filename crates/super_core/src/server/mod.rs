@@ -204,6 +204,12 @@ fn start(pending: Pending, configuration: &ServerConf, fds: &ListenFds, shutdown
         .lock()
         .map(|dependencies| dependencies.clone())
         .unwrap_or_default();
+    // Without work stealing: connections are spread over threads of their own, each keeping its
+    // connections (Pingora's)
+    let pinned = (!configuration.work_stealing && threads > 1)
+        .then(|| workers(threads, &name))
+        .flatten();
+    let threads = if pinned.is_some() { 1 } else { threads };
     let spawned = std::thread::Builder::new()
         .name(name.clone())
         .spawn(move || {
@@ -214,7 +220,7 @@ fn start(pending: Pending, configuration: &ServerConf, fds: &ListenFds, shutdown
                     return;
                 }
             };
-            runtime.block_on(async move {
+            let serving = async move {
                 for mut dependency in dependencies {
                     let _ = dependency.wait_for(|ready| *ready).await;
                 }
@@ -222,7 +228,11 @@ fn start(pending: Pending, configuration: &ServerConf, fds: &ListenFds, shutdown
                 // What it started (e.g. connections finishing after it stopped accepting) runs
                 // until the server exits
                 std::future::pending::<()>().await;
-            });
+            };
+            match pinned {
+                Some(workers) => runtime.block_on(WORKERS.scope(workers, serving)),
+                None => runtime.block_on(serving),
+            }
         });
     if let Err(err) = spawned {
         tracing::error!("can't start {}: {err}", handle.name);
@@ -236,6 +246,66 @@ async fn run(
     ready: ServiceReadyNotifier,
 ) {
     service.start(Some(fds), shutdown, ready).await;
+}
+
+tokio::task_local! {
+    /// The threads of the service running, when they don't steal work from each other
+    static WORKERS: Arc<Workers>;
+}
+
+/// Threads each running tasks of their own, given in turn
+pub struct Workers {
+    handles: Vec<tokio::runtime::Handle>,
+    next: std::sync::atomic::AtomicUsize,
+}
+
+impl Workers {
+    fn next(&self) -> Option<&tokio::runtime::Handle> {
+        let turn = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.handles.get(turn % self.handles.len().max(1))
+    }
+}
+
+/// Runs `task` (e.g. a connection) on the service's threads: when they don't steal work from
+/// each other, on the next one in turn, where it stays
+pub fn spawn<F>(task: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    let handle = WORKERS
+        .try_with(|workers| workers.next().cloned())
+        .ok()
+        .flatten();
+    match handle {
+        Some(handle) => drop(handle.spawn(task)),
+        None => drop(tokio::spawn(task)),
+    }
+}
+
+/// `threads` threads, each with a runtime of its own (running until the server exits)
+fn workers(threads: usize, name: &str) -> Option<Arc<Workers>> {
+    let handles = (0..threads)
+        .map(|index| worker(&format!("{name}-{index}")))
+        .collect::<std::io::Result<Vec<_>>>();
+    match handles {
+        Ok(handles) => Some(Arc::new(Workers {
+            handles,
+            next: std::sync::atomic::AtomicUsize::new(0),
+        })),
+        Err(err) => {
+            tracing::error!("can't start the threads of {name}: {err}");
+            None
+        }
+    }
+}
+
+fn worker(name: &str) -> std::io::Result<tokio::runtime::Handle> {
+    let runtime = runtime(1, name)?;
+    let handle = runtime.handle().clone();
+    std::thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || runtime.block_on(std::future::pending::<()>()))?;
+    Ok(handle)
 }
 
 fn runtime(threads: usize, name: &str) -> std::io::Result<tokio::runtime::Runtime> {
