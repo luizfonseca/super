@@ -654,9 +654,9 @@ pub struct ServerCfg {
     #[serde(default)]
     pub tls: server_tls::ServerTls,
 
-    /// Whether worker threads take over each other's connections (default: `true`). Without it,
-    /// each connection stays on the thread that accepted it: less CPU per request with cores to
-    /// spare, less throughput when proksi gets less CPU than it has threads.
+    /// Whether worker threads take over each other's connections (default: `false`). Without it,
+    /// each connection stays on the thread that accepted it: far less CPU per request with cores
+    /// to spare, less throughput when Super gets less CPU than it has threads.
     #[arg(skip)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_stealing: Option<bool>,
@@ -678,9 +678,10 @@ impl ServerCfg {
         std::time::Duration::from_secs(self.shutdown_timeout_secs.unwrap_or(30))
     }
 
-    /// Whether worker threads take over each other's connections (`server.work_stealing`)
+    /// Whether worker threads take over each other's connections (`server.work_stealing`): off
+    /// unless set, unlike Proksi, as connections kept on their thread cost far less with the core
     pub fn work_stealing(&self) -> bool {
-        self.work_stealing.unwrap_or(true)
+        self.work_stealing.unwrap_or(false)
     }
 }
 
@@ -1192,11 +1193,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_work_stealing_is_on_unless_turned_off() {
+    fn test_work_stealing_is_off_unless_turned_on() {
         let server = |value| serde_json::from_value::<ServerCfg>(value).unwrap();
 
-        assert!(server(json!({})).work_stealing());
-        assert!(!server(json!({ "work_stealing": false })).work_stealing());
+        assert!(!server(json!({})).work_stealing());
+        assert!(server(json!({ "work_stealing": true })).work_stealing());
     }
 
     #[test]

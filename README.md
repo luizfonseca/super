@@ -33,6 +33,13 @@ Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What 
   by restarting, or behind a load balancer.
 - **Certificates** are chosen with the name read from the client's `ClientHello`, before the
   handshake, instead of an asynchronous OpenSSL callback (the same certificates are served).
+- **`server.work_stealing`** is off unless set (Proksi's is on): each connection stays on the
+  thread that accepted it, which costs far less CPU per request with the core. Set it to `true`
+  when Super gets fewer CPUs than it has threads.
+- **Upstream connections** are kept per thread, and a thread that never kept one to an upstream
+  borrows another thread's idle connection (as Pingora's shared pool would): as fast as pools of
+  their own, with more connections kept open than Proksi's single pool when every thread sends
+  requests to every upstream.
 
 ## Benchmarks
 
