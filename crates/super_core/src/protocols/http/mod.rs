@@ -5,3 +5,8 @@ pub mod server;
 
 pub use body::ResponseBody;
 pub use server::{Connection, ResponseWritten, ServerSession};
+
+/// Pingora's path of the compression algorithms
+pub mod compression {
+    pub use crate::modules::compression::Algorithm;
+}

@@ -14,13 +14,17 @@
 #[cfg(any(test, feature = "test-util"))]
 pub mod allocations;
 pub mod apps;
+pub mod cache;
 pub mod error;
 pub mod http;
 pub mod lb;
+pub mod modules;
 pub mod protocols;
+pub mod proxy;
 pub mod server;
 pub mod services;
 pub mod tls;
+pub mod upstreams;
 
 pub use error::{Error, ErrorSource, ErrorType, OrErr, Result, RetryType};
 
