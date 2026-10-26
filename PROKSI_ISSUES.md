@@ -45,6 +45,15 @@ served from memory gets an empty body. The same goes for anything that reads par
 
 Fix: copy only once the whole body was read (count the bytes against the metadata's length).
 
+### `HEAD` responses can be cached, empty — to verify
+
+`crates/proksi/src/proxy_server/https_proxy.rs`: `CACHEABLE_METHODS` holds `HEAD`, so a `HEAD`
+that misses the cache can store its response, which has no body, under the same key as a `GET`
+(`cache_key_callback` doesn't include the method). Unless Pingora fetches a `HEAD` miss as a
+`GET`, the next `GET` gets an empty body.
+
+Fix: only `GET` responses are stored (a `HEAD` can still be served from them).
+
 ### Renewed metadata isn't seen by the memory copy — confirmed
 
 `crates/proksi/src/cache/disk/storage.rs` (`update_meta`) rewrites the metadata file, but

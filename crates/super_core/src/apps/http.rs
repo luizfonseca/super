@@ -26,6 +26,13 @@ use crate::{
     server::ShutdownWatch,
 };
 
+/// Headers of an HTTP/1.1 request, at most, and their size (as Pingora's, above hyper's defaults)
+pub(crate) const MAX_HEADERS: usize = 256;
+pub(crate) const MAX_HEADER_SIZE: usize = 1 << 20;
+
+/// Size of an HTTP/2 request's headers, at most (as Pingora's)
+const MAX_H2_HEADER_LIST: u32 = 64 * 1024;
+
 /// A request that got no response: hyper closes its connection
 #[derive(Debug)]
 struct Unanswered;
@@ -66,7 +73,8 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
         let mut builder = hyper::server::conn::http2::Builder::new(TokioExecutor::new());
         builder
             .timer(TokioTimer::new())
-            .max_concurrent_streams(options.max_h2_streams);
+            .max_concurrent_streams(options.max_h2_streams)
+            .max_header_list_size(MAX_H2_HEADER_LIST);
         let connection = builder.serve_connection(io, service);
         drive(connection, &activity, &options, &mut shutdown, true).await;
         return;
@@ -77,7 +85,9 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
         .timer(TokioTimer::new())
         .keep_alive(true)
         .preserve_header_case(true)
-        .title_case_headers(true);
+        .title_case_headers(true)
+        .max_headers(MAX_HEADERS)
+        .max_buf_size(MAX_HEADER_SIZE);
     if let Some(timeout) = options.header_read_timeout {
         builder.header_read_timeout(timeout);
     }

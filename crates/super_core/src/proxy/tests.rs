@@ -40,6 +40,7 @@ async fn upstream() -> SocketAddr {
             tokio::spawn(async move {
                 let service = service_fn(answer);
                 let _ = hyper::server::conn::http1::Builder::new()
+                    .max_headers(256)
                     .serve_connection(TokioIo::new(socket), service)
                     .with_upgrades()
                     .await;
@@ -495,12 +496,12 @@ async fn test_slow_upstreams_time_out() {
 }
 
 /// Allocations of a request through the proxy, beyond those of the client and the upstream (and
-/// of these tests' phases): hyper's parsing and dispatch, and the request sent to the upstream.
-/// Kept from growing.
+/// of these tests' phases): hyper's parsing and dispatch (on the heap above 100 headers, which
+/// Pingora's limit of 256 takes), and the request sent to the upstream. Kept from growing.
 #[tokio::test]
 async fn test_allocations_of_a_proxied_request() {
     /// What a request costs today, at most
-    const PROXY: usize = 38;
+    const PROXY: usize = 42;
 
     let addr = upstream().await;
     let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
@@ -713,4 +714,34 @@ async fn test_stale_responses_are_revalidated_and_served_meanwhile() {
         NOT_MODIFIED_ANSWERS.load(Ordering::Relaxed),
         not_modified + 1
     );
+}
+
+#[tokio::test]
+async fn test_head_requests_leave_the_cache_alone() {
+    let (mut client, _) = proxy_to(vec![upstream().await], false).await;
+    client.ready().await.unwrap();
+    let head = hyper::Request::head("/cached-etag-head")
+        .header("host", "a.test")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    client.send_request(head).await.unwrap();
+    let (parts, body) = get(&mut client, "/cached-etag-head", &[]).await;
+    assert_eq!(
+        (parts.status.as_u16(), body.as_ref()),
+        (200, &b"0123456789"[..])
+    );
+}
+
+#[tokio::test]
+async fn test_requests_with_many_headers() {
+    let (mut client, _) = proxy_to(vec![upstream().await], false).await;
+    let names = (0..200)
+        .map(|index| format!("x-many-{index}"))
+        .collect::<Vec<_>>();
+    let headers = names
+        .iter()
+        .map(|name| (name.as_str(), "1"))
+        .collect::<Vec<_>>();
+    let (parts, _) = get(&mut client, "/many", &headers).await;
+    assert_eq!(parts.status, 200);
 }

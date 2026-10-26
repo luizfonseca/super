@@ -33,8 +33,13 @@ fn remove_hop_by_hop(headers: &mut HeaderMap, upgrade: bool) {
             headers.remove(name);
         }
     }
+    // `TE: trailers` goes on (gRPC servers need it), as with Pingora
+    let trailers = headers
+        .get(header::TE)
+        .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"trailers"));
     for name in &HOP_BY_HOP {
-        let kept = upgrade && (name == header::CONNECTION || name == header::UPGRADE);
+        let kept = (upgrade && (name == header::CONNECTION || name == header::UPGRADE))
+            || (trailers && name == header::TE);
         if !kept {
             headers.remove(name);
         }
@@ -156,6 +161,20 @@ mod tests {
         assert!(!upstream.headers.contains_key("keep-alive"));
         assert_eq!(upstream.headers["x-kept"], "1");
         assert_eq!(upstream.uri, "/a?b");
+    }
+
+    #[test]
+    fn test_grpc_trailers_go_on() {
+        let mut request = RequestHeader::build("POST", b"/svc/Method", None).unwrap();
+        request.insert_header(header::TE, "trailers").unwrap();
+        let upstream = upstream_request(&mut request, false, true);
+        assert_eq!(upstream.headers[header::TE], "trailers");
+
+        let mut request = RequestHeader::build("GET", b"/", None).unwrap();
+        request.insert_header(header::TE, "gzip").unwrap();
+        assert!(!upstream_request(&mut request, false, false)
+            .headers
+            .contains_key(header::TE));
     }
 
     #[test]

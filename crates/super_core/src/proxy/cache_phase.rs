@@ -261,8 +261,11 @@ pub(super) async fn admit<SV: ProxyHttp>(
     if session.cache.phase() != CachePhase::Miss {
         return;
     }
-    // Whole successful responses only (not a part of a body, nor a `304` to a client's question)
-    let whole = header.status.is_success() && header.status != http::StatusCode::PARTIAL_CONTENT;
+    // Whole successful responses only (not a part of a body, a `304` to a client's question, nor
+    // a `HEAD`'s, which has no body)
+    let whole = header.status.is_success()
+        && header.status != http::StatusCode::PARTIAL_CONTENT
+        && session.req_header().method != http::Method::HEAD;
     if !whole {
         return bypass(session);
     }
