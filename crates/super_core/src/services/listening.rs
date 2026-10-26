@@ -109,12 +109,14 @@ impl<A: ServerApp> ServiceTrait for Service<A> {
     }
 }
 
-/// Accepts the connections of `endpoint` until shutting down
+/// Accepts the connections of `endpoint` until shutting down: on each of the service's threads
+/// when they don't steal work from each other (each serves what it accepts, as nginx's
+/// workers), else on the service's runtime
 async fn accept<A: ServerApp>(
     app: Arc<A>,
     endpoint: &Endpoint,
     fds: Option<ListenFds>,
-    mut shutdown: ShutdownWatch,
+    shutdown: ShutdownWatch,
 ) {
     let listener = match listen(&endpoint.address, &endpoint.options, fds.as_ref()) {
         Ok(listener) => listener,
@@ -122,6 +124,37 @@ async fn accept<A: ServerApp>(
             tracing::error!("can't listen on {}: {err}", endpoint.address);
             // Without its addresses, the server can't do its job
             std::process::exit(1);
+        }
+    };
+    let tls = endpoint.tls.clone();
+    let Some(workers) = crate::server::workers() else {
+        accept_on(app, listener, tls, shutdown).await;
+        return;
+    };
+    // The same socket on each thread: the first one to take a connection serves it
+    let accepting = workers
+        .iter()
+        .filter_map(|worker| {
+            let listener = listener.try_clone().ok()?;
+            let (app, tls, shutdown) = (app.clone(), tls.clone(), shutdown.clone());
+            Some(worker.spawn(accept_on(app, listener, tls, shutdown)))
+        })
+        .collect::<Vec<_>>();
+    futures_util::future::join_all(accepting).await;
+}
+
+/// Accepts connections on `listener`, and serves them on this thread, until shutting down
+async fn accept_on<A: ServerApp>(
+    app: Arc<A>,
+    listener: std::net::TcpListener,
+    tls: Option<Acceptor>,
+    mut shutdown: ShutdownWatch,
+) {
+    let listener = match TcpListener::from_std(listener) {
+        Ok(listener) => listener,
+        Err(err) => {
+            tracing::error!("can't accept connections: {err}");
+            return;
         }
     };
     // Without a server to say so, it never shuts down
@@ -138,8 +171,8 @@ async fn accept<A: ServerApp>(
                         continue;
                     }
                 };
-                let (app, tls, shutdown) = (app.clone(), endpoint.tls.clone(), shutdown.clone());
-                crate::server::spawn(serve(app, L4Stream::from(socket), tls, shutdown));
+                let (app, tls, shutdown) = (app.clone(), tls.clone(), shutdown.clone());
+                tokio::spawn(serve(app, L4Stream::from(socket), tls, shutdown));
             }
             changed = shutdown.changed(), if watching => {
                 watching = changed.is_ok();
@@ -178,12 +211,11 @@ fn listen(
     address: &str,
     options: &TcpSocketOptions,
     fds: Option<&ListenFds>,
-) -> std::io::Result<TcpListener> {
+) -> std::io::Result<std::net::TcpListener> {
     if let Some(fd) = fds.and_then(|fds| fds.take(address)) {
         tracing::info!("listening on {address} (handed over)");
         let listener = fd.into_std_listener();
         listener.set_nonblocking(true)?;
-        let listener = TcpListener::from_std(listener)?;
         if let Some(fds) = fds {
             fds.add(address, listener.as_raw_fd());
         }
@@ -204,7 +236,7 @@ fn listen(
     socket.set_nonblocking(true)?;
     socket.bind(&addr.into())?;
     socket.listen(65_535)?;
-    let listener = TcpListener::from_std(socket.into())?;
+    let listener = std::net::TcpListener::from(socket);
     if let Some(fds) = fds {
         fds.add(address, listener.as_raw_fd());
     }
