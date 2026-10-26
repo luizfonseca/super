@@ -31,7 +31,9 @@ pub fn default_peer_opts(timeouts: UpstreamTimeouts) -> PeerOptions {
     po.connection_timeout = Some(connect);
     // The TLS handshake of HTTPS upstreams, after connecting
     po.total_connection_timeout = Some(connect + secs(timeouts.tls_secs, 10));
-    po.tcp_recv_buf = Some(1024 * 8);
+    // The kernel sizes the receive buffer (a fixed 8 KiB turns that off, and caps each read of
+    // a body to it)
+    po.tcp_recv_buf = None;
     po.tcp_keepalive = Some(TcpKeepalive {
         count: 10,
         idle: Duration::from_secs(60),
