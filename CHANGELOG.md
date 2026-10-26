@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.2](https://github.com/luizfonseca/super/compare/super-v0.3.1...super-v0.3.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* proxy and upstream times in access logs and the admin ([422702b](https://github.com/luizfonseca/super/commit/422702b7839f1919b42787043977b25561ceeaab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.3.1 to 0.3.2
+    * super_plugins bumped from 0.3.1 to 0.3.2
+    * super_core bumped from 0.3.1 to 0.3.2
+    * super_store bumped from 0.3.1 to 0.3.2
+  * dev-dependencies
+    * super_plugins bumped from 0.3.1 to 0.3.2
+    * super_store bumped from 0.3.1 to 0.3.2
+
 ## [0.3.1](https://github.com/luizfonseca/super/compare/super-v0.3.0...super-v0.3.1) (2026-10-26)
 
 

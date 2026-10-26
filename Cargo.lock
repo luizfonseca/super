@@ -4234,11 +4234,11 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "super_admin_ui"
-version = "0.3.1"
+version = "0.3.2"
 
 [[package]]
 name = "super_core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4269,7 +4269,7 @@ dependencies = [
 
 [[package]]
 name = "super_plugins"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4306,7 +4306,7 @@ dependencies = [
 
 [[package]]
 name = "super_proxy"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "TinyUFO",
  "acme-v2",
@@ -4374,7 +4374,7 @@ dependencies = [
 
 [[package]]
 name = "super_store"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "async-trait",
  "openssl",
