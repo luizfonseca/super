@@ -17,7 +17,6 @@ use crate::{
 pub struct TcpSocketOptions {
     /// Only IPv6 on an IPv6 address (the system's default when `None`)
     pub ipv6_only: Option<bool>,
-    pub tcp_fastopen: Option<usize>,
 }
 
 /// An address to listen on
@@ -201,10 +200,6 @@ fn listen(
     socket.set_reuse_address(true)?;
     if let (Some(only), true) = (options.ipv6_only, addr.is_ipv6()) {
         socket.set_only_v6(only)?;
-    }
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    if let Some(queue) = options.tcp_fastopen {
-        socket.set_tcp_fastopen(u32::try_from(queue).unwrap_or(u32::MAX))?;
     }
     socket.set_nonblocking(true)?;
     socket.bind(&addr.into())?;

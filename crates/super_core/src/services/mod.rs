@@ -130,6 +130,8 @@ pub trait AnyService: Send + Sync + 'static {
     fn service_name(&self) -> String;
 
     fn service_threads(&self) -> Option<usize>;
+
+    fn service_listen_addresses(&self) -> Option<Vec<String>>;
 }
 
 impl<S: ServiceWithDependents> AnyService for S {
@@ -151,6 +153,10 @@ impl<S: ServiceWithDependents> AnyService for S {
 
     fn service_threads(&self) -> Option<usize> {
         ServiceWithDependents::threads(self)
+    }
+
+    fn service_listen_addresses(&self) -> Option<Vec<String>> {
+        ServiceWithDependents::listen_addresses(self)
     }
 }
 

@@ -6,7 +6,7 @@ use std::{
     future::{poll_fn, Future},
     pin::Pin,
     sync::{
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc,
     },
     task::Poll,
@@ -68,7 +68,7 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
             .timer(TokioTimer::new())
             .max_concurrent_streams(options.max_h2_streams);
         let connection = builder.serve_connection(io, service);
-        drive(connection, &activity, &options, &mut shutdown).await;
+        drive(connection, &activity, &options, &mut shutdown, true).await;
         return;
     }
     let mut builder = hyper::server::conn::http1::Builder::new();
@@ -82,7 +82,7 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
         builder.header_read_timeout(timeout);
     }
     let connection = builder.serve_connection(io, service).with_upgrades();
-    drive(connection, &activity, &options, &mut shutdown).await;
+    drive(connection, &activity, &options, &mut shutdown, false).await;
 }
 
 /// A hyper connection, which can stop taking requests
@@ -117,28 +117,42 @@ where
     }
 }
 
-/// Runs `connection` until it closes: gracefully once shutting down, or once idle for too long
+/// How long an HTTP/1.1 connection can stay idle once shutting down: a client reusing it
+/// meanwhile gets its answer (and the connection is closed after it), instead of a connection
+/// closed under its request
+const IDLE_WHEN_STOPPING: Duration = Duration::from_secs(1);
+
+/// Runs `connection` until it closes: once idle for too long, or once shutting down (HTTP/2
+/// streams are told to go away right away; HTTP/1.1 connections answer one more request at most)
 async fn drive<C, E>(
     connection: C,
     activity: &Activity,
     options: &HttpServerOptions,
     shutdown: &mut ShutdownWatch,
+    http2: bool,
 ) where
     C: Graceful<Output = Result<(), E>>,
     E: std::fmt::Display,
 {
     let mut connection = std::pin::pin!(connection);
-    let mut closing = *shutdown.borrow();
-    if closing {
-        connection.as_mut().graceful_shutdown();
+    let mut closed = false;
+    if *shutdown.borrow() {
+        closed = stop(connection.as_mut(), activity, http2);
     }
     // Without a server to say so, it never shuts down
     let mut watching = true;
     loop {
+        let stopping = activity.is_stopping();
+        let idle_timeout = match options.idle_timeout {
+            _ if closed => None,
+            Some(timeout) if stopping => Some(timeout.min(IDLE_WHEN_STOPPING)),
+            None if stopping => Some(IDLE_WHEN_STOPPING),
+            timeout => timeout,
+        };
         let idle = async {
-            match options.idle_timeout {
-                Some(timeout) if !closing => activity.idle_for(timeout).await,
-                _ => std::future::pending().await,
+            match idle_timeout {
+                Some(timeout) => activity.idle_for(timeout).await,
+                None => std::future::pending().await,
             }
         };
         tokio::select! {
@@ -148,19 +162,26 @@ async fn drive<C, E>(
                 }
                 return;
             }
-            changed = shutdown.changed(), if watching && !closing => {
-                watching = changed.is_ok();
-                if watching && *shutdown.borrow() {
-                    closing = true;
-                    connection.as_mut().graceful_shutdown();
-                }
+            changed = shutdown.changed(), if watching && !stopping => {
+                watching = changed.is_ok() && !*shutdown.borrow();
+                closed = !watching && changed.is_ok() && stop(connection.as_mut(), activity, http2);
             }
             () = idle => {
-                closing = true;
+                closed = true;
                 connection.as_mut().graceful_shutdown();
             }
         }
     }
+}
+
+/// The server is shutting down: the connection takes no more requests (HTTP/2), or one more
+/// at most (HTTP/1.1). Returns whether it's closing already.
+fn stop<C: Graceful>(connection: Pin<&mut C>, activity: &Activity, http2: bool) -> bool {
+    activity.stop();
+    if http2 {
+        connection.graceful_shutdown();
+    }
+    http2
 }
 
 /// Hands a request to the app, and returns its response once written
@@ -172,7 +193,11 @@ async fn handle<A: HttpServerApp>(
     active: Active,
 ) -> Result<hyper::Response<ResponseBody>, Unanswered> {
     let (sender, mut response) = oneshot::channel();
-    let session = ServerSession::new(request, connection, sender);
+    let mut session = ServerSession::new(request, connection, sender);
+    // Shutting down: the connection closes after this response
+    if active.0.is_stopping() {
+        session.set_keepalive(None);
+    }
     // Boxed once: once its response is sent, the rest of the handling goes on with the body
     let mut handling: Driver = Box::pin(async move {
         let _active = active;
@@ -204,6 +229,8 @@ async fn handle<A: HttpServerApp>(
 struct Activity {
     started: Instant,
     active: AtomicUsize,
+    /// Shutting down: responses close the connection
+    stopping: AtomicBool,
     /// Milliseconds after `started`
     last: AtomicU64,
 }
@@ -223,12 +250,21 @@ impl Activity {
         Self {
             started: Instant::now(),
             active: AtomicUsize::new(0),
+            stopping: AtomicBool::new(false),
             last: AtomicU64::new(0),
         }
     }
 
     fn elapsed_ms(&self) -> u64 {
         u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+
+    fn stop(&self) {
+        self.stopping.store(true, Ordering::Relaxed);
+    }
+
+    fn is_stopping(&self) -> bool {
+        self.stopping.load(Ordering::Relaxed)
     }
 
     fn start(self: &Arc<Self>) -> Active {
@@ -405,5 +441,31 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(sender.ready().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_connections_answer_once_more_when_shutting_down() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (stopping, shutdown) = tokio::sync::watch::channel(false);
+        tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let app = Arc::new(App);
+            super::serve(&app, Box::new(Stream::from(socket)), &shutdown).await;
+        });
+        let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(socket))
+            .await
+            .unwrap();
+        tokio::spawn(connection);
+        let (parts, _) = request(&mut sender, "/full", "").await;
+        assert!(!parts.headers.contains_key("connection"));
+
+        // A client reusing its connection meanwhile is answered, and told it's closing
+        stopping.send_replace(true);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let (parts, body) = request(&mut sender, "/full", "").await;
+        assert_eq!(body, "full");
+        assert_eq!(parts.headers["connection"], "close");
     }
 }
