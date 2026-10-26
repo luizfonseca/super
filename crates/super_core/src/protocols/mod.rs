@@ -4,6 +4,7 @@ use std::{any::Any, sync::Arc, time::Duration};
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
+pub mod http;
 pub mod l4;
 pub mod tls;
 
