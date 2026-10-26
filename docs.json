@@ -1,0 +1,367 @@
+{
+  "$schema": "https://docs.page/schema.json",
+  "name": "Proksi",
+  "logo": {
+    "light": "/assets/logo.svg",
+    "dark": "/assets/logo.svg"
+  },
+  "favicon": "/assets/favicon.svg",
+  "description": "Batteries-included reverse proxy and load balancer for Docker, Kubernetes or a single binary, built on Cloudflare Pingora.",
+  "anchors": [
+    {
+      "icon": "github",
+      "title": "GitHub",
+      "href": "https://github.com/luizfonseca/proksi"
+    },
+    {
+      "icon": "box",
+      "title": "Crates.io",
+      "href": "https://crates.io/crates/proksi"
+    }
+  ],
+  "sidebar": [
+    {
+      "group": "General",
+      "pages": [
+        {
+          "title": "Getting started",
+          "href": "/"
+        },
+        {
+          "title": "Features",
+          "href": "/general/features"
+        },
+        {
+          "title": "Performance",
+          "href": "/general/performance"
+        },
+        {
+          "title": "Motivations",
+          "href": "/general/motivations"
+        },
+        {
+          "title": "Specifications",
+          "href": "/general/specifications"
+        }
+      ]
+    },
+    {
+      "group": "Installation",
+      "pages": [
+        {
+          "title": "Docker",
+          "href": "/installation/docker"
+        },
+        {
+          "title": "Single binary",
+          "href": "/installation/single-binary"
+        },
+        {
+          "title": "Kubernetes",
+          "href": "/installation/kubernetes"
+        }
+      ]
+    },
+    {
+      "group": "Configuration",
+      "pages": [
+        {
+          "group": "HCL",
+          "href": "/configuration/hcl",
+          "pages": [
+            {
+              "title": "Format",
+              "href": "/configuration/hcl"
+            },
+            {
+              "title": "Functions",
+              "href": "/configuration/hcl/functions"
+            }
+          ]
+        },
+        {
+          "title": "YAML",
+          "href": "/configuration/yaml"
+        },
+        {
+          "title": "Environment variables",
+          "href": "/configuration/environment-variables"
+        },
+        {
+          "title": "Logging",
+          "href": "/configuration/logging"
+        },
+        {
+          "title": "Auto reload",
+          "href": "/configuration/auto-reload"
+        },
+        {
+          "title": "Zero downtime",
+          "href": "/configuration/upgrades"
+        },
+        {
+          "title": "Daemon",
+          "href": "/configuration/daemon"
+        },
+        {
+          "title": "Admin API & Metrics",
+          "href": "/configuration/admin"
+        },
+        {
+          "title": "Webhooks & Notifications",
+          "href": "/configuration/notify"
+        }
+      ]
+    },
+    {
+      "group": "Admin Interface",
+      "pages": [
+        {
+          "title": "Admin UI",
+          "href": "/admin-ui"
+        },
+        {
+          "title": "A tour",
+          "href": "/admin-ui/tour"
+        },
+        {
+          "title": "How-tos",
+          "href": "/admin-ui/how-to"
+        },
+        {
+          "title": "Securing the admin",
+          "href": "/admin-ui/good-practices"
+        }
+      ]
+    },
+    {
+      "group": "Distributed Mode",
+      "pages": [
+        {
+          "title": "Redis",
+          "href": "/configuration/redis"
+        },
+        {
+          "title": "SQLite / Postgres",
+          "href": "/configuration/sql"
+        }
+      ]
+    },
+    {
+      "group": "Routing",
+      "pages": [
+        {
+          "title": "Path",
+          "href": "/routing/paths"
+        },
+        {
+          "title": "Regex",
+          "href": "/routing/regex-locations"
+        },
+        {
+          "title": "Upstreams",
+          "href": "/routing/upstreams"
+        },
+        {
+          "title": "Headers",
+          "href": "/routing/headers"
+        },
+        {
+          "title": "Traffic split",
+          "href": "/routing/traffic-split"
+        },
+        {
+          "title": "Mirror",
+          "href": "/routing/mirror"
+        },
+        {
+          "title": "TCP",
+          "href": "/routing/tcp"
+        }
+      ]
+    },
+    {
+      "group": "Plugins",
+      "pages": [
+        {
+          "title": "Request ID",
+          "href": "/plugins/request-id"
+        },
+        {
+          "title": "Basic auth",
+          "href": "/plugins/basic-auth"
+        },
+        {
+          "title": "OAuth2",
+          "href": "/plugins/oauth2"
+        },
+        {
+          "title": "JWT",
+          "href": "/plugins/jwt"
+        },
+        {
+          "title": "Rate limit",
+          "href": "/plugins/rate-limit"
+        },
+        {
+          "title": "Bandwidth limit",
+          "href": "/plugins/bandwidth-limit"
+        },
+        {
+          "title": "Waiting room",
+          "href": "/plugins/waiting-room"
+        },
+        {
+          "title": "OpenAPI",
+          "href": "/plugins/openapi"
+        },
+        {
+          "title": "Body rewrite",
+          "href": "/plugins/body-rewrite"
+        },
+        {
+          "title": "Body limit",
+          "href": "/plugins/body-limit"
+        },
+        {
+          "title": "Compress",
+          "href": "/plugins/compress"
+        },
+        {
+          "title": "Redirect",
+          "href": "/plugins/redirect"
+        },
+        {
+          "title": "Respond",
+          "href": "/plugins/respond"
+        },
+        {
+          "title": "Static files",
+          "href": "/plugins/static-files"
+        },
+        {
+          "title": "IP filter",
+          "href": "/plugins/ip-filter"
+        },
+        {
+          "title": "CORS",
+          "href": "/plugins/cors"
+        },
+        {
+          "title": "Forward auth",
+          "href": "/plugins/forward-auth"
+        }
+      ]
+    },
+    {
+      "group": "Request & Response rules",
+      "pages": [
+        {
+          "title": "The Rule system",
+          "href": "/rules"
+        },
+        {
+          "title": "Conditions",
+          "href": "/rules/conditions"
+        },
+        {
+          "title": "Actions",
+          "href": "/rules/actions"
+        },
+        {
+          "title": "Examples",
+          "href": "/rules/examples"
+        },
+        {
+          "title": "Performance",
+          "href": "/rules/performance"
+        }
+      ]
+    },
+    {
+      "group": "Migrations",
+      "pages": [
+        {
+          "title": "Migrating From Traefik",
+          "href": "/migrating/traefik"
+        },
+        {
+          "title": "Migration From nginx",
+          "href": "/migrating/nginx"
+        },
+        {
+          "title": "Migrating From Caddy",
+          "href": "/migrating/caddy"
+        }
+      ]
+    },
+    {
+      "group": "Examples",
+      "pages": [
+        {
+          "title": "Blocking URL scanners",
+          "href": "/examples/blocking-url-scanners"
+        },
+        {
+          "title": "Canary releases",
+          "href": "/examples/canary-release"
+        },
+        {
+          "title": "SPA with an API",
+          "href": "/examples/single-page-app"
+        },
+        {
+          "title": "Public API",
+          "href": "/examples/public-api"
+        },
+        {
+          "title": "Securing an admin area",
+          "href": "/examples/admin-area"
+        },
+        {
+          "title": "Self-hosted apps behind one sign-in",
+          "href": "/examples/self-hosted-apps"
+        },
+        {
+          "title": "Adding Security headers",
+          "href": "/examples/security-headers"
+        },
+        {
+          "title": "Using with Cloudflare or others",
+          "href": "/examples/behind-a-load-balancer"
+        }
+      ]
+    },
+    {
+      "group": "Use cases",
+      "pages": [
+        {
+          "title": "Cache",
+          "href": "/use-cases/cache"
+        },
+        {
+          "title": "Docker swarm",
+          "href": "/use-cases/docker-swarm"
+        }
+      ]
+    },
+    {
+      "group": "Project",
+      "pages": [
+        {
+          "title": "Architecture decisions",
+          "href": "/adrs"
+        },
+        {
+          "title": "Contributing",
+          "href": "/contributing/repository"
+        }
+      ]
+    }
+  ],
+  "check": {
+    "ignoreExternalHosts": [
+      "crates.io"
+    ]
+  }
+}

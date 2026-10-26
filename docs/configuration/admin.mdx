@@ -1,0 +1,274 @@
+---
+title: "Admin API and metrics"
+description: "Proksi can serve metrics and an admin API on an address of its own."
+---
+
+Proksi can serve metrics and an admin API on an address of its own. It's off unless the configuration has an `admin` block:
+
+```hcl
+admin {
+  listen = "127.0.0.1:7555"
+
+  # Can read: stats, metrics, hosts, certificates
+  token "grafana" {
+    secret = env("PROKSI_GRAFANA_TOKEN")
+  }
+
+  # Can also change hosts
+  token "ops" {
+    secret = env("PROKSI_ADMIN_TOKEN")
+    access = "write"
+  }
+}
+```
+
+Every request needs a token's secret, as `Authorization: Bearer <secret>`. A token can only read unless it has `access = "write"` (`access` is `"read"` or `"write"`); a change with a read-only token is refused with `403`. Without a `token` block, `listen` must be a loopback address (`127.0.0.1`, `::1`), so the admin API is never reachable from another machine without one; on loopback, anyone reaching it can read and write.
+
+The admin listener is plain HTTP. To reach it from outside, route a host to it and put `basic_auth`, `oauth2` or another plugin in front:
+
+```hcl
+host "admin.example.com" {
+  location "/" {
+    basic_auth {
+      user = "admin"
+      pass = env("ADMIN_PASSWORD")
+    }
+    upstream "127.0.0.1:7555" {}
+  }
+}
+```
+
+Like the other listeners, the `admin` block is read when Proksi starts: changing it restarts Proksi.
+
+### The requests being served
+
+`GET /api/v1/requests/stream` (or `?host=example.com`, for one host's) sends each request as it's served, as server-sent events, with the fields of access logs (also when access logs are off): time, method, host, path, status, duration, client, location and upstream. At most 100 a second are built for each client (past that, requests aren't built at all); once a second, an `event: skipped` says how many a slow client missed. While no one watches, requests cost nothing more: nothing is built.
+
+```bash
+curl -N -H "Authorization: Bearer $PROKSI_ADMIN_TOKEN" http://127.0.0.1:7555/api/v1/requests/stream
+```
+
+## UI
+
+See [Admin UI](/admin-ui) for a tour, how-tos and good practices.
+
+The admin listener also serves a UI, at its address (`http://127.0.0.1:7555`):
+
+- **Overview**: requests by status, errors, latency (p50, p90, p99), CPU and memory, charted from the moment the page is opened (up to 15 minutes, kept by the page); the latest requests; and the instances sharing the store.
+- **Hosts**: every host served, from every source. A host's page shows its traffic as a graph, from clients to its locations and upstreams (each line green while traffic flows, amber or red with errors or an unhealthy upstream), its requests and latency, and its latest requests; then its locations, upstreams (with what they resolved to) and their health, plugins and rules. With a token that can write, hosts in the store can be created, changed and removed, and their rules built with a form (conditions as a tree of all of, any of and none of; actions with their settings), checked by Proksi as they're edited.
+- **Notifications**: each `notify` block, the hosts it's told about (each opening its page), how its last send went, and a button to send it a test. With a token that can write, blocks in the store can be created, changed and removed.
+- **Certificates** and **Server** (the settings Proksi started with).
+
+Rules are shown without what can be a secret: the values headers, cookies and query parameters are compared with, the settings of `basic_auth`, `oauth2` and `forward_auth`, and the values of headers a rule adds.
+
+The UI signs in with a token's name and secret, exchanged for a session cookie (`HttpOnly`, `SameSite=Strict`, and `Secure` unless the address is loopback): the page never keeps the secret. Sessions end after 12 hours without a request, and when Proksi restarts. Changes made with a session must come from the UI's own pages: their `Origin` must match the address the admin listener is reached at (`Host`), or be listed in `trusted_origins`, for a proxy in front that changes `Host` ([details](/admin-ui/good-practices#behind-another-proxy)).
+
+When the UI opens, the browser asks GitHub for Proksi's latest release, once, and shows a badge next to the version when there's a newer one. Proksi itself never contacts GitHub; without access to it, nothing is shown.
+
+To reach it on a server, use a tunnel: `ssh -L 7555:127.0.0.1:7555 your-server`, or `kubectl port-forward`, then open `http://127.0.0.1:7555`. See [ADR 0008](/adrs/0008-admin-ui) for what comes next.
+
+## Metrics
+
+`GET /metrics` returns the metrics in the Prometheus text format:
+
+| Metric | Labels | |
+| --- | --- | --- |
+| `proksi_requests_total` | `host`, `location`, `status` | Requests, by status class (`1xx`…`5xx`, or `none` when no response was sent) |
+| `proksi_responses_total` | `host`, `location`, `code` | Responses, by status code (`200`, `429`…), once a location has answered that code |
+| `proksi_request_duration_seconds` | `host`, `location` | Time to answer requests (histogram) |
+| `proksi_upstream_duration_seconds` | `host`, `location`, `upstream` | Time until the upstream's response headers (histogram) |
+| `proksi_upstream_errors_total` | `host`, `location`, `upstream` | Failures to connect to an upstream, or while proxying to it |
+| `proksi_upstream_healthy` | `host`, `location`, `upstream` | `1` while the health checks consider the upstream healthy, `0` otherwise |
+| `proksi_blocked_requests_total` | `host`, `location`, `block` | Requests answered by a plugin instead of the upstream (`ip_filter`, `rate_limit`, `body_limit`, `basic_auth`, `oauth2`, `forward_auth`) |
+| `proksi_tcp_connections_total` | `block` | Connections accepted by a `tcp` block (`block` is how it's named in logs: `tcp "db" in host "a.com"`) |
+| `proksi_tcp_connections_active` | `block` | Connections open right now |
+| `proksi_tcp_bytes_total` | `block`, `direction` | Bytes from the client (`in`) and to it (`out`), counted while the connection is open |
+| `proksi_tcp_upstream_errors_total` | `block` | Connections that couldn't reach an upstream: refused, timed out (`connect_timeout_secs`), or none available |
+| `proksi_tls_handshake_failures_total` | | TLS handshakes with clients (HTTPS and `tcp` blocks) that started and didn't complete: a version or cipher refused, a certificate the client doesn't trust, a client that went away |
+| `proksi_tcp_connection_duration_seconds` | `block` | How long connections stay open (histogram) |
+| `proksi_certificate_expiry_timestamp_seconds` | `domain` | When each certificate expires (refreshed every minute) |
+| `proksi_routes` | `source` | Hosts applied from each source (`file`, `docker`, `kubernetes`, `store`) |
+| `proksi_notifications_total` | `notify`, `event`, `result` | Events sent to [webhooks](/configuration/notify) (`sent`), that failed after every try (`failed`), or dropped while too many were waiting (`dropped`) |
+
+Labels come from the configuration: `host` is the name of the host that served the request (`*` for the catch-all), `location` its path, and `upstream` its address as configured. Requests no location served are counted under a `host` that says why: `_unknown_host` (no host has the name), `_no_location` (a host does, but no location has the path), `_https_redirect`, `_acme` (Let's Encrypt challenges), or `_rules` (answered by the server's or a host's rules). Clients can't create new series by sending new names or paths.
+
+Histograms go from 0.5 ms to 10 s. With Prometheus, the 99th percentile of a host's requests over the last 5 minutes is:
+
+```promql
+histogram_quantile(0.99, sum by (le) (rate(proksi_request_duration_seconds_bucket{host="example.com"}[5m])))
+```
+
+Certificates expiring in less than 2 weeks:
+
+```promql
+proksi_certificate_expiry_timestamp_seconds - time() < 14 * 86400
+```
+
+A scrape configuration with the token:
+
+```yaml
+scrape_configs:
+  - job_name: proksi
+    authorization:
+      credentials: "<token>"
+    static_configs:
+      - targets: ["127.0.0.1:7555"]
+```
+
+### A listener for metrics only
+
+A read-only token can't change anything, but reaches every read endpoint. To give a scraper metrics and nothing else, serve them on an address of their own, with `metrics_listen`. It answers `/metrics` only, `404` on every other path, and takes its own `metrics_token`, if any:
+
+```hcl
+admin {
+  listen = "127.0.0.1:7555"
+
+  token "ops" {
+    secret = env("PROKSI_ADMIN_TOKEN")
+    access = "write"
+  }
+
+  metrics_listen = "0.0.0.0:9100"
+  metrics_token  = env("PROKSI_METRICS_TOKEN") # optional
+}
+```
+
+Without a `metrics_token`, `metrics_listen` can be any address: metrics name hosts, locations and upstream addresses, but can't change anything. Keep it on a private network, or set a token.
+
+Metrics are only recorded with an `admin` block. To use the rest of the admin API without them, turn them off:
+
+```hcl
+admin {
+  listen  = "127.0.0.1:7555"
+  metrics = false
+}
+```
+
+Requests then record nothing, and `/metrics` and the live stats answer `404`.
+
+Recording doesn't add lookups to the request path: a location's metrics are created when it's built, and each request only updates counters and histograms it already holds, about 10 ns on its own. Histograms are shared between worker threads, so with many cores busy on the same location they wait on each other: a few microseconds per request when every core does nothing else.
+
+## Live stats
+
+Without running Prometheus, `GET /api/v1/stats?window=60` returns what happened in the last `window` seconds (1 to 300, default 60), per host, location, upstream and `tcp` block:
+
+```json
+{
+  "window_seconds": 60.0,
+  "total": {
+    "requests_per_second": 120.5,
+    "responses": { "2xx": 7180, "4xx": 42 },
+    "duration_ms": { "p50": 3.1, "p90": 8.4, "p99": 31.2 }
+  },
+  "process": {
+    "cpu_percent": 12.4,
+    "cpu_seconds": 1830.2,
+    "memory_bytes": 72351744,
+    "memory_limit_bytes": 536870912,
+    "cpu_limit": 1.5
+  },
+  "hosts": [
+    {
+      "host": "example.com",
+      "locations": [
+        {
+          "location": "/api",
+          "requests_per_second": 120.5,
+          "responses": { "2xx": 7180, "4xx": 42 },
+          "duration_ms": { "p50": 3.1, "p90": 8.4, "p99": 31.2 },
+          "blocked": { "rate_limit": 40 },
+          "upstreams": [
+            {
+              "upstream": "10.0.0.1:3000",
+              "requests_per_second": 120.1,
+              "healthy": true,
+              "errors": 0,
+              "duration_ms": { "p50": 2.8, "p90": 7.9, "p99": 30.1 }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "tcp": [
+    {
+      "block": "tcp \"db\" in host \"db.example.com\"",
+      "connections_per_second": 2.0,
+      "active": 14,
+      "bytes_in_per_second": 5120.0,
+      "bytes_out_per_second": 81920.0,
+      "upstream_errors": 0,
+      "duration_ms": { "p50": 1200.0, "p90": 9800.0, "p99": 10000.0 }
+    }
+  ]
+}
+```
+
+`GET /api/v1/stats/stream?window=10` sends the same data every second as [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events), for dashboards:
+
+```bash
+curl -N -H "Authorization: Bearer $PROKSI_ADMIN_TOKEN" "http://127.0.0.1:7555/api/v1/stats/stream?window=10"
+```
+
+`total` adds up every host and location. `process` is Proksi's own: CPU used over the window (`cpu_percent`, of one core), resident memory (`memory_bytes`), and in a container, its limits (cgroups v2; `null` otherwise).
+
+The stats come from the same metrics, sampled every second while someone reads them, so they cost nothing more per request, and nothing at all when no one looks: 5 minutes after the last read, sampling stops until the next one (whose window then starts at that read). Samples are kept every second for a minute, then every 10 seconds up to 5 minutes: longer windows are within 10 seconds of the one asked for (`window_seconds` says which). Percentiles are interpolated within the histogram buckets (as Prometheus' `histogram_quantile` does), and `null` when there were no requests. Each Proksi instance has its own stats; to combine several, use Prometheus.
+
+## Status, hosts and certificates
+
+| Endpoint | |
+| --- | --- |
+| `GET /api/v1/status` | Version, replica id, uptime, the addresses Proksi listens on, the store (its revision, the revision this instance applied, and the instances reporting to it), and hosts by source, with conflicts and invalid routes |
+| `GET /api/v1/hosts` | Every host being served: its source (`file`, `docker`, `kubernetes`, `store`), TLS, locations, the plugins of each location (by name, without their settings, which can hold secrets), and upstreams as written, with what they came from (a docker label or Kubernetes service), their weight, and the addresses they resolved to with their health |
+| `GET /api/v1/tcp` | Every `tcp` block: its name as the stats and metrics name it (`block`), its host if any, the address it listens on, TLS (`none`, `terminate` or `passthrough`), the protocols (ALPN) it's chosen by, and its upstreams with the addresses they resolved to and their health |
+| `GET /api/v1/schema` | What rules and blocks accept, generated from the code that reads them: rule fields and the operators each takes, and each block's settings as JSON Schema (types, required, limits, descriptions) |
+| `GET /api/v1/server` | The settings read when Proksi starts (addresses, store, cache, Let's Encrypt, logging, workers, admin tokens' names and access), with their defaults. Secrets and credentials are never included |
+| `GET /api/v1/certificates` | Every certificate: domain, issuer, whether it's self-signed, when it expires (`expires_at`, `days_left`), and which instance holds its lease while it's being ordered or renewed |
+
+With several instances sharing a store, `status` shows each instance and the routes revision it applied, so a change can be confirmed as applied everywhere.
+
+## Routes
+
+Hosts can be added, changed and removed through the API. They're written to the [store](/configuration/redis), so every Proksi instance sharing it applies them, and the instance that received the request applies them right away:
+
+| Endpoint | |
+| --- | --- |
+| `GET /api/v1/routes` | The hosts in the store, with the store's revision |
+| `GET /api/v1/routes/<host>` | One host, as stored, with the store's revision and its `version` |
+| `PUT /api/v1/routes/<host>` | Adds or replaces a host, as a new version. Returns the new revision |
+| `POST /api/v1/validate` | Checks a host as `PUT` would, without writing it: `{"valid": true}`, or `400` with the reason |
+| `DELETE /api/v1/routes/<host>` | Removes a host, keeping its versions. Returns the revision |
+| `GET /api/v1/routes/<host>/history` | Its changes, newest first: `revision`, `at`, `author`, and `change` (`saved`, `deleted`, or `rolled_back` with `to`) |
+| `GET /api/v1/routes/<host>/history/<revision>` | The version saved at that revision |
+| `POST /api/v1/routes/<host>/rollback` | Makes a version active again, with `{"revision": <version>}`. Also restores a deleted host |
+| `GET /api/v1/deleted-routes` | Deleted hosts that still have versions |
+
+Changing a host needs a token with `access = "write"`. The API takes and returns JSON only: a host in the format hosts are stored in (`GET /api/v1/routes/<host>` returns it), with its `name`:
+
+```bash
+curl -X PUT -H "Authorization: Bearer $PROKSI_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{ "name": "api.example.com", "locations": [{ "path": "/", "upstreams": [{ "ip": "10.0.0.1", "port": 3000 }] }] }' \
+  http://127.0.0.1:7555/api/v1/routes/api.example.com
+```
+
+- Hosts are validated like hosts from any other source; an invalid one is refused (`400`) with the reason.
+- `listen` can't be set: Proksi opens its ports when it starts, so hosts from the store are served on the default addresses.
+- A host in the store takes priority over the same host in the configuration file or docker labels. Removing it from the store brings the other one back.
+- With the memory store (the default), routes written through the API live as long as the Proksi process.
+
+### History and rollbacks
+
+The store keeps the last versions of each host (`store.history_per_host`, 50 by default), and every change with the name of the token that made it. A rollback is a change too: it makes an older version active again, and appears in the history.
+
+Before rolling back, the version is checked by this version of Proksi: if it's no longer valid (an option was removed, for example), the rollback is refused (`422`) with the reason.
+
+### Concurrent changes
+
+To make sure a change applies to the version you read, send its `version` (from `GET /api/v1/routes/<host>`) as `If-Match`. If the host is on another version by then, the change is refused with `412`, and the host's current `version`:
+
+```bash
+curl -X PUT -H "Authorization: Bearer $PROKSI_ADMIN_TOKEN" -H 'If-Match: "57"' \
+  -d @api.example.com.json http://127.0.0.1:7555/api/v1/routes/api.example.com
+```
+
+`If-None-Match: *` creates a host only if it doesn't exist. Without either header, a change applies whatever the host is.
