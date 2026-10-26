@@ -163,6 +163,15 @@ impl Storage for DiskCache {
             .await
             .ok();
 
+        // The copy in memory is served first: renewed too
+        let memory = memory_cache().zip(Some(Self::get_memory_key(key)));
+        if let Some((memory, memory_key)) = memory {
+            if let Some(existing) = memory.get(&memory_key) {
+                let renewed = (DiskCacheItemMetadata::from(meta), existing.1.clone());
+                memory.put(memory_key, std::sync::Arc::new(renewed));
+            }
+        }
+
         Ok(true)
     }
 

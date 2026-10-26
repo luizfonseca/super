@@ -4,7 +4,7 @@
 use std::io::Write;
 
 use bytes::Bytes;
-use http::{header, HeaderValue};
+use http::{header, HeaderValue, StatusCode};
 
 use crate::http::{RequestHeader, ResponseHeader};
 
@@ -165,6 +165,15 @@ impl ResponseCompression {
     /// Compresses the response if it's worth it: its header says so
     pub fn response_header_filter(&mut self, response: &mut ResponseHeader, end: bool) {
         if !self.is_enabled() || end || response.status.is_informational() {
+            return;
+        }
+        // Without a body, or a part of one (whose ranges are of the identity)
+        let partial = [
+            StatusCode::NO_CONTENT,
+            StatusCode::PARTIAL_CONTENT,
+            StatusCode::NOT_MODIFIED,
+        ];
+        if partial.contains(&response.status) {
             return;
         }
         add_vary(response);

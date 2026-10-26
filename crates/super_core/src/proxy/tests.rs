@@ -68,6 +68,9 @@ async fn answer(
             .unwrap();
         return Ok(response);
     }
+    if request.uri().path().contains("etag") {
+        return Ok(versioned(&request).await);
+    }
     if request.uri().path() == "/slow" {
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
@@ -87,6 +90,31 @@ async fn answer(
         .body(Full::new(Bytes::from(text)))
         .unwrap();
     Ok(response)
+}
+
+/// Bodies answered by `versioned`, and `304`s
+static FULL_ANSWERS: AtomicUsize = AtomicUsize::new(0);
+static NOT_MODIFIED_ANSWERS: AtomicUsize = AtomicUsize::new(0);
+
+/// A body with a validator (`ETag: "v1"`): `304` when the request has it (`slow`: after 300ms)
+async fn versioned(request: &hyper::Request<Incoming>) -> hyper::Response<Full<Bytes>> {
+    if request.uri().path().contains("slow") {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    let current = request
+        .headers()
+        .get("if-none-match")
+        .is_some_and(|tag| tag == "\"v1\"");
+    let builder = hyper::Response::builder().header("etag", "\"v1\"");
+    if current {
+        NOT_MODIFIED_ANSWERS.fetch_add(1, Ordering::Relaxed);
+        return builder.status(304).body(Full::new(Bytes::new())).unwrap();
+    }
+    FULL_ANSWERS.fetch_add(1, Ordering::Relaxed);
+    builder
+        .header("content-type", "text/plain")
+        .body(Full::new(Bytes::from_static(b"0123456789")))
+        .unwrap()
 }
 
 /// What a request went through
@@ -230,27 +258,33 @@ impl ProxyHttp for Phases {
 
     async fn cache_hit_filter(
         &self,
-        _session: &mut Session,
+        session: &mut Session,
         _meta: &CacheMeta,
         _hit: &mut crate::cache::HitHandler,
         _fresh: bool,
         _ctx: &mut Ctx,
     ) -> Result<Option<crate::cache::ForcedFreshness>> {
-        CACHED_LOOKUPS.fetch_add(1, Ordering::Relaxed);
+        // Of `test_responses_from_the_cache` only (tests run at once)
+        if session.req_header().uri.path() == "/cached-a" {
+            CACHED_LOOKUPS.fetch_add(1, Ordering::Relaxed);
+        }
         Ok(None)
     }
 
     fn response_cache_filter(
         &self,
-        _session: &Session,
+        session: &Session,
         response: &ResponseHeader,
         _ctx: &mut Ctx,
     ) -> Result<RespCacheable> {
         let now = SystemTime::now();
+        // `stale` paths are stale right away, and served stale for 10s while revalidated
+        let stale = session.req_header().uri.path().contains("stale");
+        let (fresh, while_revalidating) = if stale { (0, 10) } else { (60, 0) };
         Ok(RespCacheable::Cacheable(CacheMeta::new(
-            now + Duration::from_secs(60),
+            now + Duration::from_secs(fresh),
             now,
-            0,
+            while_revalidating,
             0,
             response.clone(),
         )))
@@ -597,5 +631,86 @@ async fn test_bodies_that_stop_coming_time_out() {
         started.elapsed() < Duration::from_secs(1),
         "{:?}",
         started.elapsed()
+    );
+}
+
+async fn get(
+    sender: &mut hyper::client::conn::http1::SendRequest<Full<Bytes>>,
+    path: &str,
+    headers: &[(&str, &str)],
+) -> (http::response::Parts, Bytes) {
+    sender.ready().await.unwrap();
+    let mut request = hyper::Request::get(path).header("host", "a.test");
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let response = sender.send_request(request.body(Full::new(Bytes::new())).unwrap());
+    let (parts, body) = response.await.unwrap().into_parts();
+    (parts, body.collect().await.unwrap().to_bytes())
+}
+
+#[tokio::test]
+async fn test_conditional_and_range_requests_from_the_cache() {
+    let (mut client, _) = proxy_to(vec![upstream().await], false).await;
+    let (_, body) = get(&mut client, "/cached-etag-a", &[]).await;
+    assert_eq!(body, "0123456789");
+
+    // The client's copy is current
+    let (parts, body) = get(
+        &mut client,
+        "/cached-etag-a",
+        &[("if-none-match", "\"v1\"")],
+    )
+    .await;
+    assert_eq!(parts.status, 304);
+    assert!(body.is_empty());
+    // A part of the body
+    let (parts, body) = get(&mut client, "/cached-etag-a", &[("range", "bytes=2-4")]).await;
+    assert_eq!(parts.status, 206);
+    assert_eq!(parts.headers["content-range"], "bytes 2-4/10");
+    assert_eq!(body, "234");
+    let (parts, _) = get(&mut client, "/cached-etag-a", &[("range", "bytes=50-")]).await;
+    assert_eq!(parts.status, 416);
+    // And the whole body still
+    let (parts, body) = get(&mut client, "/cached-etag-a", &[]).await;
+    assert_eq!(
+        (parts.status.as_u16(), body.as_ref()),
+        (200, &b"0123456789"[..])
+    );
+}
+
+#[tokio::test]
+async fn test_stale_responses_are_revalidated_and_served_meanwhile() {
+    let (mut first, _) = proxy_to(vec![upstream().await], false).await;
+    get(&mut first, "/cached-etag-stale-slow", &[]).await;
+    let not_modified = NOT_MODIFIED_ANSWERS.load(Ordering::Relaxed);
+
+    // Stale: one request revalidates it (300ms), another is served the stale response at once
+    let (mut second, _) = proxy_to(vec![upstream().await], false).await;
+    let refreshing = tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        let (parts, body) = get(&mut first, "/cached-etag-stale-slow", &[]).await;
+        (parts.status, body, started.elapsed())
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let started = std::time::Instant::now();
+    let (parts, body) = get(&mut second, "/cached-etag-stale-slow", &[]).await;
+    assert_eq!(
+        (parts.status.as_u16(), body.as_ref()),
+        (200, &b"0123456789"[..])
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(200),
+        "{:?}",
+        started.elapsed()
+    );
+
+    let (status, body, took) = refreshing.await.unwrap();
+    assert_eq!((status.as_u16(), body.as_ref()), (200, &b"0123456789"[..]));
+    assert!(took >= Duration::from_millis(300), "{took:?}");
+    // Revalidated: a `304`, not the body again
+    assert_eq!(
+        NOT_MODIFIED_ANSWERS.load(Ordering::Relaxed),
+        not_modified + 1
     );
 }
