@@ -1,7 +1,7 @@
 [package]
 name = "super_admin_ui"
 description = "The admin UI of Super, built and embedded (ADR 0008)"
-# Published with each release of Proksi, with its version (release-please-config.json)
+# Published with each release of Super, with its version (release-please-config.json)
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"

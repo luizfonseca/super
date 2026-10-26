@@ -1,0 +1,73 @@
+{
+  "plugins": [
+    "cargo-workspace",
+    {
+      "type": "linked-versions",
+      "groupName": "super",
+      "components": [
+        "super",
+        "super_admin_ui",
+        "super_core",
+        "super_plugins",
+        "super_store"
+      ]
+    }
+  ],
+  "packages": {
+    "crates/super": {
+      "changelog-path": "/CHANGELOG.md",
+      "release-type": "rust",
+      "bump-minor-pre-major": false,
+      "separate-pull-requests": false,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": false,
+      "prerelease": false,
+      "component": "super"
+    },
+    "crates/plugins_api": {
+      "changelog-path": "/CHANGELOG.md",
+      "release-type": "rust",
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": false,
+      "prerelease": false
+    },
+    "crates/super_admin_ui": {
+      "component": "super_admin_ui",
+      "release-type": "rust",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": false,
+      "prerelease": false
+    },
+    "crates/super_core": {
+      "component": "super_core",
+      "release-type": "rust",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": false,
+      "prerelease": false
+    },
+    "crates/super_plugins": {
+      "component": "super_plugins",
+      "release-type": "rust",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": false,
+      "prerelease": false
+    },
+    "crates/super_store": {
+      "component": "super_store",
+      "release-type": "rust",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": false,
+      "prerelease": false
+    }
+  },
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
+}
