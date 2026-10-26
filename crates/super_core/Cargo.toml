@@ -1,7 +1,7 @@
 [package]
 name = "super_core"
 description = "Super's core on hyper: Pingora's request phases (the `ProxyHttp` trait), its server, load balancers and cache"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["The Super Contributors"]
