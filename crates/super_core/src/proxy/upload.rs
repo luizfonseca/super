@@ -24,6 +24,9 @@ pub(super) struct Upload {
     replay: std::vec::IntoIter<Bytes>,
     /// Whether the client's body has parts left
     reading: bool,
+    /// The upstream stopped taking the body (it may have answered already): what's left is
+    /// read from the client and dropped, and the connection isn't kept
+    abandoned: bool,
     write_timeout: Option<Duration>,
 }
 
@@ -35,13 +38,21 @@ impl Upload {
             then_end: false,
             replay: Vec::new().into_iter(),
             reading: false,
+            abandoned: false,
             write_timeout,
         }
     }
 
     /// Whether the whole body was sent
     pub(super) fn is_done(&self) -> bool {
-        self.sender.is_none()
+        self.sender.is_none() && !self.abandoned
+    }
+
+    /// The upstream stopped taking the body: the response says what happened
+    fn abandon(&mut self) {
+        self.sender = None;
+        self.pending = None;
+        self.abandoned = true;
     }
 
     /// The body of the request to the upstream, and what sends it
@@ -78,6 +89,7 @@ impl Upload {
             then_end: false,
             replay: session.retry_buffer.parts.clone().into_iter(),
             reading: true,
+            abandoned: false,
             write_timeout,
         };
         Ok((upload, body))
@@ -163,7 +175,10 @@ pub(super) async fn alongside<SV: ProxyHttp, F: Future>(
                 upload.input(proxy, session, ctx, read?).await?;
             }
             room = reserve(&sender, write_timeout), if sending => {
-                let permit = room?;
+                let Ok(permit) = room else {
+                    upload.abandon();
+                    continue;
+                };
                 let end = matches!(upload.pending, Some(Part::End));
                 if let Some(part) = upload.pending.take() {
                     permit.send(part);
@@ -172,6 +187,17 @@ pub(super) async fn alongside<SV: ProxyHttp, F: Future>(
             }
         }
     }
+}
+
+/// The response is over before the request body was sent (the upstream answered early): the rest
+/// of the client's body is read, and dropped, so the client can finish sending it and its
+/// connection take the next request (as Pingora). A client may also stop sending once answered,
+/// and close: it's done then.
+pub(super) async fn drain(upload: &Upload, session: &mut Session) {
+    if !upload.reading {
+        return;
+    }
+    while let Ok(Some(_)) = session.downstream_session.read_request_body().await {}
 }
 
 /// Room for a part, waiting for the upstream at most `timeout`

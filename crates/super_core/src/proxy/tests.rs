@@ -494,3 +494,57 @@ async fn count<F: std::future::Future>(future: F) -> (usize, F::Output) {
     let output = future.await;
     (crate::allocations::stop(), output)
 }
+
+/// An upstream that answers each request before reading its body, then reads and drops the body
+/// and keeps the connection (as nginx's `return`)
+async fn early_upstream() -> SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (socket, _) = listener.accept().await.unwrap();
+            tokio::spawn(answer_early(socket));
+        }
+    });
+    addr
+}
+
+async fn answer_early(socket: tokio::net::TcpStream) {
+    let mut socket = tokio::io::BufReader::new(socket);
+    while let Some(length) = read_head(&mut socket).await {
+        let response = b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok";
+        socket.get_mut().write_all(response).await.unwrap();
+        tokio::io::copy(&mut (&mut socket).take(length), &mut tokio::io::sink())
+            .await
+            .unwrap();
+    }
+}
+
+/// The length of the body of the next request, once its head is read (`None`: no request)
+async fn read_head(socket: &mut tokio::io::BufReader<tokio::net::TcpStream>) -> Option<u64> {
+    use tokio::io::AsyncBufReadExt;
+    let mut length = 0;
+    let mut line = String::new();
+    while socket.read_line(&mut line).await.unwrap_or(0) > 2 {
+        let lowercase = line.to_ascii_lowercase();
+        if let Some(value) = lowercase.strip_prefix("content-length:") {
+            length = value.trim().parse::<u64>().unwrap();
+        }
+        line.clear();
+    }
+    (!line.is_empty()).then_some(length)
+}
+
+/// The upstream answers before it reads the body: the client gets its answer
+#[tokio::test]
+async fn test_uploads_answered_early() {
+    let addr = early_upstream().await;
+    let body: &'static str = Box::leak("x".repeat(4 << 20).into_boxed_str());
+    for _ in 0..3 {
+        // Clients may close once answered, before their body was sent: a connection each
+        let (mut client, logged) = proxy_to(vec![addr], false).await;
+        let (parts, answer) = request(&mut client, "POST", "/early", body).await;
+        assert_eq!(parts.status, 200, "{:?}", logged.lock().unwrap());
+        assert_eq!(answer, "ok");
+    }
+}
