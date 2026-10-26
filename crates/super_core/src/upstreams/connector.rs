@@ -236,6 +236,15 @@ async fn tcp(peer: &HttpPeer) -> Result<(L4Stream, RawFd)> {
     if let Some(size) = options.tcp_recv_buf {
         let _ = socket.set_recv_buffer_size(u32::try_from(size).unwrap_or(u32::MAX));
     }
+    // The request goes with the connection's first packet, to upstreams that took a TCP Fast
+    // Open cookie before (Linux)
+    #[cfg(target_os = "linux")]
+    if options.tcp_fast_open {
+        let fast_open = nix::sys::socket::sockopt::TcpFastOpenConnect;
+        if let Err(err) = nix::sys::socket::setsockopt(&socket, fast_open, &true) {
+            tracing::debug!("can't use TCP Fast Open: {err}");
+        }
+    }
     if let Some(bind) = options.bind_to {
         socket.bind(bind).or_err(ErrorType::BindError, "binding")?;
     }
