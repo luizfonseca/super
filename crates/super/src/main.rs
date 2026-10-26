@@ -50,6 +50,12 @@ mod wasm;
 #[global_allocator]
 static GLOBAL: allocations::Counting = allocations::Counting;
 
+// With the `mimalloc` feature: threads allocate from heaps of their own, without the locks the
+// system's allocators take when memory is freed by another thread
+#[cfg(all(feature = "mimalloc", not(test)))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// Before anything else: turns off transparent huge pages, and runs `proksi check` (which exits)
 fn prepare() {
     // Transparent huge pages back the allocator's memory with 2 MiB pages where the system enables
