@@ -7,7 +7,20 @@
 //! - [`cache`]: responses served from a storage
 //! - [`tls`]: OpenSSL, as the listeners use it
 
+// A library whose getters are mostly called for their value; errors are boxed, as Pingora's,
+// since they're moved around more than they're created
+#![allow(clippy::must_use_candidate, clippy::unnecessary_box_returns)]
+
+#[cfg(any(test, feature = "test-util"))]
+pub mod allocations;
 pub mod error;
 pub mod http;
+pub mod lb;
+pub mod protocols;
 
 pub use error::{Error, ErrorSource, ErrorType, OrErr, Result, RetryType};
+
+// The tests count allocations (see `allocations`)
+#[cfg(test)]
+#[global_allocator]
+static GLOBAL: allocations::Counting = allocations::Counting;
