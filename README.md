@@ -53,6 +53,14 @@ Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What 
   upgrade it stands for (`GET` with `Upgrade: websocket`). Upgrades always go to upstreams over
   HTTP/1.1, even those that speak HTTP/2. Proksi's HTTP/2 clients open a separate HTTP/1.1
   connection for each websocket.
+- **HTTP/3** (`server.http3 = true`, off by default; Proksi ignores the option): QUIC on the
+  HTTPS addresses' UDP ports, through the same phases and plugins, and an `Alt-Svc` header on
+  HTTPS responses so browsers find it. Publish the UDP port too (`-p 443:443/udp`), or leave it
+  off: browsers that are told about HTTP/3 and can't reach it try it, then fall back. It does
+  nothing behind a CDN (the CDN speaks HTTP/3 to visitors, and TCP to Super). HTTP/3 uses the
+  certificates HTTPS handshakes read (a browser connects over TCP first), read again from the
+  store every minute. An upgrade (`--upgrade`) doesn't hand the UDP socket over:
+  the new process answers HTTP/3 once the old one has stopped.
 
 ## Benchmarks
 

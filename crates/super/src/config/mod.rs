@@ -661,6 +661,13 @@ pub struct ServerCfg {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_stealing: Option<bool>,
 
+    /// Whether HTTP/3 (QUIC, over UDP) is answered on the HTTPS addresses (default: `false`).
+    /// HTTPS responses tell clients it's there (`Alt-Svc`); their UDP port must be reachable.
+    /// Super only (Proksi ignores it).
+    #[arg(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http3: Option<bool>,
+
     /// `rule "<name>" { ... }`, in order: every request, before its host is chosen (ADR 0007)
     #[arg(skip)]
     #[serde(
@@ -682,6 +689,11 @@ impl ServerCfg {
     /// unless set, unlike Proksi, as connections kept on their thread cost far less with the core
     pub fn work_stealing(&self) -> bool {
         self.work_stealing.unwrap_or(false)
+    }
+
+    /// Whether HTTP/3 is answered on the HTTPS addresses (`server.http3`): off unless set
+    pub fn http3(&self) -> bool {
+        self.http3.unwrap_or(false)
     }
 }
 
@@ -879,6 +891,7 @@ impl Default for Config {
             config_path: Some(Cow::Borrowed("/etc/proksi/config")),
             service_name: Cow::Borrowed("proksi"),
             server: ServerCfg {
+                http3: None,
                 https_address: Some(Cow::Borrowed("0.0.0.0:443")),
                 http_address: Some(Cow::Borrowed("0.0.0.0:80")),
                 trusted_proxies: vec![],

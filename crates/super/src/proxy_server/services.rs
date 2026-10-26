@@ -97,6 +97,33 @@ pub fn https_service(
     Ok(service)
 }
 
+/// HTTP/3 (QUIC) on the HTTPS `addresses`, for the hosts with TLS
+pub fn http3_service(
+    configuration: &Arc<ServerConf>,
+    addresses: &BTreeSet<String>,
+    default_address: SocketAddr,
+    worker_threads: Option<usize>,
+) -> Result<super_core::services::quic::Service<WithTimeouts<HttpProxy<Router>>>, anyhow::Error> {
+    let router = Router {
+        listener: Listener::Https,
+        default_address,
+    };
+    let app = Arc::new(WithTimeouts::new(http_proxy(configuration, router)));
+    let certificates = super::http3::CERTIFICATES.clone();
+    let mut service =
+        super_core::services::quic::Service::new("http3 proxy".to_string(), app, certificates)?;
+    service.threads = worker_threads;
+    for address in addresses {
+        service.add_udp(address);
+    }
+    let ports = addresses
+        .iter()
+        .filter_map(|address| address.parse::<SocketAddr>().ok())
+        .map(|address| address.port());
+    super::http3::announce(ports);
+    Ok(service)
+}
+
 /// The HTTPS app (after TLS is terminated) for `addresses`, with their `tcp` blocks
 pub fn https_app(
     configuration: &Arc<ServerConf>,

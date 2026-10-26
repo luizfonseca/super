@@ -260,6 +260,14 @@ fn add_listeners(
             &tcp_targets,
             proxy_config.worker_threads,
         )?));
+        if proxy_config.server.http3() {
+            handles.push(server.add_service(proxy_server::services::http3_service(
+                &server.configuration,
+                &https,
+                default_https,
+                proxy_config.worker_threads,
+            )?));
+        }
     }
     if let Some(address) = listeners.admin {
         // What only the admin API reads is kept only with it (routes are built after this)

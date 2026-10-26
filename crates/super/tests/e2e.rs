@@ -920,6 +920,38 @@ async fn test_requests_are_served_with_work_stealing() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_http3() {
+    let mut proksi = Harness::start_with_server(
+        vec![Route::new("app.test", Upstream::Http)],
+        "http3 = true",
+        "",
+    )
+    .await;
+
+    // HTTPS responses tell clients HTTP/3 is there; their handshake readies its certificate
+    let response = proksi.get("app.test", "/").await.unwrap();
+    let announced = format!("h3=\":{}\"; ma=86400", proksi.https_port);
+    assert_eq!(response.headers["alt-svc"], announced.as_str());
+
+    let (status, headers, body) = proksi.http3_get("app.test", "/over-h3").await.unwrap();
+    assert_eq!(status, 200, "{body}\n{}", proksi.error_logs());
+    assert!(body.contains("/over-h3"), "{body}");
+    assert_eq!(headers["alt-svc"], announced.as_str());
+    // Names no host serves get no certificate
+    assert!(proksi.http3_get("unknown.test", "/").await.is_err());
+
+    proksi.assert_healthy();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_http3_off_unless_set() {
+    let mut proksi = Harness::start(vec![Route::new("app.test", Upstream::Http)]).await;
+    let response = proksi.get("app.test", "/").await.unwrap();
+    assert!(!response.headers.contains_key("alt-svc"));
+    proksi.assert_healthy();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_request_ids_from_trusted_proxies_are_kept() {
     let mut proksi = Harness::start_with_server(
         vec![],

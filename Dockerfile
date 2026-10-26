@@ -7,6 +7,7 @@ COPY super /app/super
 
 WORKDIR /app
 
-EXPOSE 80 443
+# 443/udp: HTTP/3, when `server.http3` is on
+EXPOSE 80 443 443/udp
 
 ENTRYPOINT ["/app/super"]

@@ -678,6 +678,59 @@ paths {{
         .await)
     }
 
+    /// A `GET` over HTTP/3 (QUIC, on the HTTPS port): its status, headers and body
+    pub async fn http3_get(
+        &self,
+        host: &str,
+        path: &str,
+    ) -> Result<(u16, http::HeaderMap, String), String> {
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let mut tls = rustls::ClientConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .map_err(|e| e.to_string())?
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(Trusting))
+            .with_no_client_auth();
+        tls.alpn_protocols = vec![b"h3".to_vec()];
+        let crypto =
+            quinn::crypto::rustls::QuicClientConfig::try_from(tls).map_err(|e| e.to_string())?;
+        let mut endpoint = quinn::Endpoint::client(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .map_err(|e| e.to_string())?;
+        endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(crypto)));
+        let addr = SocketAddr::from(([127, 0, 0, 1], self.https_port));
+        let connecting = endpoint.connect(addr, host).map_err(|e| e.to_string())?;
+        let connection = tokio::time::timeout(Duration::from_secs(10), connecting)
+            .await
+            .map_err(|_| "timed out connecting".to_string())?
+            .map_err(|e| e.to_string())?;
+        let (mut driver, mut sender) = h3::client::new(h3_quinn::Connection::new(connection))
+            .await
+            .map_err(|e| e.to_string())?;
+        let driving = tokio::spawn(async move {
+            std::future::poll_fn(|cx| driver.poll_close(cx)).await;
+        });
+        let request = http::Request::get(format!("https://{host}{path}"))
+            .body(())
+            .map_err(|e| e.to_string())?;
+        let mut stream = sender
+            .send_request(request)
+            .await
+            .map_err(|e| e.to_string())?;
+        stream.finish().await.map_err(|e| e.to_string())?;
+        let response = stream.recv_response().await.map_err(|e| e.to_string())?;
+        let mut body = Vec::new();
+        while let Some(mut data) = stream.recv_data().await.map_err(|e| e.to_string())? {
+            use bytes::Buf;
+            body.extend_from_slice(&data.copy_to_bytes(data.remaining()));
+        }
+        driving.abort();
+        Ok((
+            response.status().as_u16(),
+            response.headers().clone(),
+            String::from_utf8_lossy(&body).into_owned(),
+        ))
+    }
+
     pub fn cache_dir(&self) -> PathBuf {
         self.dir.path().join("cache")
     }
@@ -800,6 +853,47 @@ impl Drop for Harness {
         }
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+/// Trusts any certificate (proksi's, in the tests)
+#[derive(Debug)]
+struct Trusting;
+
+impl rustls::client::danger::ServerCertVerifier for Trusting {
+    fn verify_server_cert(
+        &self,
+        _: &rustls::pki_types::CertificateDer<'_>,
+        _: &[rustls::pki_types::CertificateDer<'_>],
+        _: &rustls::pki_types::ServerName<'_>,
+        _: &[u8],
+        _: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _: &[u8],
+        _: &rustls::pki_types::CertificateDer<'_>,
+        _: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _: &[u8],
+        _: &rustls::pki_types::CertificateDer<'_>,
+        _: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 
