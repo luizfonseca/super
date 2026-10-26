@@ -77,6 +77,8 @@ pub(super) async fn proxy<SV: ProxyHttp>(
         )
         .await?;
     }
+    // The upstream answered before the whole request body was sent: the client's rest is read
+    upload::drain(&upload, session).await;
     // Kept for the next request once both bodies are whole
     if upload.is_done() {
         proxy
