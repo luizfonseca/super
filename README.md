@@ -47,20 +47,30 @@ Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What 
 (same configuration, same machine, alternating rounds); pull requests are benchmarked against
 `main` as in Proksi.
 
-A first run (Proksi's `compare.py`: medians of 3 alternating rounds, 10s at 50 connections with
-`oha`, 4 worker threads, access logs on, both built with thin LTO, proxying to nginx), in a
-Linux container on an 8-CPU VM, so indicative only:
+As on Proksi's performance page: nginx, Proksi and Super proxying to the same nginx upstream,
+with the same certificate (RSA 2048), access logs off, keep-alive to the upstream, and `oha`
+with 50 connections on the same machine (Linux arm64, 8 CPUs, nginx 1.26.3, medians of 3
+alternating rounds). Proksi and Super run with their default `work_stealing`; memory is the
+proxy's private memory (without its executable's pages).
 
-| | Proksi | Super | change |
-| --- | ---: | ---: | ---: |
-| HTTP requests/s | 85,931 | 114,494 | +33.2% |
-| HTTP latency p50 / p99 | 0.56 / 1.14 ms | 0.42 / 0.86 ms | -24% |
-| HTTP CPU per 10k requests | 354 ms | 238 ms | -32.7% |
-| HTTP peak memory | 50.5 MB | 41.2 MB | -18.4% |
-| HTTPS requests/s | 79,143 | 106,368 | +34.4% |
-| HTTPS latency p50 / p99 | 0.61 / 1.20 ms | 0.45 / 0.91 ms | -25% |
-| HTTPS CPU per 10k requests | 392 ms | 268 ms | -31.6% |
-| HTTPS peak memory | 51.9 MB | 42.7 MB | -17.8% |
+**1 thread**
+
+| | Requests/s (HTTP / HTTPS) | CPU per request (HTTP / HTTPS) | Latency p99 (HTTP) | Memory (idle → under load) |
+| --- | ---: | ---: | ---: | ---: |
+| nginx | 113k / 84k | 8.8 / 11.8 µs | 0.64 ms | 7 → 10 MB |
+| Proksi | 49k / 41k | 20.3 / 24.4 µs | 1.58 ms | 10 → 17 MB |
+| **Super** | 71k / 60k | 14.0 / 16.6 µs | 1.05 ms | 5 → 11 MB |
+
+**4 threads**
+
+| | Requests/s (HTTP / HTTPS) | CPU per request (HTTP / HTTPS) | Latency p99 (HTTP) | Memory (idle → under load) |
+| --- | ---: | ---: | ---: | ---: |
+| nginx | 419k / 360k | 8.1 / 10.1 µs | 0.33 ms | 22 → 26 MB |
+| Proksi | 82k / 75k | 41.6 / 45.6 µs | 1.10 ms | 10 → 20 MB |
+| **Super** | 298k / 259k | 13.0 / 15.3 µs | 0.39 ms | 5 → 12 MB |
+
+These come from a single machine, where the proxy, the upstream and the load generator share
+the same CPUs: a comparison, not the throughput of production.
 
 ---
 
