@@ -20,7 +20,10 @@ use tokio::sync::oneshot;
 use super::{HttpServerApp, HttpServerOptions};
 use crate::{
     protocols::{
-        http::{body::Driver, Connection, ResponseBody, ServerSession},
+        http::{
+            body::{Driver, RequestBody},
+            Connection, ResponseBody, ServerSession,
+        },
         Stream, ALPN,
     },
     server::ShutdownWatch,
@@ -30,12 +33,12 @@ use crate::{
 pub(crate) const MAX_HEADERS: usize = 256;
 pub(crate) const MAX_HEADER_SIZE: usize = 1 << 20;
 
-/// Size of an HTTP/2 request's headers, at most (as Pingora's)
-const MAX_H2_HEADER_LIST: u32 = 64 * 1024;
+/// Size of an HTTP/2 (or HTTP/3) request's headers, at most (as Pingora's)
+pub(crate) const MAX_H2_HEADER_LIST: u32 = 64 * 1024;
 
 /// A request that got no response: hyper closes its connection
 #[derive(Debug)]
-struct Unanswered;
+pub(crate) struct Unanswered;
 
 impl std::fmt::Display for Unanswered {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -51,19 +54,21 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
     let connection = Arc::new(Connection {
         digest: stream.digest(),
         http2,
+        http3: false,
     });
     let options = app.server_options().cloned().unwrap_or_default();
     let activity = Arc::new(Activity::new());
     let service = {
         let (app, shutdown, activity) = (app.clone(), shutdown.clone(), activity.clone());
-        service_fn(move |request| {
+        service_fn(move |request: hyper::Request<Incoming>| {
             let active = activity.start();
+            let stopping = activity.is_stopping();
             handle(
                 app.clone(),
                 connection.clone(),
                 shutdown.clone(),
-                request,
-                active,
+                request.map(RequestBody::hyper),
+                (active, stopping),
             )
         })
     };
@@ -196,18 +201,18 @@ fn stop<C: Graceful>(connection: Pin<&mut C>, activity: &Activity, http2: bool) 
     http2
 }
 
-/// Hands a request to the app, and returns its response once written
-async fn handle<A: HttpServerApp>(
+/// Hands a request to the app, and returns its response once written. `active` is kept until
+/// the request is handled; with `stopping`, the connection closes after its response.
+pub(crate) async fn handle<A: HttpServerApp>(
     app: Arc<A>,
     connection: Arc<Connection>,
     shutdown: ShutdownWatch,
-    request: hyper::Request<Incoming>,
-    active: Active,
+    request: http::Request<RequestBody>,
+    (active, stopping): (impl Send + 'static, bool),
 ) -> Result<hyper::Response<ResponseBody>, Unanswered> {
     let (sender, mut response) = oneshot::channel();
     let mut session = ServerSession::new(request, connection, sender);
-    // Shutting down: the connection closes after this response
-    if active.0.is_stopping() {
+    if stopping {
         session.set_keepalive(None);
     }
     // Boxed once: once its response is sent, the rest of the handling goes on with the body

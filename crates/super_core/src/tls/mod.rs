@@ -12,6 +12,8 @@ use std::{
 use async_trait::async_trait;
 use openssl::ssl::{AlpnError, SslAcceptor, SslAcceptorBuilder, SslMethod, SslRef};
 pub use openssl::{hash, pkey, x509};
+/// rustls, the TLS of HTTP/3 (QUIC)
+pub use rustls;
 use tokio_openssl::SslStream;
 
 use crate::{

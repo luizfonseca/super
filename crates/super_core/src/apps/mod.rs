@@ -9,9 +9,11 @@ use crate::{
 };
 
 mod http;
+mod http3;
 
 pub use http::serve;
 pub(crate) use http::{MAX_HEADERS, MAX_HEADER_SIZE};
+pub use http3::serve_quic;
 
 /// Serves the connections of a listening service
 pub trait ServerApp: Send + Sync + 'static {
@@ -35,7 +37,7 @@ pub struct HttpServerOptions {
     pub idle_timeout: Option<Duration>,
     /// How long a client can take to send a request's headers (HTTP/1.1)
     pub header_read_timeout: Option<Duration>,
-    /// HTTP/2 streams a client can open at once
+    /// HTTP/2 (and HTTP/3) streams a client can open at once
     pub max_h2_streams: Option<u32>,
 }
 
