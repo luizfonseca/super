@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/logo-wordmark-dark.svg?v=9">
+    <img src="./docs/assets/logo-wordmark-light.svg?v=9" alt="Super" width="280">
+  </picture>
+</p>
+
 # Super
 
 Proksi, rebuilt on [hyper](https://hyper.rs) instead of Pingora: a case study of what a hyper
@@ -109,15 +116,6 @@ These come from a single machine, where the proxy, the upstream and the load gen
 the same CPUs: a comparison, not the throughput of production.
 
 ---
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/logo-wordmark-dark.svg?v=1">
-    <img src="./docs/assets/logo-wordmark-light.svg?v=1" alt="Proksi" width="260">
-  </picture>
-</p>
-
-<hr/>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/proksi-flow-dark.svg?v=1">
