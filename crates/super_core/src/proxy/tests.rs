@@ -459,3 +459,38 @@ async fn test_slow_upstreams_time_out() {
     let (parts, _) = request(&mut client, "GET", "/slow", "").await;
     assert_eq!(parts.status, 502);
 }
+
+/// Allocations of a request through the proxy, beyond those of the client and the upstream (and
+/// of these tests' phases): hyper's parsing and dispatch, and the request sent to the upstream.
+/// Kept from growing.
+#[tokio::test]
+async fn test_allocations_of_a_proxied_request() {
+    /// What a request costs today, at most
+    const PROXY: usize = 38;
+
+    let addr = upstream().await;
+    let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let (mut direct, connection) = hyper::client::conn::http1::handshake(TokioIo::new(socket))
+        .await
+        .unwrap();
+    tokio::spawn(connection);
+    let (mut proxied, _) = proxy_to(vec![addr], false).await;
+    // Warm: connections and buffers are there
+    request(&mut direct, "GET", "/a", "").await;
+    request(&mut proxied, "GET", "/a", "").await;
+
+    let (without, _) = count(request(&mut direct, "GET", "/a", "")).await;
+    let (with, _) = count(request(&mut proxied, "GET", "/a", "")).await;
+    let added = with.saturating_sub(without);
+    assert!(
+        added <= PROXY,
+        "a proxied request allocates {added} times (at most {PROXY})"
+    );
+}
+
+/// The allocations made on this thread while `future` runs (and what's spawned on it)
+async fn count<F: std::future::Future>(future: F) -> (usize, F::Output) {
+    crate::allocations::start();
+    let output = future.await;
+    (crate::allocations::stop(), output)
+}

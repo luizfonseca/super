@@ -2,8 +2,8 @@
 //! which one a request goes to (as Pingora's)
 
 use std::{
-    collections::{BTreeSet, HashMap},
-    hash::{DefaultHasher, Hash, Hasher},
+    collections::BTreeSet,
+    hash::{Hash, Hasher},
     net::ToSocketAddrs,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -15,7 +15,7 @@ use std::{
 use arc_swap::ArcSwap;
 use http::Extensions;
 
-use crate::{protocols::l4::socket::SocketAddr, Result};
+use crate::{hash::PrehashedMap, protocols::l4::socket::SocketAddr, Result};
 
 pub mod discovery;
 pub mod health_check;
@@ -63,9 +63,7 @@ impl Backend {
 
     /// The key of its health
     pub fn hash_key(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher.finish()
+        crate::hash::hash_one(self)
     }
 }
 
@@ -141,7 +139,7 @@ pub struct Backends {
     discovery: Box<dyn ServiceDiscovery + Send + Sync>,
     health_check: Option<Arc<dyn HealthCheck + Send + Sync>>,
     found: ArcSwap<BTreeSet<Backend>>,
-    health: ArcSwap<HashMap<u64, Arc<Health>>>,
+    health: ArcSwap<PrehashedMap<Arc<Health>>>,
 }
 
 impl Backends {
@@ -198,7 +196,7 @@ impl Backends {
                         .unwrap_or_else(|| Arc::new(Health::new()));
                     (key, health)
                 })
-                .collect::<HashMap<_, _>>();
+                .collect::<PrehashedMap<_>>();
             changed(&backends);
             self.health.store(Arc::new(health));
             self.found.store(Arc::new(backends));
