@@ -68,3 +68,13 @@ Fix: replace the memory copy's metadata too (as Super does).
 anything.
 
 Fix: remove the `.cache` and `.metadata` files and the memory copy (if purging is meant to work).
+
+### `--version` reports a stopped worker — confirmed
+
+`crates/proksi/src/supervisor.rs` (`should_supervise`): on Linux, every command line starts a
+supervisor, including those that don't serve. `proksi --version` (or `--help`, `check`) runs in
+a worker, and the supervisor then prints `proksi supervisor: worker 6 stopped (exit code 0)`
+after the version.
+
+Fix: supervise only command lines that serve: read them with `Config::try_parse_from` (no
+configuration files), and supervise when that succeeds without a subcommand (as Super does).

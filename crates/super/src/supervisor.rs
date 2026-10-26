@@ -36,14 +36,24 @@ pub fn is_worker() -> bool {
 
 /// Whether to start a supervisor: decided before the configuration loads, so the supervisor
 /// only holds what supervising needs. Not in a worker, nor in daemon mode asked for on the
-/// command line or in `PROKSI_DAEMON`; `daemon = true` in a configuration file is found by the
-/// worker, which then runs on its own (`detach`).
+/// command line or in `PROKSI_DAEMON`, nor for what doesn't serve (`--version`, `--help`,
+/// `check`, arguments that aren't valid); `daemon = true` in a configuration file is found by
+/// the worker, which then runs on its own (`detach`).
 pub fn should_supervise() -> bool {
     !is_worker()
+        && serves(std::env::args_os())
         && !daemon_requested(
             std::env::args_os().skip(1),
             std::env::var_os("PROKSI_DAEMON").as_deref(),
         )
+}
+
+/// Whether the command line (`args`, the program first) starts serving: read as the worker
+/// reads it, without its configuration files
+fn serves(args: impl IntoIterator<Item = OsString>) -> bool {
+    use clap::Parser;
+
+    Config::try_parse_from(args).is_ok_and(|cli| cli.command.is_none())
 }
 
 /// `-d`, `--daemon` (or `-d` among other short flags, `-vd`), or `PROKSI_DAEMON=true`
@@ -276,7 +286,7 @@ fn log(message: &str) {
 mod tests {
     use std::ffi::OsString;
 
-    use super::daemon_requested;
+    use super::{daemon_requested, serves};
 
     fn requested(args: &[&str], env: Option<&str>) -> bool {
         daemon_requested(
@@ -300,5 +310,18 @@ mod tests {
         assert!(requested(&[], Some("true")));
         assert!(requested(&[], Some("1")));
         assert!(!requested(&[], Some("false")));
+    }
+
+    #[test]
+    fn test_only_serving_is_supervised() {
+        let serving = |args: &[&str]| serves(args.iter().map(OsString::from));
+        assert!(serving(&["super"]));
+        assert!(serving(&["super", "-c", "/etc/proksi/"]));
+
+        assert!(!serving(&["super", "--version"]));
+        assert!(!serving(&["super", "-V"]));
+        assert!(!serving(&["super", "--help"]));
+        assert!(!serving(&["super", "check", "-c", "/etc/proksi/"]));
+        assert!(!serving(&["super", "--not-an-option"]));
     }
 }
