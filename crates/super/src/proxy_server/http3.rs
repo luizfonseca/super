@@ -80,10 +80,11 @@ impl Certificates {
         };
         runtime.spawn(async move {
             let certificate = stores::global::get_store().get_certificate(&name).await;
-            match certificate {
-                Some(certificate) => CERTIFICATES.convert(&name, &certificate),
-                None => tracing::warn!("no certificate for host {name:?}"),
-            }
+            let Some(certificate) = certificate else {
+                tracing::warn!("no certificate for host {name:?}");
+                return;
+            };
+            CERTIFICATES.convert(&name, &certificate);
         });
     }
 }

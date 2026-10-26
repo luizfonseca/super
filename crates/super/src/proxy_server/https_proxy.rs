@@ -370,7 +370,7 @@ impl ProxyHttp for Router {
             let port = session
                 .server_addr()
                 .and_then(|addr| addr.as_inet())
-                .map(|addr| addr.port());
+                .map(std::net::SocketAddr::port);
             if let Some(alt_svc) = port.and_then(super::http3::alt_svc) {
                 upstream_response.insert_header(http::header::ALT_SVC, alt_svc)?;
             }
