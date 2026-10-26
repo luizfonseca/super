@@ -55,6 +55,21 @@ async fn answer(
 ) -> std::result::Result<hyper::Response<Full<Bytes>>, std::convert::Infallible> {
     if request.uri().path() == "/ws" {
         let upgrade = hyper::upgrade::on(&mut request);
+        // What the upgrade request was, as an HTTP/1.1 upstream sees it
+        let header = |name| {
+            request
+                .headers()
+                .get(name)
+                .map_or("", |value: &http::HeaderValue| value.to_str().unwrap())
+                .to_string()
+        };
+        let seen = format!(
+            "{} {:?} {} key:{}",
+            request.method(),
+            request.version(),
+            header("upgrade"),
+            !header("sec-websocket-key").is_empty()
+        );
         tokio::spawn(async move {
             let mut io = TokioIo::new(upgrade.await.unwrap());
             let mut buf = [0u8; 5];
@@ -65,6 +80,8 @@ async fn answer(
             .status(101)
             .header("connection", "upgrade")
             .header("upgrade", "test")
+            .header("sec-websocket-accept", "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
+            .header("x-seen", seen)
             .body(Full::new(Bytes::new()))
             .unwrap();
         return Ok(response);
@@ -299,6 +316,37 @@ async fn proxy_to(
     upstreams: Vec<SocketAddr>,
     retry_on_502: bool,
 ) -> (hyper::client::conn::http1::SendRequest<Full<Bytes>>, Logged) {
+    let (addr, logged) = listen(upstreams, retry_on_502, false).await;
+    let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let (sender, connection) = hyper::client::conn::http1::Builder::new()
+        .handshake(TokioIo::new(socket))
+        .await
+        .unwrap();
+    tokio::spawn(connection.with_upgrades());
+    (sender, logged)
+}
+
+/// A proxy to `upstreams`, and an HTTP/2 client's connection to it
+async fn http2_proxy_to(
+    upstreams: Vec<SocketAddr>,
+) -> hyper::client::conn::http2::SendRequest<Full<Bytes>> {
+    let (addr, _) = listen(upstreams, false, true).await;
+    let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let (sender, connection) =
+        hyper::client::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .handshake(TokioIo::new(socket))
+            .await
+            .unwrap();
+    tokio::spawn(connection);
+    sender
+}
+
+/// A proxy to `upstreams`, listening: its clients speak HTTP/2 with `http2`
+async fn listen(
+    upstreams: Vec<SocketAddr>,
+    retry_on_502: bool,
+    http2: bool,
+) -> (SocketAddr, Logged) {
     let logged = Logged::default();
     let phases = Phases {
         upstreams,
@@ -313,19 +361,69 @@ async fn proxy_to(
         loop {
             let (socket, _) = listener.accept().await.unwrap();
             let proxy = proxy.clone();
+            let stream: crate::protocols::Stream = if http2 {
+                Box::new(Http2(socket))
+            } else {
+                Box::new(Stream::from(socket))
+            };
             tokio::spawn(async move {
                 let shutdown = tokio::sync::watch::channel(false).1;
-                serve(&proxy, Box::new(Stream::from(socket)), &shutdown).await;
+                serve(&proxy, stream, &shutdown).await;
             });
         }
     });
-    let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
-    let (sender, connection) = hyper::client::conn::http1::Builder::new()
-        .handshake(TokioIo::new(socket))
-        .await
-        .unwrap();
-    tokio::spawn(connection.with_upgrades());
-    (sender, logged)
+    (addr, logged)
+}
+
+/// A connection whose client speaks HTTP/2, as if it chose it with ALPN
+struct Http2(tokio::net::TcpStream);
+
+impl tokio::io::AsyncRead for Http2 {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
+    }
+}
+
+impl tokio::io::AsyncWrite for Http2 {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.get_mut().0).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.get_mut().0).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.get_mut().0).poll_shutdown(cx)
+    }
+}
+
+impl crate::protocols::IO for Http2 {
+    fn get_socket_digest(&self) -> Option<Arc<crate::protocols::SocketDigest>> {
+        None
+    }
+
+    fn selected_alpn_proto(&self) -> Option<crate::protocols::ALPN> {
+        Some(crate::protocols::ALPN::H2)
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any + Send> {
+        self
+    }
 }
 
 async fn request(
@@ -450,11 +548,46 @@ async fn test_upgraded_connections() {
         .unwrap();
     let response = client.send_request(request).await.unwrap();
     assert_eq!(response.status(), 101);
+    assert_eq!(response.headers()["x-seen"], "GET HTTP/1.1 test key:false");
     let mut io = TokioIo::new(hyper::upgrade::on(response).await.unwrap());
     io.write_all(b"hello").await.unwrap();
     let mut echoed = [0u8; 5];
     io.read_exact(&mut echoed).await.unwrap();
     assert_eq!(&echoed, b"hello");
+}
+
+#[tokio::test]
+async fn test_websockets_over_http2() {
+    let mut client = http2_proxy_to(vec![upstream().await]).await;
+    // An extended CONNECT (RFC 8441), to an HTTP/1.1 upstream
+    let mut request = hyper::Request::connect("http://a.test/ws")
+        .header("sec-websocket-version", "13")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    request
+        .extensions_mut()
+        .insert(hyper::ext::Protocol::from_static("websocket"));
+    client.ready().await.unwrap();
+    let response = client.send_request(request).await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.headers()["x-seen"],
+        "GET HTTP/1.1 websocket key:true"
+    );
+    assert!(!response.headers().contains_key("sec-websocket-accept"));
+    let mut io = TokioIo::new(hyper::upgrade::on(response).await.unwrap());
+    io.write_all(b"hello").await.unwrap();
+    let mut echoed = [0u8; 5];
+    io.read_exact(&mut echoed).await.unwrap();
+    assert_eq!(&echoed, b"hello");
+
+    // Other requests share the connection meanwhile
+    client.ready().await.unwrap();
+    let request = hyper::Request::get("http://a.test/plain")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let response = client.send_request(request).await.unwrap();
+    assert_eq!(response.status(), 200);
 }
 
 /// Waits 50ms for its upstream

@@ -118,6 +118,10 @@ super_store = { path = "../super_store", version = "0.2.0", features = ["test-ut
 criterion = { version = "0.8.2", features = ["html_reports"] }
 figment = { version = "0.10.19", features = ["toml", "yaml", "env", "test"] }
 futures-util = "0.3.34"
+# Websockets over HTTP/2 (extended CONNECT), as browsers open them
+hyper = { version = "1.12", features = ["client", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tokio-openssl = "0.6.5"
 native-tls = { version = "0.2.18", features = ["alpn"] }
 # Tests' clients also negotiate HTTP/2, as browsers do
 reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "http2"] }

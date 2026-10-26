@@ -70,7 +70,8 @@ impl ServerSession {
         connection: Arc<Connection>,
         responder: oneshot::Sender<http::Response<ResponseBody>>,
     ) -> Self {
-        let upgrade = is_upgrade(&request).then(|| hyper::upgrade::on(&mut request));
+        let switching = is_upgrade(&request) || as_upgrade(&mut request);
+        let upgrade = switching.then(|| hyper::upgrade::on(&mut request));
         let (parts, body) = request.into_parts();
         Self {
             request: RequestHeader::from_parts(parts),
@@ -304,6 +305,9 @@ impl ServerSession {
         let mut parts = header.into_parts();
         // HTTP/1.1 connections are closed after a response that isn't kept alive
         let switching = parts.status == StatusCode::SWITCHING_PROTOCOLS;
+        if switching && self.connection.http2 {
+            accept_extended_connect(&mut parts);
+        }
         if self.keepalive.is_none() && !self.connection.http2 && !switching {
             parts
                 .headers
@@ -360,7 +364,7 @@ impl ServerSession {
         self.connection.http2
     }
 
-    /// Whether the client asks to switch protocols (e.g. a websocket)
+    /// Whether the client asks to switch protocols (e.g. a websocket, over HTTP/1.1 or HTTP/2)
     pub fn is_upgrade_req(&self) -> bool {
         self.upgrade.is_some()
     }
@@ -434,4 +438,51 @@ fn is_upgrade<B>(request: &http::Request<B>) -> bool {
                     .split(',')
                     .any(|token| token.trim().eq_ignore_ascii_case("upgrade"))
             })
+}
+
+/// An HTTP/2 client's request for another protocol (an extended `CONNECT`, RFC 8441), turned
+/// into the HTTP/1.1 upgrade request it stands for: the phases, and the upstream, see the
+/// request as an HTTP/1.1 client would send it. Returns whether it was one.
+fn as_upgrade<B>(request: &mut http::Request<B>) -> bool {
+    if request.method() != http::Method::CONNECT {
+        return false;
+    }
+    let Some(protocol) = request.extensions_mut().remove::<hyper::ext::Protocol>() else {
+        return false;
+    };
+    let Ok(upgrade) = HeaderValue::from_bytes(protocol.as_ref()) else {
+        return false;
+    };
+    let websocket = protocol.as_str().eq_ignore_ascii_case("websocket");
+    *request.method_mut() = http::Method::GET;
+    let headers = request.headers_mut();
+    headers.insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
+    headers.insert(header::UPGRADE, upgrade);
+    // HTTP/2 websockets have no key (RFC 8441, 5): the upstream wants one
+    if websocket && !headers.contains_key(header::SEC_WEBSOCKET_KEY) {
+        if let Some(key) = websocket_key() {
+            headers.insert(header::SEC_WEBSOCKET_KEY, key);
+        }
+    }
+    true
+}
+
+/// A websocket key: 16 random bytes, in base64 (RFC 6455, 4.1)
+fn websocket_key() -> Option<HeaderValue> {
+    let mut nonce = [0u8; 16];
+    openssl::rand::rand_bytes(&mut nonce).ok()?;
+    HeaderValue::from_str(&openssl::base64::encode_block(&nonce)).ok()
+}
+
+/// The upstream switched protocols: an HTTP/2 client is told with a `200`, and without the
+/// headers of an HTTP/1.1 upgrade (RFC 8441, 5)
+fn accept_extended_connect(parts: &mut http::response::Parts) {
+    parts.status = StatusCode::OK;
+    for name in [
+        header::CONNECTION,
+        header::UPGRADE,
+        header::SEC_WEBSOCKET_ACCEPT,
+    ] {
+        parts.headers.remove(name);
+    }
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::{cache_phase, exchange, HttpProxy, ProxyHttp, Session};
 use crate::{
-    protocols::http::ServerSession,
+    protocols::{http::ServerSession, ALPN},
     upstreams::{connector::HttpSession, peer::HttpPeer},
     ErrorSource, Result,
 };
@@ -75,7 +75,11 @@ async fn proxy_upstream<SV: ProxyHttp>(
     let mut retries = 0;
     loop {
         progress.tries = retries + 1;
-        let peer = proxy.inner.upstream_peer(session, ctx).await?;
+        let mut peer = proxy.inner.upstream_peer(session, ctx).await?;
+        // Switching protocols is HTTP/1.1's: an HTTP/2 upstream would take it as a plain request
+        if session.is_upgrade_req() {
+            peer.options.alpn = ALPN::H1;
+        }
         let Some((connection, reused)) = connect(proxy, session, ctx, &peer, &mut retries).await?
         else {
             continue;

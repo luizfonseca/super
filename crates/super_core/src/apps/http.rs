@@ -74,7 +74,9 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
         builder
             .timer(TokioTimer::new())
             .max_concurrent_streams(options.max_h2_streams)
-            .max_header_list_size(MAX_H2_HEADER_LIST);
+            .max_header_list_size(MAX_H2_HEADER_LIST)
+            // Websockets over HTTP/2 (RFC 8441), on the client's connection
+            .enable_connect_protocol();
         let connection = builder.serve_connection(io, service);
         drive(connection, &activity, &options, &mut shutdown, true).await;
         return;

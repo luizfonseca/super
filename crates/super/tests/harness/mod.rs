@@ -44,6 +44,9 @@ pub const UTF8_CONTENT_DISPOSITION: &str = "attachment; filename=\"résumé.pdf\
 
 pub type WebSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
+/// A websocket on an HTTP/2 stream
+pub type WebSocketH2 = WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>;
+
 #[derive(Clone, Copy)]
 pub enum Upstream {
     Http,
@@ -621,6 +624,60 @@ paths {{
         Ok(ws)
     }
 
+    /// Opens a websocket through proksi over HTTP/2 (an extended CONNECT, RFC 8441), as
+    /// browsers do when the server allows it
+    pub async fn websocket_h2(&self, host: &str, path: &str) -> Result<WebSocketH2, String> {
+        let tcp = TcpStream::connect(("127.0.0.1", self.https_port))
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut connector = SslConnector::builder(SslMethod::tls()).map_err(|e| e.to_string())?;
+        connector.set_verify(openssl::ssl::SslVerifyMode::NONE);
+        connector
+            .set_alpn_protos(b"\x02h2")
+            .map_err(|e| e.to_string())?;
+        let ssl = connector
+            .build()
+            .configure()
+            .and_then(|config| config.into_ssl(host))
+            .map_err(|e| e.to_string())?;
+        let mut tls = tokio_openssl::SslStream::new(ssl, tcp).map_err(|e| e.to_string())?;
+        std::pin::Pin::new(&mut tls)
+            .connect()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let (mut sender, connection) =
+            hyper::client::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+                .handshake(hyper_util::rt::TokioIo::new(tls))
+                .await
+                .map_err(|e| e.to_string())?;
+        tokio::spawn(connection);
+        let mut request = http::Request::connect(format!("https://{host}{path}"))
+            .header("sec-websocket-version", "13")
+            .body(String::new())
+            .map_err(|e| e.to_string())?;
+        request
+            .extensions_mut()
+            .insert(hyper::ext::Protocol::from_static("websocket"));
+        sender.ready().await.map_err(|e| e.to_string())?;
+        let response = sender
+            .send_request(request)
+            .await
+            .map_err(|e| e.to_string())?;
+        if response.status() != 200 {
+            return Err(format!("status {}", response.status()));
+        }
+        let upgraded = hyper::upgrade::on(response)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(WebSocketStream::from_raw_socket(
+            hyper_util::rt::TokioIo::new(upgraded),
+            tokio_tungstenite::tungstenite::protocol::Role::Client,
+            None,
+        )
+        .await)
+    }
+
     pub fn cache_dir(&self) -> PathBuf {
         self.dir.path().join("cache")
     }
@@ -747,7 +804,10 @@ impl Drop for Harness {
 }
 
 /// Sends a text message through the websocket and returns the echoed message
-pub async fn websocket_echo(ws: &mut WebSocket, text: &str) -> Result<String, String> {
+pub async fn websocket_echo<S>(ws: &mut WebSocketStream<S>, text: &str) -> Result<String, String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     ws.send(Message::text(text))
         .await
         .map_err(|e| e.to_string())?;
