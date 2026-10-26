@@ -204,10 +204,9 @@ fn start(pending: Pending, configuration: &ServerConf, fds: &ListenFds, shutdown
         .lock()
         .map(|dependencies| dependencies.clone())
         .unwrap_or_default();
-    // Without work stealing: connections are spread over threads of their own, each keeping its
-    // connections (Pingora's)
+    // Without work stealing: threads of their own each accept connections, and keep them
     let pinned = (!configuration.work_stealing && threads > 1)
-        .then(|| workers(threads, &name))
+        .then(|| start_workers(threads, &name))
         .flatten();
     let threads = if pinned.is_some() { 1 } else { threads };
     let spawned = std::thread::Builder::new()
@@ -253,45 +252,23 @@ tokio::task_local! {
     static WORKERS: Arc<Workers>;
 }
 
-/// Threads each running tasks of their own, given in turn
+/// Threads each running tasks of their own
 pub struct Workers {
     handles: Vec<tokio::runtime::Handle>,
-    next: std::sync::atomic::AtomicUsize,
 }
 
-impl Workers {
-    fn next(&self) -> Option<&tokio::runtime::Handle> {
-        let turn = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.handles.get(turn % self.handles.len().max(1))
-    }
-}
-
-/// Runs `task` (e.g. a connection) on the service's threads: when they don't steal work from
-/// each other, on the next one in turn, where it stays
-pub fn spawn<F>(task: F)
-where
-    F: std::future::Future<Output = ()> + Send + 'static,
-{
-    let handle = WORKERS
-        .try_with(|workers| workers.next().cloned())
-        .ok()
-        .flatten();
-    match handle {
-        Some(handle) => drop(handle.spawn(task)),
-        None => drop(tokio::spawn(task)),
-    }
+/// The threads of the service running, when they don't steal work from each other
+pub fn workers() -> Option<Vec<tokio::runtime::Handle>> {
+    WORKERS.try_with(|workers| workers.handles.clone()).ok()
 }
 
 /// `threads` threads, each with a runtime of its own (running until the server exits)
-fn workers(threads: usize, name: &str) -> Option<Arc<Workers>> {
+fn start_workers(threads: usize, name: &str) -> Option<Arc<Workers>> {
     let handles = (0..threads)
         .map(|index| worker(&format!("{name}-{index}")))
         .collect::<std::io::Result<Vec<_>>>();
     match handles {
-        Ok(handles) => Some(Arc::new(Workers {
-            handles,
-            next: std::sync::atomic::AtomicUsize::new(0),
-        })),
+        Ok(handles) => Some(Arc::new(Workers { handles })),
         Err(err) => {
             tracing::error!("can't start the threads of {name}: {err}");
             None
