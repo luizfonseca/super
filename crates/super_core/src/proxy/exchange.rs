@@ -107,29 +107,41 @@ async fn stream<SV: ProxyHttp>(
         let Some(frame) = frame else {
             return respond_body(proxy, session, ctx, None, true).await;
         };
-        let frame = frame.map_err(|err| {
-            Error::because(ErrorType::ReadError, "reading the upstream's body", err).into_up()
-        })?;
-        let frame = match frame.into_data() {
-            Ok(data) => {
-                let end = body.is_end_stream();
-                respond_body(proxy, session, ctx, Some(data), end).await?;
-                if end {
-                    return Ok(());
-                }
-                continue;
-            }
-            Err(frame) => frame,
-        };
-        if let Ok(trailers) = frame.into_trailers() {
-            respond_body(proxy, session, ctx, None, false).await?;
-            cache_phase::write(session, None, true).await;
-            return session
-                .downstream_session
-                .write_response_trailers(trailers)
-                .await;
+        if forward(proxy, session, ctx, body, frame).await? {
+            return Ok(());
         }
     }
+}
+
+/// Sends a frame of the upstream's body on to the client: `true` once the body ended
+async fn forward<SV: ProxyHttp>(
+    proxy: &HttpProxy<SV>,
+    session: &mut Session,
+    ctx: &mut SV::CTX,
+    body: &Incoming,
+    frame: std::result::Result<hyper::body::Frame<Bytes>, hyper::Error>,
+) -> Result<bool> {
+    let frame = frame.map_err(|err| {
+        Error::because(ErrorType::ReadError, "reading the upstream's body", err).into_up()
+    })?;
+    let frame = match frame.into_data() {
+        Ok(data) => {
+            let end = body.is_end_stream();
+            respond_body(proxy, session, ctx, Some(data), end).await?;
+            return Ok(end);
+        }
+        Err(frame) => frame,
+    };
+    let Ok(trailers) = frame.into_trailers() else {
+        return Ok(false);
+    };
+    respond_body(proxy, session, ctx, None, false).await?;
+    cache_phase::write(session, None, true).await;
+    session
+        .downstream_session
+        .write_response_trailers(trailers)
+        .await?;
+    Ok(true)
 }
 
 /// A part of the response body: stored in the cache, through `response_body_filter` (and its

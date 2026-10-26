@@ -198,6 +198,9 @@ fn start(pending: Pending, configuration: &ServerConf, fds: &ListenFds, shutdown
                     let _ = dependency.wait_for(|ready| *ready).await;
                 }
                 run(service, fds, shutdown, ServiceReadyNotifier::new(ready)).await;
+                // What it started (e.g. connections finishing after it stopped accepting) runs
+                // until the server exits
+                std::future::pending::<()>().await;
             });
         });
     if let Err(err) = spawned {

@@ -4,7 +4,11 @@
 use std::sync::Arc;
 
 use super::{cache_phase, exchange, HttpProxy, ProxyHttp, Session};
-use crate::{protocols::http::ServerSession, ErrorSource, Result};
+use crate::{
+    protocols::http::ServerSession,
+    upstreams::{connector::HttpSession, peer::HttpPeer},
+    ErrorSource, Result,
+};
 
 /// Attempts at reaching an upstream, at most (Pingora's)
 const MAX_RETRIES: usize = 16;
@@ -54,16 +58,9 @@ async fn proxy_upstream<SV: ProxyHttp>(
     let mut retries = 0;
     loop {
         let peer = proxy.inner.upstream_peer(session, ctx).await?;
-        let (connection, reused) = match proxy.connector.get_http_session(&peer).await {
-            Ok(connected) => connected,
-            Err(e) => {
-                let e = proxy.inner.fail_to_connect(session, &peer, ctx, e);
-                if e.retry() && retries < MAX_RETRIES {
-                    retries += 1;
-                    continue;
-                }
-                return Err(e);
-            }
+        let Some((connection, reused)) = connect(proxy, session, ctx, &peer, &mut retries).await?
+        else {
+            continue;
         };
         let fd = connection.fd;
         proxy
@@ -90,6 +87,25 @@ async fn proxy_upstream<SV: ProxyHttp>(
         tracing::debug!("trying again: {e}");
         retries += 1;
     }
+}
+
+/// A connection to `peer`, or `None` to try again (as `fail_to_connect` allows)
+async fn connect<SV: ProxyHttp>(
+    proxy: &HttpProxy<SV>,
+    session: &mut Session,
+    ctx: &mut SV::CTX,
+    peer: &HttpPeer,
+    retries: &mut usize,
+) -> Result<Option<(HttpSession, bool)>> {
+    let e = match proxy.connector.get_http_session(peer).await {
+        Ok(connected) => return Ok(Some(connected)),
+        Err(e) => proxy.inner.fail_to_connect(session, peer, ctx, e),
+    };
+    if !e.retry() || *retries >= MAX_RETRIES {
+        return Err(e);
+    }
+    *retries += 1;
+    Ok(None)
 }
 
 /// The request failed: served stale from the cache when allowed, else answered by

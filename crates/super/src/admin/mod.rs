@@ -1,0 +1,1051 @@
+//! The admin API (ADR 0004, ADR 0008): metrics, live stats, hosts, the store's routes, and the UI
+
+use std::{collections::BTreeMap, net::SocketAddr, sync::Arc, time::Duration};
+
+use bytes::Bytes;
+use http::{header, Method, StatusCode};
+use serde::{Deserialize, Serialize};
+use super_core::{
+    apps::HttpServerApp, http::ResponseHeader, protocols::http::ServerSession,
+    server::ShutdownWatch, services::listening::Service,
+};
+
+use crate::{
+    config::admin::{Access, Token},
+    metrics::live,
+};
+
+mod access;
+mod endpoint;
+mod notify;
+mod router;
+pub mod routes;
+pub mod server;
+pub mod status;
+mod stream;
+mod ui;
+
+use endpoint::Endpoint;
+
+/// Whether the admin API is served (an `admin` block): what only it reads (rules as written) is
+/// kept only then
+static ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn enable() {
+    ENABLED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn enabled() -> bool {
+    ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Largest request body accepted (a host)
+const MAX_BODY: usize = 1024 * 1024;
+
+/// A response of the admin API
+#[derive(Debug, PartialEq)]
+pub struct Reply {
+    pub status: StatusCode,
+    pub content_type: &'static str,
+    pub body: String,
+    /// `Set-Cookie`, signing in or out
+    pub set_cookie: Option<String>,
+}
+
+/// The body of every error
+#[derive(Serialize)]
+struct Error<'a> {
+    error: &'a str,
+}
+
+impl Reply {
+    fn json(status: StatusCode, body: &impl Serialize) -> Self {
+        let (status, body) = match serde_json::to_string(body) {
+            Ok(body) => (status, body),
+            Err(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(r#"{{"error":"{err}"}}"#),
+            ),
+        };
+        Self {
+            status,
+            content_type: "application/json",
+            body,
+            set_cookie: None,
+        }
+    }
+
+    fn ok(body: &impl Serialize) -> Self {
+        Self::json(StatusCode::OK, body)
+    }
+
+    fn error(status: StatusCode, reason: &str) -> Self {
+        Self::json(status, &Error { error: reason })
+    }
+
+    fn unauthorized() -> Self {
+        Self::error(StatusCode::UNAUTHORIZED, "missing or invalid token")
+    }
+
+    fn not_found() -> Self {
+        Self::error(StatusCode::NOT_FOUND, "not found")
+    }
+}
+
+/// `POST /api/v1/session`
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignIn {
+    /// The token's name (without it, the secret of any token signs in)
+    name: Option<String>,
+    /// Its secret
+    token: String,
+}
+
+/// What the admin API answers
+#[derive(Debug, PartialEq)]
+pub enum Answer {
+    Reply(Reply),
+    /// Server-sent events with the stats over this window, every second
+    Stream(Duration),
+    /// Server-sent events with the requests being served (of one host)
+    Requests(Option<String>),
+    /// A file of the UI
+    Ui(&'static super_admin_ui::Asset, ui::Encoding),
+}
+
+pub struct AdminApi {
+    tokens: access::Tokens,
+    instance: status::Instance,
+    /// Serves `/metrics` only (`admin.metrics_listen`)
+    metrics_only: bool,
+    /// `admin.trusted_origins`
+    trusted_origins: Vec<String>,
+}
+
+impl AdminApi {
+    pub fn new(tokens: BTreeMap<String, Token>, instance: status::Instance) -> Self {
+        Self {
+            tokens: access::Tokens::new(tokens),
+            instance,
+            metrics_only: false,
+            trusted_origins: vec![],
+        }
+    }
+
+    /// Changes with a session are also accepted from these origins (`admin.trusted_origins`)
+    #[must_use]
+    pub fn with_trusted_origins(mut self, origins: Vec<String>) -> Self {
+        self.trusted_origins = origins;
+        self
+    }
+
+    /// The API with `/metrics` only, for scrapers that mustn't change routes
+    pub fn metrics_only(token: Option<String>) -> Self {
+        let instance = status::Instance {
+            started: std::time::Instant::now(),
+            store_type: String::new(),
+            listeners: serde_json::Value::Null,
+            server: None,
+            tcp: vec![],
+        };
+        let tokens = token.filter(|token| !token.is_empty()).map(|secret| {
+            let access = Access::Read;
+            ("metrics".to_string(), Token { secret, access })
+        });
+        Self {
+            tokens: access::Tokens::new(tokens.into_iter().collect()),
+            instance,
+            metrics_only: true,
+            trusted_origins: vec![],
+        }
+    }
+
+    /// Answers a request
+    pub async fn handle(&self, request: Request<'_>) -> Answer {
+        // The UI's files hold no data: its pages sign in to the API
+        if !self.metrics_only && ui::serves(request.path) {
+            return ui::answer(request.method, request.path, request.accept_encoding);
+        }
+        let endpoint = Endpoint::parse(request.method, request.path, request.query);
+        if let Ok(endpoint) = endpoint.as_ref().copied() {
+            if endpoint.public() && !self.metrics_only {
+                return Answer::Reply(self.sign_in_or_out(endpoint, request));
+            }
+        }
+        let Some(caller) = self.tokens.caller(request.authorization, request.cookie) else {
+            return Answer::Reply(Reply::unauthorized());
+        };
+        let endpoint = match endpoint {
+            Ok(endpoint) if !self.metrics_only || endpoint == Endpoint::Metrics => endpoint,
+            Ok(_) => return Answer::Reply(Reply::not_found()),
+            Err(reply) => return Answer::Reply(reply),
+        };
+        if let Some(refused) = self.reject_access(endpoint, &caller, request) {
+            return Answer::Reply(refused);
+        }
+
+        let write = match write(&caller, request) {
+            Ok(write) => write,
+            Err(reply) => return Answer::Reply(reply),
+        };
+        let store = crate::stores::global::get_store();
+        let store = store.as_ref();
+        let reply = match endpoint {
+            Endpoint::Metrics => Reply {
+                status: StatusCode::OK,
+                content_type: "text/plain; version=0.0.4",
+                body: crate::metrics::gather(),
+                set_cookie: None,
+            },
+            Endpoint::Stats(window) => Reply::ok(&stats(window)),
+            Endpoint::StatsStream(window) => return Answer::Stream(window),
+            Endpoint::RequestsStream(host) => return Answer::Requests(host.map(str::to_lowercase)),
+            Endpoint::Status => Reply::ok(&status::status(store, &self.instance).await),
+            Endpoint::Server => match &self.instance.server {
+                Some(server) => Reply::ok(server),
+                None => Reply::not_found(),
+            },
+            Endpoint::Hosts => Reply::ok(&status::hosts()),
+            Endpoint::Tcp => Reply::ok(&status::tcp(
+                &self.instance.tcp,
+                crate::tcp::load_balancers(),
+            )),
+            Endpoint::Schema => Reply::ok(&serde_json::json!({
+                "rules": crate::rules::schema::schema(),
+                "blocks": crate::blocks::settings::schemas(),
+            })),
+            Endpoint::Validate => routes_reply(routes::validate(request.body)),
+            Endpoint::Certificates => Reply::ok(&status::certificates(store).await),
+            Endpoint::Routes => routes_reply(routes::list(store).await),
+            Endpoint::Route(host) => routes_reply(routes::get(store, host).await),
+            Endpoint::PutRoute(host) => change_reply(
+                routes::put(store, host, request.body, &write).await,
+                &write,
+                "saved",
+            ),
+            Endpoint::DeleteRoute(host) => {
+                change_reply(routes::delete(store, host, &write).await, &write, "removed")
+            }
+            Endpoint::RouteHistory(host) => routes_reply(routes::history(store, host).await),
+            Endpoint::RouteVersion(host, revision) => {
+                routes_reply(routes::version(store, host, revision).await)
+            }
+            Endpoint::RollbackRoute(host) => change_reply(
+                routes::rollback(store, host, request.body, &write).await,
+                &write,
+                "rolled back",
+            ),
+            Endpoint::DeletedRoutes => routes_reply(routes::deleted(store).await),
+            Endpoint::Notifications => Reply::ok(&notify::list()),
+            Endpoint::PutNotification(name) => {
+                notify::reply(notify::put(store, name, request.body, &write).await, &write)
+            }
+            Endpoint::DeleteNotification(name) => {
+                notify::reply(notify::delete(store, name, &write).await, &write)
+            }
+            Endpoint::TestNotification(name) => match crate::notify::test(name).await {
+                None => Reply::not_found(),
+                Some(Ok(())) => Reply::ok(&serde_json::json!({ "ok": true })),
+                Some(Err(err)) => Reply::error(StatusCode::BAD_GATEWAY, &err),
+            },
+            Endpoint::Session => Reply::ok(&caller),
+            Endpoint::SignIn | Endpoint::SignOut => Reply::not_found(),
+        };
+        Answer::Reply(reply)
+    }
+
+    /// Why `caller` can't reach `endpoint`, if they can't: a change from another site or with a
+    /// read-only token, or metrics that are turned off
+    fn reject_access(
+        &self,
+        endpoint: Endpoint<'_>,
+        caller: &access::Caller,
+        request: Request<'_>,
+    ) -> Option<Reply> {
+        if endpoint.metrics() && !crate::metrics::enabled() {
+            return Some(Reply::error(
+                StatusCode::NOT_FOUND,
+                "metrics are disabled (admin.metrics = false)",
+            ));
+        }
+        if !endpoint.changes() {
+            return None;
+        }
+        // Other sites can't send the cookie (`SameSite=Strict`), nor make changes with it
+        let trusted = &self.trusted_origins;
+        if caller.session && !access::allowed_origin(request.origin, request.host, trusted) {
+            let origin = request.origin.unwrap_or("none");
+            let host = request.host.unwrap_or("none");
+            return Some(Reply::error(
+                StatusCode::FORBIDDEN,
+                &format!(
+                    "changes must come from the admin's own pages: their Origin ({origin}) \
+                     isn't this address ({host}). Behind a proxy that changes Host, add the \
+                     origin to admin.trusted_origins"
+                ),
+            ));
+        }
+        if caller.access == Access::Read {
+            return Some(Reply::error(
+                StatusCode::FORBIDDEN,
+                "this token can only read (access = \"write\" to change hosts)",
+            ));
+        }
+        None
+    }
+
+    /// `POST /api/v1/session` exchanges a token for a session cookie; `DELETE` ends it
+    fn sign_in_or_out(&self, endpoint: Endpoint<'_>, request: Request<'_>) -> Reply {
+        if endpoint == Endpoint::SignOut {
+            self.tokens.sign_out(request.cookie);
+            let mut reply = Reply::ok(&serde_json::json!({}));
+            reply.set_cookie = Some(access::set_cookie(None, request.host));
+            return reply;
+        }
+        // Without tokens, there's no one to sign in as
+        if let Some(caller) = self
+            .tokens
+            .caller(None, None)
+            .filter(|_| self.tokens.open())
+        {
+            return Reply::ok(&caller);
+        }
+        let Ok(SignIn { name, token }) = serde_json::from_slice::<SignIn>(request.body) else {
+            return Reply::error(
+                StatusCode::BAD_REQUEST,
+                r#"expected {"name": "<token>", "token": "<secret>"}"#,
+            );
+        };
+        let Some((id, caller)) = self.tokens.sign_in(name.as_deref(), &token) else {
+            return Reply::unauthorized();
+        };
+        let mut reply = Reply::ok(&caller);
+        reply.set_cookie = Some(access::set_cookie(Some(&id), request.host));
+        reply
+    }
+}
+
+/// A reply of `/api/v1/routes`
+fn routes_reply(result: Result<impl Serialize, routes::Refused>) -> Reply {
+    match result {
+        Ok(body) => Reply::ok(&body),
+        Err(routes::Refused::Invalid(reason)) => Reply::error(StatusCode::BAD_REQUEST, &reason),
+        Err(routes::Refused::NotFound(reason)) => Reply::error(StatusCode::NOT_FOUND, &reason),
+        Err(routes::Refused::Unavailable(reason)) => {
+            Reply::error(StatusCode::SERVICE_UNAVAILABLE, &reason)
+        }
+        Err(routes::Refused::Unusable(reason)) => {
+            Reply::error(StatusCode::UNPROCESSABLE_ENTITY, &reason)
+        }
+        Err(routes::Refused::Conflict { version }) => conflict(version, "the host was changed"),
+    }
+}
+
+/// A reply to a change: a `412` says why, from what the change expected
+/// The answer to a change of a host (`change`: saved, removed or rolled back), told to `notify`
+/// blocks when it's made
+fn change_reply(
+    result: Result<routes::Written, routes::Refused>,
+    write: &super_store::Write,
+    change: &str,
+) -> Reply {
+    if let Ok(written) = &result {
+        let change = if change == "saved" && write.expect == super_store::Expect::Absent {
+            "created"
+        } else {
+            change
+        };
+        crate::notify::emit(|| crate::notify::Event {
+            host: Some(written.host.clone()),
+            detail: Some(change.to_string()),
+            author: write.author.clone(),
+            version: (change != "removed").then_some(written.revision),
+            ..crate::notify::Event::new(crate::config::notify::Kind::HostChanged)
+        });
+    }
+    let Err(routes::Refused::Conflict { version }) = result else {
+        return routes_reply(result);
+    };
+    let reason = match write.expect {
+        super_store::Expect::Absent => "the host already exists",
+        _ if version == 0 => "the host isn't in the store anymore",
+        _ => "the host was changed by someone else",
+    };
+    conflict(version, reason)
+}
+
+/// `412`, with the host's active version (0 if it isn't in the store)
+fn conflict(version: u64, reason: &str) -> Reply {
+    let error = if version == 0 {
+        reason.to_string()
+    } else {
+        format!("{reason}: it's on version {version}")
+    };
+    Reply::json(
+        StatusCode::PRECONDITION_FAILED,
+        &serde_json::json!({ "error": error, "version": version }),
+    )
+}
+
+/// Who makes a change, and the version it was made from (`If-Match`), or that the host
+/// doesn't exist (`If-None-Match: *`)
+fn write(caller: &access::Caller, request: Request<'_>) -> Result<super_store::Write, Reply> {
+    use super_store::Expect;
+
+    let expect = match (request.if_match, request.if_none_match) {
+        (Some(_), Some(_)) => {
+            let reason = "If-Match and If-None-Match can't be sent together";
+            return Err(Reply::error(StatusCode::BAD_REQUEST, reason));
+        }
+        (Some(version), None) => {
+            let version = version.trim().trim_matches('"').parse().map_err(|_| {
+                let reason = "If-Match takes the host's `version` (a number)";
+                Reply::error(StatusCode::BAD_REQUEST, reason)
+            })?;
+            Expect::Version(version)
+        }
+        (None, Some(value)) if value.trim() == "*" => Expect::Absent,
+        (None, Some(_)) => {
+            let reason = "If-None-Match only takes `*` (the host must not exist)";
+            return Err(Reply::error(StatusCode::BAD_REQUEST, reason));
+        }
+        (None, None) => Expect::Any,
+    };
+    Ok(super_store::Write {
+        author: caller.name.clone(),
+        expect,
+    })
+}
+
+/// The stats over `window` (since the oldest sample if proksi started more recently)
+fn stats(window: Duration) -> serde_json::Value {
+    if let Some((earlier, latest)) = live::window(window) {
+        return live::stats(&earlier, &latest);
+    }
+    let now = live::sample();
+    live::stats(&now, &now)
+}
+
+impl HttpServerApp for AdminApi {
+    async fn process_new_http(
+        self: &Arc<Self>,
+        mut session: ServerSession,
+        shutdown: &ShutdownWatch,
+    ) {
+        if !matches!(session.read_request().await, Ok(true)) {
+            return;
+        }
+        let request = session.req_header();
+        let (method, uri) = (request.method.clone(), request.uri.clone());
+        let value = |name: header::HeaderName| {
+            request
+                .headers
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(ToString::to_string)
+        };
+        let authorization = value(header::AUTHORIZATION);
+        let accept_encoding = value(header::ACCEPT_ENCODING);
+        let cookie = value(header::COOKIE);
+        let origin = value(header::ORIGIN);
+        let host = value(header::HOST);
+        let if_match = value(header::IF_MATCH);
+        let if_none_match = value(header::IF_NONE_MATCH);
+
+        let body = if method == Method::PUT || method == Method::POST {
+            match read_body(&mut session).await {
+                Ok(body) => body,
+                Err(reply) => {
+                    write_reply(&mut session, reply).await;
+                    return;
+                }
+            }
+        } else {
+            vec![]
+        };
+
+        let answer = self
+            .handle(Request {
+                method: &method,
+                path: uri.path(),
+                query: uri.query(),
+                authorization: authorization.as_deref(),
+                accept_encoding: accept_encoding.as_deref(),
+                cookie: cookie.as_deref(),
+                origin: origin.as_deref(),
+                host: host.as_deref(),
+                if_match: if_match.as_deref(),
+                if_none_match: if_none_match.as_deref(),
+                body: &body,
+            })
+            .await;
+
+        let written = match answer {
+            Answer::Reply(reply) => write_reply(&mut session, reply).await,
+            Answer::Ui(asset, encoding) => {
+                ui::write(&mut session, asset, encoding, method == Method::HEAD).await
+            }
+            Answer::Stream(window) => {
+                stream::stats(session, window, shutdown.clone()).await;
+                return;
+            }
+            Answer::Requests(host) => {
+                stream::requests(session, host, shutdown.clone()).await;
+                return;
+            }
+        };
+        if !written {
+            return;
+        }
+        let _ = session.finish().await;
+    }
+}
+
+/// A request to the admin API
+#[derive(Clone, Copy)]
+pub struct Request<'a> {
+    pub method: &'a Method,
+    pub path: &'a str,
+    pub query: Option<&'a str>,
+    pub authorization: Option<&'a str>,
+    pub accept_encoding: Option<&'a str>,
+    pub cookie: Option<&'a str>,
+    pub origin: Option<&'a str>,
+    pub host: Option<&'a str>,
+    /// The version a change was made from (`version` from `GET`), with or without quotes
+    pub if_match: Option<&'a str>,
+    /// `*`: the change creates the host, and is refused if it exists
+    pub if_none_match: Option<&'a str>,
+    pub body: &'a [u8],
+}
+
+/// The request body, up to `MAX_BODY`
+async fn read_body(session: &mut ServerSession) -> Result<Vec<u8>, Reply> {
+    let mut body = vec![];
+    loop {
+        match session.read_request_body().await {
+            Ok(Some(chunk)) => append_body(&mut body, &chunk)?,
+            Ok(None) => return Ok(body),
+            Err(err) => {
+                return Err(Reply::error(
+                    StatusCode::BAD_REQUEST,
+                    &format!("failed to read the body: {err}"),
+                ))
+            }
+        }
+    }
+}
+
+/// Adds a part of the request body, unless the body grows over `MAX_BODY`
+fn append_body(body: &mut Vec<u8>, chunk: &[u8]) -> Result<(), Reply> {
+    if body.len() + chunk.len() > MAX_BODY {
+        return Err(Reply::error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "the body is larger than 1 MiB",
+        ));
+    }
+    body.extend_from_slice(chunk);
+    Ok(())
+}
+
+/// Writes a whole reply; returns whether it was written
+async fn write_reply(session: &mut ServerSession, reply: Reply) -> bool {
+    let Some(mut header) = response_header(reply.status, reply.content_type) else {
+        return false;
+    };
+    if header
+        .insert_header(header::CONTENT_LENGTH, reply.body.len())
+        .is_err()
+    {
+        return false;
+    }
+    if reply.status == StatusCode::UNAUTHORIZED
+        && header
+            .insert_header(header::WWW_AUTHENTICATE, "Bearer")
+            .is_err()
+    {
+        return false;
+    }
+    if let Some(cookie) = reply.set_cookie {
+        if header.insert_header(header::SET_COOKIE, cookie).is_err() {
+            return false;
+        }
+    }
+    if session
+        .write_response_header(Box::new(header))
+        .await
+        .is_err()
+    {
+        return false;
+    }
+    session
+        .write_response_body(Bytes::from(reply.body), true)
+        .await
+        .is_ok()
+}
+
+fn response_header(status: StatusCode, content_type: &str) -> Option<ResponseHeader> {
+    let mut header = ResponseHeader::build(status, None).ok()?;
+    header
+        .insert_header(header::CONTENT_TYPE, content_type)
+        .ok()?;
+    header
+        .insert_header(header::CACHE_CONTROL, "no-store")
+        .ok()?;
+    Some(header)
+}
+
+/// The admin API's service, on `address`
+/// The metrics-only listener (`admin.metrics_listen`)
+pub fn metrics_service(address: SocketAddr, token: Option<String>) -> Service<AdminApi> {
+    let mut service = Service::new("metrics".to_string(), AdminApi::metrics_only(token));
+    service.add_tcp(&address.to_string());
+    service.threads = Some(1);
+    service
+}
+
+pub fn admin_service(
+    address: SocketAddr,
+    tokens: BTreeMap<String, Token>,
+    trusted_origins: Vec<String>,
+    instance: status::Instance,
+) -> Service<AdminApi> {
+    let api = AdminApi::new(tokens, instance).with_trusted_origins(trusted_origins);
+    let mut service = Service::new("admin api".to_string(), api);
+    service.add_tcp(&address.to_string());
+    service.threads = Some(1);
+    service
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use http::{Method, StatusCode};
+
+    use super::{AdminApi, Answer, Reply};
+    use crate::config::admin::{Access, Token};
+
+    fn instance() -> super::status::Instance {
+        super::status::Instance {
+            started: std::time::Instant::now(),
+            store_type: "memory".to_string(),
+            listeners: serde_json::json!({}),
+            server: None,
+            tcp: vec![],
+        }
+    }
+
+    /// `ops` can write (`Bearer secret`), `grafana` can only read (`Bearer read`)
+    fn tokens() -> std::collections::BTreeMap<String, Token> {
+        std::collections::BTreeMap::from([
+            (
+                "ops".to_string(),
+                Token {
+                    secret: "secret".to_string(),
+                    access: Access::Write,
+                },
+            ),
+            (
+                "grafana".to_string(),
+                Token {
+                    secret: "read".to_string(),
+                    access: Access::Read,
+                },
+            ),
+        ])
+    }
+
+    fn request<'a>(
+        method: &'a Method,
+        path: &'a str,
+        query: Option<&'a str>,
+        authorization: Option<&'a str>,
+    ) -> super::Request<'a> {
+        super::Request {
+            method,
+            path,
+            query,
+            authorization,
+            accept_encoding: None,
+            cookie: None,
+            origin: None,
+            host: None,
+            if_match: None,
+            if_none_match: None,
+            body: &[],
+        }
+    }
+
+    fn reply(answer: Answer) -> Reply {
+        match answer {
+            Answer::Reply(reply) => reply,
+            Answer::Stream(_) | Answer::Requests(_) => panic!("a stream"),
+            Answer::Ui(asset, _) => panic!("a file of the UI: {asset:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_metrics() {
+        crate::metrics::enable();
+        let api = AdminApi::new(tokens(), instance());
+        crate::metrics::LocationMetrics::unserved(crate::metrics::Unserved::UnknownHost)
+            .record(404, Duration::from_millis(1));
+
+        let reply = reply(
+            api.handle(request(
+                &Method::GET,
+                "/metrics",
+                None,
+                Some("Bearer secret"),
+            ))
+            .await,
+        );
+
+        assert_eq!(reply.status, StatusCode::OK);
+        assert_eq!(reply.content_type, "text/plain; version=0.0.4");
+        assert!(
+            reply.body.contains("proksi_requests_total"),
+            "{}",
+            reply.body
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metrics_only() {
+        crate::metrics::enable();
+        let api = AdminApi::metrics_only(None);
+
+        assert_eq!(
+            reply(
+                api.handle(request(&Method::GET, "/metrics", None, None))
+                    .await
+            )
+            .status,
+            StatusCode::OK
+        );
+        for (method, path) in [
+            (Method::GET, "/api/v1/status"),
+            (Method::GET, "/api/v1/stats"),
+            (Method::GET, "/api/v1/routes"),
+            (Method::PUT, "/api/v1/routes/a.test"),
+            (Method::DELETE, "/api/v1/routes/a.test"),
+        ] {
+            let reply = reply(api.handle(request(&method, path, None, None)).await);
+            assert_eq!(reply.status, StatusCode::NOT_FOUND, "{method} {path}");
+        }
+
+        // With its own token
+        let api = AdminApi::metrics_only(Some("scraper".to_string()));
+        for (authorization, status) in [
+            (None, StatusCode::UNAUTHORIZED),
+            (Some("Bearer scraper"), StatusCode::OK),
+        ] {
+            let answer = api
+                .handle(request(&Method::GET, "/metrics", None, authorization))
+                .await;
+            assert_eq!(reply(answer).status, status, "{authorization:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_token() {
+        let api = AdminApi::new(tokens(), instance());
+
+        for authorization in [
+            None,
+            Some("Bearer wrong"),
+            Some("secret"),
+            Some("Basic secret"),
+        ] {
+            for path in [
+                "/metrics",
+                "/api/v1/stats",
+                "/api/v1/stats/stream",
+                "/api/v1/status",
+                "/api/v1/hosts",
+                "/api/v1/certificates",
+                "/api/v1/routes",
+                "/api/v1/routes/a.test",
+                "/api/v1/nope",
+            ] {
+                let reply = reply(
+                    api.handle(request(&Method::GET, path, None, authorization))
+                        .await,
+                );
+                assert_eq!(reply.status, StatusCode::UNAUTHORIZED, "{authorization:?}");
+                assert_eq!(reply.body, r#"{"error":"missing or invalid token"}"#);
+            }
+            // The UI's pages hold no data, and sign in to the API themselves
+            let page = api
+                .handle(request(&Method::GET, "/hosts", None, authorization))
+                .await;
+            assert!(matches!(page, Answer::Ui(..)), "{page:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_only_tokens() {
+        let api = AdminApi::new(tokens(), instance());
+
+        let read = reply(
+            api.handle(request(
+                &Method::GET,
+                "/api/v1/routes",
+                None,
+                Some("Bearer read"),
+            ))
+            .await,
+        );
+        assert_ne!(read.status, StatusCode::UNAUTHORIZED);
+        for method in [Method::PUT, Method::DELETE] {
+            let refused = reply(
+                api.handle(request(
+                    &method,
+                    "/api/v1/routes/a.test",
+                    None,
+                    Some("Bearer read"),
+                ))
+                .await,
+            );
+            assert_eq!(refused.status, StatusCode::FORBIDDEN, "{method}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_conditional_changes_and_authors() {
+        let api = AdminApi::new(tokens(), instance());
+        let path = "/api/v1/routes/conditional.test";
+        let body = br#"{"name": "conditional.test", "locations": [{ "path": "/", "upstreams": [{ "ip": "10.0.0.1", "port": 3000 }] }]}"#;
+        let put =
+            |if_match: Option<&'static str>, if_none_match: Option<&'static str>| super::Request {
+                body,
+                if_match,
+                if_none_match,
+                ..request(&Method::PUT, path, None, Some("Bearer secret"))
+            };
+        let json = |reply: Reply| serde_json::from_str::<serde_json::Value>(&reply.body).unwrap();
+
+        // Created only if it doesn't exist
+        let created = reply(api.handle(put(None, Some("*"))).await);
+        assert_eq!(created.status, StatusCode::OK, "{}", created.body);
+        let exists = reply(api.handle(put(None, Some("*"))).await);
+        assert_eq!(exists.status, StatusCode::PRECONDITION_FAILED);
+
+        // Changed only from the active version
+        let one = json(reply(
+            api.handle(request(&Method::GET, path, None, Some("Bearer secret")))
+                .await,
+        ));
+        let version = one["version"].as_u64().unwrap();
+        let quoted: &'static str = Box::leak(format!("\"{version}\"").into_boxed_str());
+        assert_eq!(
+            reply(api.handle(put(Some(quoted), None)).await).status,
+            StatusCode::OK
+        );
+        let stale = reply(api.handle(put(Some(quoted), None)).await);
+        assert_eq!(stale.status, StatusCode::PRECONDITION_FAILED);
+        assert_eq!(json(stale)["version"].as_u64(), Some(version + 1));
+
+        // Bad headers
+        let bad = reply(api.handle(put(Some("soon"), None)).await);
+        assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+        let both = reply(api.handle(put(Some("1"), Some("*"))).await);
+        assert_eq!(both.status, StatusCode::BAD_REQUEST);
+
+        // Changes are recorded with the token's name
+        let history_path = "/api/v1/routes/conditional.test/history";
+        let history = json(reply(
+            api.handle(request(
+                &Method::GET,
+                history_path,
+                None,
+                Some("Bearer read"),
+            ))
+            .await,
+        ));
+        assert_eq!(history["changes"][0]["author"], "ops");
+        assert_eq!(history["changes"][0]["change"], "saved");
+
+        // Rolling back needs write access
+        let rollback = super::Request {
+            body: br#"{"revision": 1}"#,
+            ..request(
+                &Method::POST,
+                "/api/v1/routes/conditional.test/rollback",
+                None,
+                Some("Bearer read"),
+            )
+        };
+        assert_eq!(
+            reply(api.handle(rollback).await).status,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sessions() {
+        let api = AdminApi::new(tokens(), instance());
+        let sign_in = |body: &'static [u8]| super::Request {
+            body,
+            host: Some("127.0.0.1:7555"),
+            ..request(&Method::POST, "/api/v1/session", None, None)
+        };
+
+        let refused = reply(api.handle(sign_in(br#"{"token":"wrong"}"#)).await);
+        assert_eq!(refused.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(refused.set_cookie, None);
+
+        // By name: only that token's secret
+        let named = reply(
+            api.handle(sign_in(br#"{"name":"ops","token":"read"}"#))
+                .await,
+        );
+        assert_eq!(named.status, StatusCode::UNAUTHORIZED);
+        let named = reply(
+            api.handle(sign_in(br#"{"name":"ops","token":"secret"}"#))
+                .await,
+        );
+        assert_eq!(named.body, r#"{"name":"ops","access":"write"}"#);
+
+        let signed_in = reply(api.handle(sign_in(br#"{"token":"secret"}"#)).await);
+        assert_eq!(signed_in.status, StatusCode::OK);
+        assert_eq!(signed_in.body, r#"{"name":"ops","access":"write"}"#);
+        let set_cookie = signed_in.set_cookie.unwrap();
+        assert!(
+            set_cookie.ends_with("; Path=/; HttpOnly; SameSite=Strict"),
+            "{set_cookie}"
+        );
+        let cookie = set_cookie.split(';').next().unwrap();
+
+        let with_cookie = |method, origin| super::Request {
+            cookie: Some(cookie),
+            origin,
+            host: Some("127.0.0.1:7555"),
+            ..request(method, "/api/v1/routes/a.test", None, None)
+        };
+        let who = super::Request {
+            path: "/api/v1/session",
+            ..with_cookie(&Method::GET, None)
+        };
+        assert_eq!(
+            reply(api.handle(who).await).body,
+            r#"{"name":"ops","access":"write"}"#
+        );
+        // Changes with the cookie must come from the admin's own pages
+        for origin in [None, Some("http://evil.test")] {
+            let refused = reply(api.handle(with_cookie(&Method::DELETE, origin)).await);
+            assert_eq!(refused.status, StatusCode::FORBIDDEN, "{origin:?}");
+        }
+        let allowed = reply(
+            api.handle(with_cookie(&Method::DELETE, Some("http://127.0.0.1:7555")))
+                .await,
+        );
+        assert_ne!(allowed.status, StatusCode::FORBIDDEN);
+
+        // Behind a proxy that changes Host, from a trusted origin
+        let proxied = super::Request {
+            host: Some("127.0.0.1:7555"),
+            ..with_cookie(&Method::DELETE, Some("https://admin.tailnet.ts.net"))
+        };
+        let refused = reply(api.handle(proxied).await);
+        assert_eq!(refused.status, StatusCode::FORBIDDEN);
+        assert!(
+            refused.body.contains("admin.trusted_origins"),
+            "{}",
+            refused.body
+        );
+        let api = api.with_trusted_origins(vec!["https://admin.tailnet.ts.net".to_string()]);
+        assert_ne!(
+            reply(api.handle(proxied).await).status,
+            StatusCode::FORBIDDEN
+        );
+
+        let sign_out = super::Request {
+            path: "/api/v1/session",
+            ..with_cookie(&Method::DELETE, Some("http://127.0.0.1:7555"))
+        };
+        assert!(reply(api.handle(sign_out).await)
+            .set_cookie
+            .unwrap()
+            .contains("Max-Age=0"));
+        let who = super::Request {
+            path: "/api/v1/session",
+            ..with_cookie(&Method::GET, None)
+        };
+        assert_eq!(
+            reply(api.handle(who).await).status,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn test_without_a_token() {
+        crate::metrics::enable();
+        // Only on a loopback address (checked when the configuration loads)
+        let api = AdminApi::new(std::collections::BTreeMap::new(), instance());
+
+        assert_eq!(
+            reply(
+                api.handle(request(&Method::GET, "/metrics", None, None))
+                    .await
+            )
+            .status,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn test_unknown_paths_and_methods() {
+        let api = AdminApi::new(std::collections::BTreeMap::new(), instance());
+
+        let not_found = reply(
+            api.handle(request(&Method::GET, "/api/v1/nope", None, None))
+                .await,
+        );
+        assert_eq!(not_found.status, StatusCode::NOT_FOUND);
+        assert_eq!(not_found.body, r#"{"error":"not found"}"#);
+        for path in ["/metrics", "/api/v1/stats"] {
+            assert_eq!(
+                reply(api.handle(request(&Method::POST, path, None, None)).await).status,
+                StatusCode::METHOD_NOT_ALLOWED
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_stats_windows() {
+        crate::metrics::enable();
+        let api = AdminApi::new(std::collections::BTreeMap::new(), instance());
+        let stats = |query| api.handle(request(&Method::GET, "/api/v1/stats", query, None));
+
+        let ok = reply(stats(Some("window=30")).await);
+        assert_eq!(ok.status, StatusCode::OK);
+        assert_eq!(ok.content_type, "application/json");
+        assert!(ok.body.contains("\"hosts\""), "{}", ok.body);
+        assert_eq!(reply(stats(None).await).status, StatusCode::OK);
+        for invalid in ["window=0", "window=301", "window=abc"] {
+            assert_eq!(
+                reply(stats(Some(invalid)).await).status,
+                StatusCode::BAD_REQUEST
+            );
+        }
+
+        assert_eq!(
+            api.handle(request(
+                &Method::GET,
+                "/api/v1/stats/stream",
+                Some("window=5"),
+                None
+            ))
+            .await,
+            Answer::Stream(Duration::from_secs(5))
+        );
+        assert_eq!(
+            api.handle(request(&Method::GET, "/api/v1/stats/stream", None, None))
+                .await,
+            Answer::Stream(Duration::from_secs(10))
+        );
+    }
+}

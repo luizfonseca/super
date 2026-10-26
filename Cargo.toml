@@ -2,6 +2,7 @@
 package = { rust-version = "1.99.0" }
 members = [
     "crates/plugins_api",
+    "crates/super",
     "crates/super_admin_ui",
     "crates/super_core",
     "crates/super_plugins",

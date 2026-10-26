@@ -35,6 +35,7 @@ mod session;
 mod tunnel;
 mod upload;
 
+pub use headers::set_target;
 pub use session::Session;
 
 /// What [`ProxyHttp::fail_to_proxy`] answered

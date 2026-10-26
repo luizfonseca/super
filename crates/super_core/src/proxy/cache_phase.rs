@@ -34,21 +34,8 @@ pub(super) async fn lookup<SV: ProxyHttp>(
                 return Ok(false);
             }
         };
-        if let Some((meta, mut hit)) = found {
-            let fresh = meta.is_fresh(SystemTime::now());
-            let forced = proxy
-                .inner
-                .cache_hit_filter(session, &meta, &mut hit, fresh, ctx)
-                .await?;
-            if fresh && forced.is_none() {
-                session.cache.set_cache_key(key);
-                serve(proxy, session, ctx, &meta, hit).await?;
-                return Ok(true);
-            }
-            // Fetched again; served if the upstream fails, unless it can't be
-            if forced != Some(ForcedFreshness::ForceExpired) {
-                session.cache.stale = Some((meta, hit));
-            }
+        if served(proxy, session, ctx, &key, found).await? {
+            return Ok(true);
         }
         if waited || !lock(session, &key).await {
             break;
@@ -56,6 +43,35 @@ pub(super) async fn lookup<SV: ProxyHttp>(
     }
     session.cache.set_cache_key(key);
     proxy.inner.cache_miss(session, ctx);
+    Ok(false)
+}
+
+/// Serves the response found in the cache, if any and fresh (and `cache_hit_filter` agrees): `true`
+/// once served. A stale one is kept, to be served if the upstream fails.
+async fn served<SV: ProxyHttp>(
+    proxy: &HttpProxy<SV>,
+    session: &mut Session,
+    ctx: &mut SV::CTX,
+    key: &CacheKey,
+    found: Option<(CacheMeta, HitHandler)>,
+) -> Result<bool> {
+    let Some((meta, mut hit)) = found else {
+        return Ok(false);
+    };
+    let fresh = meta.is_fresh(SystemTime::now());
+    let forced = proxy
+        .inner
+        .cache_hit_filter(session, &meta, &mut hit, fresh, ctx)
+        .await?;
+    if fresh && forced.is_none() {
+        session.cache.set_cache_key(key.clone());
+        serve(proxy, session, ctx, &meta, hit).await?;
+        return Ok(true);
+    }
+    // Fetched again; served if the upstream fails, unless it can't be
+    if forced != Some(ForcedFreshness::ForceExpired) {
+        session.cache.stale = Some((meta, hit));
+    }
     Ok(false)
 }
 
@@ -96,25 +112,35 @@ async fn serve<SV: ProxyHttp>(
         .write_response_header(Box::new(header), head)
         .await?;
     if !head {
-        loop {
-            let mut data = hit.read_body().await?;
-            let end = data.is_none();
-            if let Some(wait) = proxy
-                .inner
-                .response_body_filter(session, &mut data, end, ctx)?
-            {
-                tokio::time::sleep(wait).await;
-            }
-            session.write_response_body(data, end).await?;
-            if end {
-                break;
-            }
-        }
+        serve_body(proxy, session, ctx, &mut hit).await?;
     }
     if let (Some(storage), Some(key)) = (session.cache.storage(), session.cache.cache_key()) {
         hit.finish(storage, key).await?;
     }
     Ok(())
+}
+
+/// The body of a cached response, through `response_body_filter` (and its pace)
+async fn serve_body<SV: ProxyHttp>(
+    proxy: &HttpProxy<SV>,
+    session: &mut Session,
+    ctx: &mut SV::CTX,
+    hit: &mut HitHandler,
+) -> Result<()> {
+    loop {
+        let mut data = hit.read_body().await?;
+        let end = data.is_none();
+        let wait = proxy
+            .inner
+            .response_body_filter(session, &mut data, end, ctx)?;
+        if let Some(wait) = wait {
+            tokio::time::sleep(wait).await;
+        }
+        session.write_response_body(data, end).await?;
+        if end {
+            return Ok(());
+        }
+    }
 }
 
 /// Serves the stale response kept, if the request failed before anything was sent and it's
