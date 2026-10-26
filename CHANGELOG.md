@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.1](https://github.com/luizfonseca/super/compare/super-v0.3.0...super-v0.3.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* supervise only command lines that serve ([5e3fb21](https://github.com/luizfonseca/super/commit/5e3fb21186968a5ecfa6c8fbadca9c25434276d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.3.0 to 0.3.1
+    * super_plugins bumped from 0.3.0 to 0.3.1
+    * super_core bumped from 0.3.0 to 0.3.1
+    * super_store bumped from 0.3.0 to 0.3.1
+  * dev-dependencies
+    * super_plugins bumped from 0.3.0 to 0.3.1
+    * super_store bumped from 0.3.0 to 0.3.1
+
 ## [0.3.0](https://github.com/luizfonseca/super/compare/super-v0.2.0...super-v0.3.0) (2026-10-26)
 
 
