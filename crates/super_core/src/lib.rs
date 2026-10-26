@@ -16,6 +16,7 @@ pub mod allocations;
 pub mod apps;
 pub mod cache;
 pub mod error;
+pub mod hash;
 pub mod http;
 pub mod lb;
 pub mod modules;

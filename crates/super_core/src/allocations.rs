@@ -66,3 +66,13 @@ pub fn allocations<T>(run: impl FnOnce() -> T) -> (usize, T) {
     let allocations = COUNT.with(|count| count.replace(None)).unwrap_or_default();
     (allocations, value)
 }
+
+/// Starts counting the allocations of this thread (e.g. across the awaits of a test)
+pub fn start() {
+    COUNT.with(|count| count.set(Some(0)));
+}
+
+/// Stops counting: the allocations since `start`
+pub fn stop() -> usize {
+    COUNT.with(|count| count.replace(None)).unwrap_or_default()
+}

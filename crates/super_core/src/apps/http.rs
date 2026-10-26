@@ -10,7 +10,7 @@ use std::{
         Arc,
     },
     task::Poll,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use hyper::{body::Incoming, service::service_fn};
@@ -225,14 +225,13 @@ async fn handle<A: HttpServerApp>(
     Ok(answered)
 }
 
-/// The requests in progress on a connection, and when the last one ended
+/// The requests in progress on a connection, and how many started: counted, without reading
+/// the clock for each request
 struct Activity {
-    started: Instant,
     active: AtomicUsize,
+    started: AtomicU64,
     /// Shutting down: responses close the connection
     stopping: AtomicBool,
-    /// Milliseconds after `started`
-    last: AtomicU64,
 }
 
 /// A request in progress, until dropped
@@ -240,7 +239,6 @@ struct Active(Arc<Activity>);
 
 impl Drop for Active {
     fn drop(&mut self) {
-        self.0.last.store(self.0.elapsed_ms(), Ordering::Relaxed);
         self.0.active.fetch_sub(1, Ordering::Relaxed);
     }
 }
@@ -248,15 +246,10 @@ impl Drop for Active {
 impl Activity {
     fn new() -> Self {
         Self {
-            started: Instant::now(),
             active: AtomicUsize::new(0),
+            started: AtomicU64::new(0),
             stopping: AtomicBool::new(false),
-            last: AtomicU64::new(0),
         }
-    }
-
-    fn elapsed_ms(&self) -> u64 {
-        u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
     fn stop(&self) {
@@ -268,24 +261,22 @@ impl Activity {
     }
 
     fn start(self: &Arc<Self>) -> Active {
+        self.started.fetch_add(1, Ordering::Relaxed);
         self.active.fetch_add(1, Ordering::Relaxed);
         Active(self.clone())
     }
 
-    /// Returns once no request was in progress for `timeout`
+    /// Returns once no request was in progress, nor started, for `timeout` (checked every
+    /// `timeout`: a connection is closed once idle for between one and two timeouts)
     async fn idle_for(&self, timeout: Duration) {
+        let mut seen = self.started.load(Ordering::Relaxed);
         loop {
-            let last = self.started + Duration::from_millis(self.last.load(Ordering::Relaxed));
-            let idle = self.active.load(Ordering::Relaxed) == 0;
-            if idle && last.elapsed() >= timeout {
+            tokio::time::sleep(timeout).await;
+            let started = self.started.load(Ordering::Relaxed);
+            if started == seen && self.active.load(Ordering::Relaxed) == 0 {
                 return;
             }
-            let wake = if idle {
-                last + timeout
-            } else {
-                Instant::now() + timeout
-            };
-            tokio::time::sleep_until(wake.into()).await;
+            seen = started;
         }
     }
 }

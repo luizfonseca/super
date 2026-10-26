@@ -36,10 +36,12 @@ async fn handle<SV: ProxyHttp>(
     session: &mut Session,
     ctx: &mut SV::CTX,
 ) -> Result<()> {
-    session
-        .downstream_modules_ctx
-        .compression()
-        .request_filter(session.downstream_session.req_header());
+    // What the client accepts, when compression is on (a block may turn it on later, and
+    // tell it then)
+    let compression = session.downstream_modules_ctx.compression();
+    if compression.is_enabled() {
+        compression.request_filter(session.downstream_session.req_header());
+    }
     if proxy.inner.request_filter(session, ctx).await? {
         return Ok(());
     }

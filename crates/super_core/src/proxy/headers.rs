@@ -50,23 +50,28 @@ fn is_hop_by_hop(name: &HeaderName) -> bool {
 /// The request sent to an upstream: `request`, without its connection's headers, for
 /// HTTP/1.1 (`http2`: for HTTP/2)
 pub(crate) fn upstream_request(
-    request: &RequestHeader,
+    request: &mut RequestHeader,
     upgrade: bool,
     http2: bool,
 ) -> RequestHeader {
+    // What hyper parsed with the request (the case of its header names) goes to the upstream's:
+    // moved, not copied
+    let extensions = std::mem::take(&mut request.extensions);
     let mut upstream = request.clone();
-    // Header names a connection lists are rarely there: only then is `Connection` parsed
-    if upstream.headers.contains_key(header::CONNECTION) || upgrade {
+    upstream.extensions = extensions;
+    if upgrade || has_hop_by_hop(&upstream.headers) {
         remove_hop_by_hop(&mut upstream.headers, upgrade);
-    } else {
-        for name in &HOP_BY_HOP {
-            upstream.headers.remove(name);
-        }
-        upstream.headers.remove(KEEP_ALIVE);
-        upstream.headers.remove(PROXY_CONNECTION);
     }
     set_target(&mut upstream, http2);
     upstream
+}
+
+/// Whether a header of the connection is there: one look at each header, rather than a lookup
+/// of each name (they're rarely there)
+fn has_hop_by_hop(headers: &HeaderMap) -> bool {
+    headers.keys().any(|name| {
+        is_hop_by_hop(name) || name.as_str() == KEEP_ALIVE || name.as_str() == PROXY_CONNECTION
+    })
 }
 
 /// The request's target, as its version wants it: a path (HTTP/1.1, with the host in `Host`),
@@ -122,15 +127,9 @@ fn http2_target(request: &mut RequestHeader) {
 
 /// The upstream's response, without its connection's headers (`upgrade`: a `101`)
 pub(crate) fn downstream_response(response: &mut ResponseHeader, upgrade: bool) {
-    if response.headers.contains_key(header::CONNECTION) || upgrade {
+    if upgrade || has_hop_by_hop(&response.headers) {
         remove_hop_by_hop(&mut response.headers, upgrade);
-        return;
     }
-    // Transfer-Encoding is hyper's to choose, for the client's connection
-    response.headers.remove(header::TRANSFER_ENCODING);
-    response.headers.remove(header::TRAILER);
-    response.headers.remove(KEEP_ALIVE);
-    response.headers.remove(PROXY_CONNECTION);
 }
 
 #[cfg(test)]
@@ -151,7 +150,7 @@ mod tests {
         request.insert_header("keep-alive", "timeout=5").unwrap();
         request.insert_header("x-kept", "1").unwrap();
 
-        let upstream = upstream_request(&request, false, false);
+        let upstream = upstream_request(&mut request, false, false);
         assert!(!upstream.headers.contains_key(header::CONNECTION));
         assert!(!upstream.headers.contains_key("x-private"));
         assert!(!upstream.headers.contains_key("keep-alive"));
@@ -166,7 +165,7 @@ mod tests {
             .insert_header(header::CONNECTION, "Upgrade")
             .unwrap();
         request.insert_header(header::UPGRADE, "websocket").unwrap();
-        let upstream = upstream_request(&request, true, false);
+        let upstream = upstream_request(&mut request, true, false);
         assert_eq!(upstream.headers[header::UPGRADE], "websocket");
         assert_eq!(upstream.headers[header::CONNECTION], "Upgrade");
     }
@@ -174,15 +173,15 @@ mod tests {
     #[test]
     fn test_http2_clients_and_upstreams() {
         // An HTTP/2 client's request, to an HTTP/1.1 upstream
-        let request = RequestHeader::build("GET", b"https://a.test/p?q", None).unwrap();
-        let upstream = upstream_request(&request, false, false);
+        let mut request = RequestHeader::build("GET", b"https://a.test/p?q", None).unwrap();
+        let upstream = upstream_request(&mut request, false, false);
         assert_eq!(upstream.uri, "/p?q");
         assert_eq!(upstream.headers[header::HOST], "a.test");
 
         // An HTTP/1.1 client's request, to an HTTP/2 upstream
         let mut request = RequestHeader::build("GET", b"/p", None).unwrap();
         request.insert_header(header::HOST, "b.test").unwrap();
-        let upstream = upstream_request(&request, false, true);
+        let upstream = upstream_request(&mut request, false, true);
         assert_eq!(upstream.uri, "http://b.test/p");
         assert!(!upstream.headers.contains_key(header::HOST));
 

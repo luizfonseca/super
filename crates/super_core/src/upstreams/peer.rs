@@ -1,12 +1,6 @@
 //! An upstream to send a request to, and how to connect to it
 
-use std::{
-    collections::BTreeMap,
-    fmt,
-    hash::{DefaultHasher, Hash, Hasher},
-    net,
-    time::Duration,
-};
+use std::{collections::BTreeMap, fmt, net, time::Duration};
 
 use crate::protocols::{l4::socket::SocketAddr, TcpKeepalive, ALPN};
 
@@ -127,21 +121,18 @@ impl Peer for HttpPeer {
     }
 
     fn reuse_hash(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.address.hash(&mut hasher);
-        self.scheme.hash(&mut hasher);
-        self.sni.hash(&mut hasher);
-        // Connections set up differently aren't the same
         let options = &self.options;
-        (
+        // Connections set up differently aren't the same
+        crate::hash::hash_one((
+            &self.address,
+            self.scheme,
+            &self.sni,
             options.verify_cert,
             options.verify_hostname,
             &options.alternative_cn,
             &options.alpn,
             options.bind_to,
-        )
-            .hash(&mut hasher);
-        hasher.finish()
+        ))
     }
 }
 

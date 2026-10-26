@@ -29,7 +29,7 @@ pub(super) async fn proxy<SV: ProxyHttp>(
 ) -> Result<()> {
     let http2 = connection.is_http2();
     let upgrade = session.is_upgrade_req() && !http2;
-    let mut request = headers::upstream_request(session.req_header(), upgrade, http2);
+    let mut request = headers::upstream_request(session.req_header_mut(), upgrade, http2);
     proxy
         .inner
         .upstream_request_filter(session, &mut request, ctx)
