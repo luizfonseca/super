@@ -795,6 +795,9 @@ async fn test_access_logs_name_the_upstream_connection() {
         );
         assert_eq!(fields["request_id"], request_id.as_str(), "{log}");
         assert_eq!(fields["x_forwarded_for"], "", "{log}");
+        // Super's own time, then the upstream's, within the whole request's
+        let (proxy, upstream) = (fields["proxy_ms"].as_f64(), fields["upstream_ms"].as_f64());
+        assert!(proxy.is_some() && upstream.is_some(), "{log}");
     }
 
     // X-Forwarded-For is logged as sent, though proksi doesn't trust it
@@ -2517,6 +2520,9 @@ async fn test_admin_live_stats() {
     assert_eq!(event["host"], "app.test", "{event}");
     assert_eq!(event["method"], "GET", "{event}");
     assert!(event["status"].is_number(), "{event}");
+    // Answered by proksi itself (a redirect to HTTPS): all of it is the proxy's time
+    assert_eq!(event["proxy_ms"], event["duration_ms"], "{event}");
+    assert!(event["upstream_ms"].is_null(), "{event}");
 
     proksi.assert_healthy();
 }

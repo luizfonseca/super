@@ -50,6 +50,8 @@ function Request({ served, host, onClose }: { served: Served | null; host?: stri
             ['Path', <Mono class="break-all">{served.path}</Mono>],
             ['Status', <Badge tone={tone(served.status)}>{served.status}</Badge>],
             ['Duration', ms(served.duration_ms)],
+            ['Proxy time', ms(served.proxy_ms)],
+            ['Upstream time', ms(served.upstream_ms)],
             ['Client', <Mono>{served.client_ip}</Mono>],
             ['Location', known(served.location)],
             ['Upstream', known(served.upstream)],
@@ -133,7 +135,7 @@ export function RequestLog({
         </Empty>
       ) : (
         <div class="font-mono text-xs [&_th]:font-sans" onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)}>
-          <Table height={420} columns={['Time', 'Status', 'Request', 'Duration', 'Client', 'Upstream']}>
+          <Table height={420} columns={['Time', 'Status', 'Request', 'Duration', 'Proxy', 'Client', 'Upstream']}>
             {shown.slice(0, DRAWN).map((served) => (
               <Row key={keyOf(served)} class="motion-safe:animate-[row-in_240ms_ease-out]" onClick={() => setSelected(served)}>
                 <Cell class="text-base-content/45">{new Date(served.time).toLocaleTimeString()}</Cell>
@@ -147,6 +149,7 @@ export function RequestLog({
                   <span class={host ? undefined : 'text-base-content/45'}>{served.path}</span>
                 </Cell>
                 <Cell>{ms(served.duration_ms)}</Cell>
+                <Cell class="text-base-content/45">{ms(served.proxy_ms)}</Cell>
                 <Cell class="text-base-content/45">{served.client_ip}</Cell>
                 <Cell class="text-base-content/45">{served.upstream ?? '—'}</Cell>
               </Row>
