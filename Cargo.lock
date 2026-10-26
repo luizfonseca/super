@@ -1676,7 +1676,6 @@ dependencies = [
  "hyper-util",
  "nix",
  "openssl",
- "openssl-sys",
  "socket2",
  "tokio",
  "tokio-openssl",
