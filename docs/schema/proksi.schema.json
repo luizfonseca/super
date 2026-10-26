@@ -1869,7 +1869,7 @@
           ]
         },
         "suffix": {
-          "description": "Added to the IDs proksi makes, after a `-`, such as the server's name or region (1 to\n32 letters, digits, `-`, `_` or `.`)",
+          "description": "Added to the IDs Super makes, after a `-`, such as the server's name or region (1 to\n32 letters, digits, `-`, `_` or `.`)",
           "type": [
             "string",
             "null"
@@ -3715,7 +3715,7 @@
           "type": "array"
         },
         "work_stealing": {
-          "description": "Whether worker threads take over each other's connections (default: `true`). Without it,\neach connection stays on the thread that accepted it: less CPU per request with cores to\nspare, less throughput when proksi gets less CPU than it has threads.",
+          "description": "Whether worker threads take over each other's connections (default: `false`). Without it,\neach connection stays on the thread that accepted it: far less CPU per request with cores\nto spare, less throughput when Super gets less CPU than it has threads.",
           "type": [
             "boolean",
             "null"

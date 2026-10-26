@@ -4,7 +4,7 @@
 use std::{
     os::fd::{AsRawFd, RawFd},
     sync::{Arc, LazyLock},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use hyper::client::conn::{http1, http2};
@@ -34,6 +34,8 @@ pub struct HttpSession {
     pub sender: Sender,
     /// What the pool keeps it by
     pub(crate) key: u64,
+    /// The shard of the thread that opened it, where it's kept
+    pub(crate) home: usize,
     pub fd: RawFd,
 }
 
@@ -90,8 +92,8 @@ impl Connector {
         if sender.is_closed() {
             return;
         }
-        let expires = idle_timeout.map(|timeout| Instant::now() + timeout);
-        self.pool.keep(session.key, sender, session.fd, expires);
+        self.pool
+            .keep(session.home, session.key, sender, session.fd, idle_timeout);
     }
 
     /// Sends `request` with `body` to `peer`, and reads the whole response (its body is
@@ -163,7 +165,12 @@ impl Connector {
         } else {
             Sender::H1(handshake_h1(stream).await?)
         };
-        Ok(HttpSession { sender, key, fd })
+        Ok(HttpSession {
+            sender,
+            key,
+            home: super::pool::own_shard(),
+            fd,
+        })
     }
 
     async fn tls(&self, peer: &HttpPeer, stream: L4Stream) -> Result<TlsStream> {
