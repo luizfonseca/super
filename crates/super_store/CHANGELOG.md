@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/luizfonseca/super/compare/super_store-v0.3.1...super_store-v0.3.2) (2026-10-26)
+
+
+### Miscellaneous Chores
+
+* **super_store:** Synchronize super versions
+
 ## [0.3.1](https://github.com/luizfonseca/super/compare/super_store-v0.3.0...super_store-v0.3.1) (2026-10-26)
 
 
