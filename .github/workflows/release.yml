@@ -174,7 +174,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          password: ${{ secrets.DOCKERHUB_SECRET }}
 
       - name: Download workflow artifacts
         uses: actions/download-artifact@v4
@@ -218,7 +218,7 @@ jobs:
         uses: peter-evans/dockerhub-description@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          password: ${{ secrets.DOCKERHUB_SECRET }}
           repository: luizfonseca/super
           short-description: Proksi on hyper: reverse proxy and load balancer with automatic HTTPS
           readme-filepath: docker.README.md
