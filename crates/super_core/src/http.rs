@@ -37,6 +37,12 @@ impl IntoHeaderName for &str {
     }
 }
 
+impl IntoHeaderName for bytes::Bytes {
+    fn into_header_name(self) -> Result<HeaderName> {
+        HeaderName::from_bytes(&self).or_err(ErrorType::InvalidHTTPHeader, "invalid header name")
+    }
+}
+
 impl IntoHeaderName for String {
     fn into_header_name(self) -> Result<HeaderName> {
         self.as_str().into_header_name()
