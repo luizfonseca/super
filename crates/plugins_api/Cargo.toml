@@ -1,0 +1,26 @@
+[package]
+name = "plugins_api"
+description = "Type/WIT bindings for the Super plugins API."
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+keywords = ["proxy", "https", "reverse-proxy", "load-balancer", "hyper"]
+categories = ["web-programming::http-server", "network-programming"]
+
+authors = ["The Super Contributors"]
+
+readme = "../../README.md"
+homepage = "https://github.com/luizfonseca/super"
+repository = "https://github.com/luizfonseca/super"
+rust-version.workspace = true
+workspace = "../.."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1.0.99"
+wit-bindgen = "0.63.0"
+
+[lints]
+workspace = true

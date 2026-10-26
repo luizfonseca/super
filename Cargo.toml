@@ -1,0 +1,29 @@
+[workspace]
+package = { rust-version = "1.99.0" }
+members = [
+    "crates/plugins_api",
+    "crates/super_admin_ui",
+    "crates/super_store",
+]
+resolver = "2"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "warn"
+
+
+[profile.dev]
+opt-level = 0
+incremental = true
+
+[profile.release]
+strip = true       # Automatically strip symbols from the binary.
+lto = true         # Enable link-time optimization.
+debug = false
+codegen-units = 1
+incremental = true
+panic = "abort"    # Abort on panic.

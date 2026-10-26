@@ -1,0 +1,18 @@
+[package]
+name = "super_admin_ui"
+description = "The admin UI of Super, built and embedded (ADR 0008)"
+# Published with each release of Proksi, with its version (release-please-config.json)
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["The Super Contributors"]
+homepage = "https://github.com/luizfonseca/super"
+repository = "https://github.com/luizfonseca/super"
+rust-version.workspace = true
+# The built UI is published with the crate, so building it doesn't need Node
+include = ["Cargo.toml", "build.rs", "src/**/*.rs", "dist/**/*"]
+
+[dependencies]
+
+[lints]
+workspace = true
