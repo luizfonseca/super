@@ -1,0 +1,268 @@
+/* Tailwind and daisyUI, built from the classes the UI's sources use: nothing else is kept */
+@import 'tailwindcss' source(none);
+@source './';
+
+/*
+ * daisyUI's own `black` theme, the only one, with Proksi's colors and rounder corners. Only the
+ * parts of daisyUI the UI uses are built: a class name that appears anywhere in the sources (a
+ * variable named `steps`, `list`, `filter`) would otherwise bring its part in. Add a part here when
+ * a component starts using it.
+ */
+@plugin 'daisyui' {
+  themes: black --default;
+  logs: false;
+  include: rootcolor, scrollbar, radius, alert, avatar, badge, breadcrumbs, button, checkbox, input, kbd, link, menu, modal, progress, select, skeleton, stat, status, tab, table, textarea, toast;
+}
+
+@plugin 'daisyui/theme' {
+  name: 'black';
+  default: true;
+  --color-primary: #fb7185;
+  --color-primary-content: #18181b;
+  /* A near-black page, cards a step lighter with a faint border, softer status colors */
+  --color-base-100: #141416;
+  --color-base-200: #0a0a0b;
+  --color-base-300: #26262b;
+  --color-base-content: #ececef;
+  --color-success: #4ade80;
+  --color-success-content: #0a0a0b;
+  --color-warning: #fbbf24;
+  --color-warning-content: #0a0a0b;
+  --color-error: #f87171;
+  --color-error-content: #0a0a0b;
+  --color-info: #60a5fa;
+  --color-info-content: #0a0a0b;
+  /* Black's own are grey: badges and chart lines need a color */
+  --color-secondary: #a78bfa;
+  --color-secondary-content: #18181b;
+  --color-accent: #22d3ee;
+  --color-accent-content: #18181b;
+  /* Rounder than daisyUI's own */
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+}
+
+/* Series colors of charts, the lines between things, and the logo's wing (main buttons wear it) */
+:root {
+  --wing: linear-gradient(135deg, #fb7185 0%, #e11d48 45%, #9f1239 100%);
+  --chart-1: var(--color-primary);
+  --chart-2: var(--color-secondary);
+  --chart-3: var(--color-accent);
+  --chart-4: var(--color-warning);
+  --line: var(--color-base-300);
+}
+
+@layer base {
+  body {
+    @apply bg-base-200 text-sm text-base-content antialiased;
+  }
+  code {
+    @apply font-mono text-xs;
+  }
+}
+
+/* What daisyUI has no part for: charts, a host's traffic, nested rules */
+@layer components {
+  /* Charts */
+  .plot svg {
+    @apply block size-full overflow-visible;
+  }
+  .plot path,
+  .sparkline path {
+    fill: none;
+    stroke-width: 1.6;
+    vector-effect: non-scaling-stroke;
+    stroke-linejoin: round;
+  }
+  .plot .grid {
+    stroke: var(--line);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  .plot .cursor {
+    stroke: var(--color-base-content);
+    stroke-opacity: 0.25;
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 3 3;
+  }
+
+  /* A host's traffic, from clients to upstreams */
+  svg.flow .node rect {
+    fill: var(--color-base-100);
+    stroke: var(--color-base-content);
+    stroke-opacity: 0.2;
+  }
+  svg.flow .node .title {
+    font-size: 12.5px;
+    font-weight: 600;
+    fill: var(--color-base-content);
+  }
+  svg.flow .node .detail {
+    font-size: 11.5px;
+    fill: var(--color-base-content);
+    fill-opacity: 0.6;
+    font-family: var(--font-mono);
+  }
+  svg.flow .node circle {
+    fill: var(--color-base-content);
+    fill-opacity: 0.35;
+  }
+  svg.flow .node.ok circle {
+    fill: var(--color-success);
+    fill-opacity: 1;
+  }
+  svg.flow .node.warn circle {
+    fill: var(--color-warning);
+    fill-opacity: 1;
+  }
+  svg.flow .node.bad circle {
+    fill: var(--color-error);
+    fill-opacity: 1;
+  }
+  svg.flow .node.bad rect {
+    stroke: var(--color-error);
+    stroke-opacity: 1;
+  }
+  /* Locations and upstreams can be clicked: their requests show in the request log */
+  svg.flow .node.selectable {
+    cursor: pointer;
+    outline: none;
+  }
+  svg.flow .node.selectable:hover rect,
+  svg.flow .node.selectable:focus-visible rect {
+    stroke: var(--color-base-content);
+    stroke-opacity: 0.5;
+  }
+  svg.flow .node.changed rect {
+    animation: node-flash 1.2s ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    svg.flow .node.changed rect {
+      animation: none;
+    }
+  }
+  svg.flow .node.selected rect {
+    stroke: var(--color-primary);
+    stroke-opacity: 1;
+    stroke-width: 1.5;
+  }
+  svg.flow .edge path {
+    fill: none;
+    stroke-linecap: round;
+  }
+  svg.flow .edge .track {
+    stroke: var(--color-base-content);
+    stroke-opacity: 0.2;
+  }
+  svg.flow .edge.idle .track {
+    stroke-dasharray: 3 5;
+  }
+  svg.flow .edge.ok .track {
+    stroke: var(--color-success);
+    stroke-opacity: 0.3;
+  }
+  svg.flow .edge.warn .track {
+    stroke: var(--color-warning);
+    stroke-opacity: 0.35;
+  }
+  svg.flow .edge.bad .track {
+    stroke: var(--color-error);
+    stroke-opacity: 0.4;
+  }
+  svg.flow .edge .flow {
+    stroke-dasharray: 2 14;
+    animation: flow linear infinite;
+  }
+  svg.flow .edge.ok .flow {
+    stroke: var(--color-success);
+  }
+  svg.flow .edge.warn .flow {
+    stroke: var(--color-warning);
+  }
+  svg.flow .edge.bad .flow {
+    stroke: var(--color-error);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    svg.flow .edge .flow {
+      animation: none;
+      stroke-dasharray: none;
+    }
+  }
+
+  /* Conditions in conditions: a line down their side, colored by how they combine */
+  .nested {
+    @apply ml-1.5 border-l-2 border-base-300 pl-2.5;
+  }
+  .group-or > .nested {
+    border-color: var(--color-info);
+  }
+  .group-not > .nested {
+    border-color: var(--color-warning);
+  }
+
+  /* A location the traffic view links to */
+  .location:target {
+    @apply border-primary ring-3 ring-primary/20;
+  }
+}
+
+/* A page fades in as it opens */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* A request just arrived slides in from the top */
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* A status that changed: a ring of its color, once */
+@keyframes dot-flash {
+  from {
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  to {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+/* A line drawn from its start, the first time it's shown */
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+/* A box of the traffic graph whose state changed */
+@keyframes node-flash {
+  0%,
+  100% {
+    stroke-width: 1;
+  }
+  30% {
+    stroke-width: 3;
+    stroke-opacity: 1;
+  }
+}
+
+/* A toast slides up as it appears */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
