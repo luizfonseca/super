@@ -312,7 +312,8 @@ impl ServerSession {
     ) -> Result<()> {
         let mut parts = header.into_parts();
         // HTTP/1.1 connections are closed after a response that isn't kept alive
-        if self.keepalive.is_none() && !self.connection.http2 {
+        let switching = parts.status == StatusCode::SWITCHING_PROTOCOLS;
+        if self.keepalive.is_none() && !self.connection.http2 && !switching {
             parts
                 .headers
                 .insert(header::CONNECTION, HeaderValue::from_static("close"));
