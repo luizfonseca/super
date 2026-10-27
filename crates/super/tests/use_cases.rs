@@ -79,13 +79,19 @@ fn seen(body: &str) -> serde_json::Value {
 /// Super in front of `hosts` (HCL), with HTTP/3, its client resolving them: each host `names`
 /// has gets the tests' certificate
 async fn start(hosts: &str, names: &[&str]) -> Harness {
+    start_with_server("", hosts, names).await
+}
+
+/// `start`, with `server` in the `server` block
+async fn start_with_server(server: &str, hosts: &str, names: &[&str]) -> Harness {
     let mut hosts = hosts.to_string();
     for name in names {
         let block = format!("host \"{name}\" {{");
         let certificate = "tls {\n    certificate {\n      pem = \"{cert_pem}\"\n      key = \"{cert_key}\"\n    }\n  }";
         hosts = hosts.replace(&block, &format!("{block}\n  {certificate}\n"));
     }
-    let mut proksi = Harness::start_with_server(vec![], "http3 = true", &hosts).await;
+    let server = format!("http3 = true\n{server}");
+    let mut proksi = Harness::start_with_server(vec![], &server, &hosts).await;
     for name in names {
         proksi.resolve(name);
     }
@@ -363,4 +369,271 @@ host "own.test" {{
         assert_eq!(headers["x-host"], "own", "{client:?} body_limit");
     }
     proksi.assert_healthy();
+}
+
+/// The `index`th HCL snippet of the docs' example `page` (`docs/examples/<page>.mdx`)
+fn example(page: &str, index: usize) -> String {
+    let path = format!(
+        "{}/../../docs/examples/{page}.mdx",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let snippets: Vec<&str> = text
+        .split("```hcl\n")
+        .skip(1)
+        .map(|rest| rest.split("```").next().unwrap())
+        .collect();
+    snippets[index].to_string()
+}
+
+/// A docs' example, runnable: its `server` block's settings, its hosts, and their names
+struct Example {
+    server: String,
+    hosts: String,
+    names: Vec<String>,
+}
+
+impl Example {
+    /// The `index`th snippet of `page`, its hosts under `.test` (the tests' certificate's) and
+    /// with `replacements` (what's written, what the tests have)
+    fn new(page: &str, index: usize, replacements: &[(&str, &str)]) -> Self {
+        let mut snippet = example(page, index).replace("example.com", "example.test");
+        for (written, test) in replacements {
+            snippet = snippet.replace(written, test);
+        }
+        let (server, hosts) = match snippet.find("server {") {
+            Some(start) => {
+                let end = start + block_end(&snippet[start..]);
+                let inner = &snippet[start + "server {".len()..end - 1];
+                (
+                    inner.to_string(),
+                    format!("{}{}", &snippet[..start], &snippet[end..]),
+                )
+            }
+            None => (String::new(), snippet),
+        };
+        let names = hosts
+            .split("host \"")
+            .skip(1)
+            .map(|rest| rest.split('"').next().unwrap().to_string())
+            .collect();
+        Self {
+            server,
+            hosts,
+            names,
+        }
+    }
+
+    /// Super, with the example and `more` hosts (`more_names`)
+    async fn start(&self, more: &str, more_names: &[&str]) -> Harness {
+        let mut names: Vec<&str> = self.names.iter().map(String::as_str).collect();
+        names.extend(more_names);
+        start_with_server(&self.server, &format!("{}\n{more}", self.hosts), &names).await
+    }
+}
+
+/// The length of the block `text` starts with, up to its closing brace
+fn block_end(text: &str) -> usize {
+    let mut depth = 0;
+    for (index, character) in text.char_indices() {
+        depth += match character {
+            '{' => 1,
+            '}' => -1,
+            _ => 0,
+        };
+        if character == '}' && depth == 0 {
+            return index + 1;
+        }
+    }
+    text.len()
+}
+
+const UPSTREAM: &str = "127.0.0.1:{http_upstream_port}";
+
+/// docs/examples/admin-area: refused networks get a `403`, before any password, with the admin
+/// pages' headers
+#[tokio::test(flavor = "multi_thread")]
+async fn test_example_admin_area() {
+    let example = Example::new(
+        "admin-area",
+        0,
+        &[
+            ("shop:3000", UPSTREAM),
+            ("env(\"ADMIN_PASSWORD\")", "\"secret\""),
+        ],
+    );
+    let proksi = example.start("", &[]).await;
+    for client in CLIENTS {
+        let (status, _, _) = get(&proksi, client, "shop.example.test", "/").await;
+        assert_eq!(status, 200, "{client:?}");
+        let (status, headers, _) = get(&proksi, client, "shop.example.test", "/admin").await;
+        assert_eq!(status, 403, "{client:?}: 127.0.0.1 isn't the office's");
+        assert_eq!(headers["cache-control"], "no-store", "{client:?}");
+        assert_eq!(headers["x-robots-tag"], "noindex", "{client:?}");
+    }
+}
+
+/// docs/examples/behind-a-load-balancer: behind a trusted load balancer (the tests' client),
+/// `ip_filter` sees the address it forwards
+#[tokio::test(flavor = "multi_thread")]
+async fn test_example_behind_a_load_balancer() {
+    let example = Example::new(
+        "behind-a-load-balancer",
+        1,
+        &[("app:3000", UPSTREAM), ("10.0.0.0/8", "127.0.0.0/8")],
+    );
+    let proksi = example.start("", &[]).await;
+    let office = [("x-forwarded-for", "203.0.113.9")];
+    let elsewhere = [("x-forwarded-for", "198.51.100.1")];
+    for client in CLIENTS {
+        let ask = |headers| {
+            send(
+                &proksi,
+                client,
+                "GET",
+                "app.example.test",
+                "/admin",
+                headers,
+                b"",
+            )
+        };
+        assert_eq!(ask(&office).await.0, 200, "{client:?}");
+        assert_eq!(ask(&elsewhere).await.0, 403, "{client:?}");
+    }
+}
+
+/// docs/examples/blocking-url-scanners: probes get a `404` before any host sees them, under any
+/// path and escaped; a page that only looks like one is served
+#[tokio::test(flavor = "multi_thread")]
+async fn test_example_blocking_url_scanners() {
+    let example = Example::new("blocking-url-scanners", 0, &[]);
+    let site = format!(
+        "host \"site.test\" {{\n  location \"/\" {{\n    upstream \"{UPSTREAM}\" {{}}\n  }}\n}}\n"
+    );
+    let proksi = example.start(&site, &["site.test"]).await;
+    for client in CLIENTS {
+        for probe in [
+            "/.env",
+            "/app/.env.local",
+            "/%2Eenv",
+            "/blog/wp-login.php",
+            "/.git/config",
+        ] {
+            let (status, _, _) = get(&proksi, client, "site.test", probe).await;
+            assert_eq!(status, 404, "{client:?} {probe}");
+        }
+        let (status, _, _) = get(&proksi, client, "site.test", "/images/wp-site.png").await;
+        assert_eq!(status, 200, "{client:?}");
+    }
+}
+
+/// docs/examples/public-api: other sites' pages may call it, each request has an ID, and bodies
+/// are limited
+#[tokio::test(flavor = "multi_thread")]
+async fn test_example_public_api() {
+    let example = Example::new(
+        "public-api",
+        0,
+        &[
+            ("api-1:4000", UPSTREAM),
+            ("api-2:4000", "localhost:{http_upstream_port}"),
+        ],
+    );
+    let proksi = example.start("", &[]).await;
+    let page = [("origin", "https://shop.example.test")];
+    let too_big = vec![b'a'; 2 * 1024 * 1024];
+    for client in CLIENTS {
+        let (status, headers, _) = send(
+            &proksi,
+            client,
+            "GET",
+            "api.example.test",
+            "/items",
+            &page,
+            b"",
+        )
+        .await;
+        assert_eq!(status, 200, "{client:?}");
+        assert_eq!(
+            headers["access-control-allow-origin"],
+            "https://shop.example.test"
+        );
+        assert_eq!(headers["access-control-allow-credentials"], "true");
+        assert!(headers.contains_key("x-request-id"), "{client:?}");
+        let (status, _, _) = send(
+            &proksi,
+            client,
+            "POST",
+            "api.example.test",
+            "/items",
+            &[],
+            &too_big,
+        )
+        .await;
+        assert_eq!(status, 413, "{client:?}");
+    }
+}
+
+/// docs/examples/security-headers: every response gets them, `/embed` replaces its own
+#[tokio::test(flavor = "multi_thread")]
+async fn test_example_security_headers() {
+    let example = Example::new("security-headers", 0, &[("app:3000", UPSTREAM)]);
+    let proksi = example.start("", &[]).await;
+    for client in CLIENTS {
+        let (status, headers, _) = get(&proksi, client, "example.test", "/").await;
+        assert_eq!(status, 200, "{client:?}");
+        assert_eq!(headers["x-frame-options"], "DENY", "{client:?}");
+        assert_eq!(headers["x-content-type-options"], "nosniff", "{client:?}");
+        assert!(headers["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .contains("frame-ancestors 'none'"));
+        let (_, headers, _) = get(&proksi, client, "example.test", "/embed").await;
+        assert!(!headers.contains_key("x-frame-options"), "{client:?}");
+        assert!(headers["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .contains("frame-ancestors *"));
+        assert_eq!(
+            headers["strict-transport-security"],
+            "max-age=31536000; includeSubDomains"
+        );
+    }
+}
+
+/// docs/examples/single-page-app: the app's files, its `index.html` for its own routes,
+/// assets cached for a year, and the API for signed-in users only
+#[tokio::test(flavor = "multi_thread")]
+async fn test_example_single_page_app() {
+    let build = tempfile::tempdir().unwrap();
+    std::fs::create_dir(build.path().join("assets")).unwrap();
+    std::fs::write(build.path().join("index.html"), "<div id=app>").unwrap();
+    std::fs::write(build.path().join("assets/app-1a2b.js"), "start()").unwrap();
+    let dist = build.path().display().to_string();
+    let example = Example::new(
+        "single-page-app",
+        0,
+        &[
+            ("/var/www/app/dist", &dist),
+            ("api-1:8080", UPSTREAM),
+            ("api-2:8080", "localhost:{http_upstream_port}"),
+        ],
+    );
+    let proksi = example.start("", &[]).await;
+    for client in CLIENTS {
+        let (status, _, body) = get(&proksi, client, "app.example.test", "/").await;
+        assert_eq!((status, body.as_str()), (200, "<div id=app>"), "{client:?}");
+        // A route of the app's own
+        let (status, _, body) = get(&proksi, client, "app.example.test", "/orders/12").await;
+        assert_eq!((status, body.as_str()), (200, "<div id=app>"), "{client:?}");
+        let (status, headers, body) =
+            get(&proksi, client, "app.example.test", "/assets/app-1a2b.js").await;
+        assert_eq!((status, body.as_str()), (200, "start()"), "{client:?}");
+        assert_eq!(
+            headers["cache-control"],
+            "public, max-age=31536000, immutable"
+        );
+        let (status, _, _) = get(&proksi, client, "app.example.test", "/api/orders").await;
+        assert_eq!(status, 401, "{client:?}: no token");
+    }
 }
