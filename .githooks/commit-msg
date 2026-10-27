@@ -1,0 +1,11 @@
+#!/bin/sh
+# Refuses commit messages that link a Claude session or credit Claude: this repository is public,
+# and its commits carry no attribution. Set up with `make hooks` (git config core.hooksPath).
+
+pattern='claude\.ai/code|claude-session:|co-authored-by:.*(claude|anthropic)|generated with \[?claude'
+
+if grep -qiE "$pattern" "$1"; then
+  echo "commit refused: its message links a Claude session or credits Claude:" >&2
+  grep -inE "$pattern" "$1" >&2
+  exit 1
+fi
