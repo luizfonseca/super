@@ -67,7 +67,12 @@ pub(crate) fn upstream_request(
     if upgrade || has_hop_by_hop(&upstream.headers) {
         remove_hop_by_hop(&mut upstream.headers, upgrade);
     }
-    set_target(&mut upstream, http2);
+    // The phases see one form, whatever the client sent and the upstream speaks: the host in
+    // `Host`, and a path (`set_target` gives HTTP/2 upstreams theirs once they ran)
+    set_target(&mut upstream, false);
+    if http2 {
+        upstream.set_version(Version::HTTP_2);
+    }
     upstream
 }
 
@@ -104,38 +109,29 @@ pub fn set_target(request: &mut RequestHeader, http2: bool) {
     request.set_uri(Uri::from(path));
 }
 
-/// The whole URI, as HTTP/2 wants it: its host goes to `:authority`, from `Host` when there's one
-/// (the client sent a path, or a phase set the upstream's `Host`)
+/// The whole URI, as HTTP/2 wants it: the host of `Host` (the client's, or the one a phase set)
+/// as `:authority`, over TLS (HTTP/2 upstreams are reached with ALPN)
 fn http2_target(request: &mut RequestHeader) {
     request.set_version(Version::HTTP_2);
     let host = request
         .headers
         .get(header::HOST)
-        .and_then(|host| host.to_str().ok());
-    let authority = request.uri.authority().map(http::uri::Authority::as_str);
-    if let Some(uri) = http2_uri(&request.uri, host, authority) {
+        .and_then(|host| host.to_str().ok())
+        .or_else(|| request.uri.authority().map(http::uri::Authority::as_str))
+        .unwrap_or("localhost");
+    let path = request
+        .uri
+        .path_and_query()
+        .map_or("/", http::uri::PathAndQuery::as_str);
+    let uri = Uri::builder()
+        .scheme("https")
+        .authority(host)
+        .path_and_query(path)
+        .build();
+    if let Ok(uri) = uri {
         request.set_uri(uri);
     }
     request.headers.remove(header::HOST);
-}
-
-/// `uri` with `host` as its authority, `None` when it has it already
-fn http2_uri(uri: &Uri, host: Option<&str>, authority: Option<&str>) -> Option<Uri> {
-    let host = match (host, authority) {
-        (Some(host), Some(authority)) if host == authority => return None,
-        (None, Some(_)) => return None,
-        (Some(host), _) => host,
-        (None, None) => "localhost",
-    };
-    let path = uri
-        .path_and_query()
-        .map_or("/", http::uri::PathAndQuery::as_str);
-    Uri::builder()
-        .scheme(uri.scheme_str().unwrap_or("http"))
-        .authority(host)
-        .path_and_query(path)
-        .build()
-        .ok()
 }
 
 /// The upstream's response, without its connection's headers (`upgrade`: a `101`)
@@ -205,27 +201,35 @@ mod tests {
         assert_eq!(upstream.uri, "/p?q");
         assert_eq!(upstream.headers[header::HOST], "a.test");
 
-        // An HTTP/1.1 client's request, to an HTTP/2 upstream
+        // An HTTP/1.1 client's request, to an HTTP/2 upstream: the phases see a path and `Host`,
+        // the upstream an authority
         let mut request = RequestHeader::build("GET", b"/p", None).unwrap();
         request.insert_header(header::HOST, "b.test").unwrap();
-        let upstream = upstream_request(&mut request, false, true);
-        assert_eq!(upstream.uri, "http://b.test/p");
-        assert!(!upstream.headers.contains_key(header::HOST));
-
-        // The `Host` a phase sets for the upstream (an external service's) is its `:authority`
-        let mut upstream = upstream;
-        upstream
-            .insert_header(header::HOST, "upstream.test")
-            .unwrap();
+        let mut upstream = upstream_request(&mut request, false, true);
+        assert_eq!(upstream.uri, "/p");
+        assert_eq!(upstream.headers[header::HOST], "b.test");
         set_target(&mut upstream, true);
-        assert_eq!(upstream.uri, "http://upstream.test/p");
+        assert_eq!(upstream.uri, "https://b.test/p");
         assert!(!upstream.headers.contains_key(header::HOST));
 
-        // An HTTP/2 client's request, its authority kept when no phase sets `Host`
+        // An HTTP/2 client's request, to an HTTP/2 upstream: the same
         let mut request = RequestHeader::build("GET", b"https://a.test/p", None).unwrap();
         let mut upstream = upstream_request(&mut request, false, true);
+        assert_eq!(upstream.uri, "/p");
+        assert_eq!(upstream.headers[header::HOST], "a.test");
+
+        // A phase's path (a rewrite) keeps the client's host...
+        upstream.set_uri(http::Uri::from_static("/rewritten"));
         set_target(&mut upstream, true);
-        assert_eq!(upstream.uri, "https://a.test/p");
+        assert_eq!(upstream.uri, "https://a.test/rewritten");
+
+        // ...and the `Host` a phase sets (an external service's) is the authority
+        let mut upstream = upstream_request(&mut request, false, true);
+        upstream
+            .insert_header(header::HOST, "service.test")
+            .unwrap();
+        set_target(&mut upstream, true);
+        assert_eq!(upstream.uri, "https://service.test/p");
 
         let mut response = ResponseHeader::build(200, None).unwrap();
         response

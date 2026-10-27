@@ -29,6 +29,8 @@ use crate::{
     Error, ErrorType, Result,
 };
 
+mod matrix;
+
 /// An upstream: echoes the request (method, path, `x-seen` header and body), `/slow` takes
 /// its time, `/ws` switches protocols and echoes bytes
 async fn upstream() -> SocketAddr {
@@ -592,12 +594,23 @@ async fn test_websockets_over_http2() {
 
 /// A certificate for `a.test`, signed by itself
 fn certificate() -> Arc<rustls::sign::CertifiedKey> {
+    let (certificate, key) = self_signed("a.test");
+    crate::services::quic::certified_key(&certificate, &[], &key).unwrap()
+}
+
+/// A certificate for `common_name`, signed by itself, and its key
+fn self_signed(
+    common_name: &str,
+) -> (
+    openssl::x509::X509,
+    openssl::pkey::PKey<openssl::pkey::Private>,
+) {
     use openssl::{ec, nid::Nid, pkey::PKey, x509};
 
     let group = ec::EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
     let key = PKey::from_ec_key(ec::EcKey::generate(&group).unwrap()).unwrap();
     let mut name = x509::X509NameBuilder::new().unwrap();
-    name.append_entry_by_text("CN", "a.test").unwrap();
+    name.append_entry_by_text("CN", common_name).unwrap();
     let name = name.build();
     let mut builder = x509::X509::builder().unwrap();
     builder.set_version(2).unwrap();
@@ -613,7 +626,7 @@ fn certificate() -> Arc<rustls::sign::CertifiedKey> {
     builder
         .sign(&key, openssl::hash::MessageDigest::sha256())
         .unwrap();
-    crate::services::quic::certified_key(&builder.build(), &[], &key).unwrap()
+    (builder.build(), key)
 }
 
 /// Always the same certificate
@@ -679,8 +692,15 @@ async fn http3_proxy_to(upstreams: Vec<SocketAddr>) -> H3Client {
         logged: Logged::default(),
         retry_on_502: false,
     };
-    let proxy: Arc<HttpProxy<Phases>> =
-        Arc::new(http_proxy(&Arc::new(ServerConf::default()), phases));
+    h3_client(Arc::new(http_proxy(
+        &Arc::new(ServerConf::default()),
+        phases,
+    )))
+    .await
+}
+
+/// `proxy` answering HTTP/3, and a client's connection to it
+async fn h3_client<P: ProxyHttp + 'static>(proxy: Arc<HttpProxy<P>>) -> H3Client {
     let service = crate::services::quic::Service::new(
         "h3".to_string(),
         proxy,
