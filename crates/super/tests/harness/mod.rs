@@ -694,6 +694,19 @@ paths {{
         host: &str,
         path: &str,
     ) -> Result<(u16, http::HeaderMap, String), String> {
+        self.http3_request("GET", host, path, &[], b"").await
+    }
+
+    /// `method` `path` for `host` over HTTP/3, with `headers` and `body`: the response's status,
+    /// headers and body
+    pub async fn http3_request(
+        &self,
+        method: &str,
+        host: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: &[u8],
+    ) -> Result<(u16, http::HeaderMap, String), String> {
         let provider = Arc::new(rustls::crypto::ring::default_provider());
         let mut tls = rustls::ClientConfig::builder_with_provider(provider)
             .with_protocol_versions(&[&rustls::version::TLS13])
@@ -719,13 +732,23 @@ paths {{
         let driving = tokio::spawn(async move {
             std::future::poll_fn(|cx| driver.poll_close(cx)).await;
         });
-        let request = http::Request::get(format!("https://{host}{path}"))
-            .body(())
-            .map_err(|e| e.to_string())?;
+        let mut request = http::Request::builder()
+            .method(method)
+            .uri(format!("https://{host}{path}"));
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let request = request.body(()).map_err(|e| e.to_string())?;
         let mut stream = sender
             .send_request(request)
             .await
             .map_err(|e| e.to_string())?;
+        if !body.is_empty() {
+            stream
+                .send_data(bytes::Bytes::copy_from_slice(body))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
         stream.finish().await.map_err(|e| e.to_string())?;
         let response = stream.recv_response().await.map_err(|e| e.to_string())?;
         let mut body = Vec::new();
