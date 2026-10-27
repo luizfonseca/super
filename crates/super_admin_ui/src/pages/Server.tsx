@@ -78,7 +78,7 @@ export function Server() {
   const [data] = useData<Settings>('/server', 60000);
   return (
     <>
-      <PageHead title="Server" description="The settings Proksi started with, defaults included. Secrets are never shown." />
+      <PageHead title="Server" description="The settings Super started with, defaults included. Secrets are never shown." />
       <Loaded data={data}>
         {(settings) => {
           const general = Object.fromEntries(Object.entries(settings).filter(([, setting]) => !isSection(setting)));

@@ -22,7 +22,7 @@ export function Certificates() {
   const [data] = useData<Certificate[]>('/certificates', 30000);
   return (
     <>
-      <PageHead title="Certificates" description="Issued and renewed by Proksi, or loaded from files." />
+      <PageHead title="Certificates" description="Issued and renewed by Super, or loaded from files." />
       <Loaded data={data}>
         {(certificates) => (
           <Panel>

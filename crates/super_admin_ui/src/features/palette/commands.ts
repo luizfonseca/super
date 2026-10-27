@@ -35,7 +35,7 @@ export const PAGES: Command[] = [
 
 export const ACTIONS: Command[] = [
   { title: 'Documentation', group: 'Actions', icon: 'docs', keywords: 'docs help guide support', run: { url: DOCS } },
-  { title: 'Proksi on GitHub', group: 'Actions', icon: 'github', keywords: 'source code issues support', run: { url: GITHUB } },
+  { title: 'Super on GitHub', group: 'Actions', icon: 'github', keywords: 'source code issues support', run: { url: GITHUB } },
   { title: 'Sign out', group: 'Actions', icon: 'sign-out', keywords: 'log out', run: { action: 'sign-out' } },
 ];
 

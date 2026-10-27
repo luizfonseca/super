@@ -160,7 +160,7 @@ function Actions({ then, rules, onChange }: { then: Record<string, unknown>; rul
             ) : schema ? (
               <SchemaForm schema={schema} value={(settings as Record<string, unknown>) ?? {}} onChange={(value) => onChange({ ...then, [name]: value })} />
             ) : (
-              <None>Proksi doesn't know this action</None>
+              <None>Super doesn't know this action</None>
             )}
           </Grid>
         );
