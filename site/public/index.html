@@ -160,18 +160,8 @@
     .reveal { opacity: 0; transform: translateY(26px); transition: opacity .9s cubic-bezier(.2, .8, .2, 1), transform .9s cubic-bezier(.2, .8, .2, 1); }
     .reveal.seen { opacity: 1; transform: none; }
 
-    /* Proksi, rebuilt */
-    .story { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: start; }
-    .story p { color: var(--muted); font-size: 18px; font-weight: 300; margin: 0 0 16px; }
-    .story p strong { color: var(--text); font-weight: 500; }
-    .layers { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 10px; }
-    .layer { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-radius: 12px; font-size: 16px; }
-    .layer + .layer { margin-top: 6px; }
-    .layer small { color: var(--dim); font-size: 13px; }
-    .layer.same { background: #13151a; color: var(--muted); }
-    .layer.new { background: var(--accent-soft); border: 1px solid rgba(255, 90, 31, .35); color: var(--text); }
-    .layer.new small { color: #ffb08f; }
-    @media (max-width: 860px) { .story { grid-template-columns: 1fr; } }
+    .lineage { margin: 26px 0 0; text-align: center; color: var(--muted); font-size: 16px; font-weight: 300; }
+    .lineage a { color: var(--text); text-decoration-color: #3a3d47; text-underline-offset: 3px; }
 
     /* Benchmarks */
     .charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 38px; }
@@ -254,7 +244,6 @@
     <div class="wrap">
       <a class="brand" href="/"><img src="logo-wordmark.svg" alt="Super proxy" width="84" height="32"></a>
       <ul>
-        <li class="hide-small"><a href="#why">Why</a></li>
         <li class="hide-small"><a href="#speed">Benchmarks</a></li>
         <li class="hide-small"><a href="#rules">Rules</a></li>
         <li class="hide-small"><a href="#conformance">Conformance</a></li>
@@ -288,26 +277,8 @@
         <div class="stat"><strong>5 MB</strong><span>of memory when idle</span></div>
         <div class="stat"><strong>21 GB/s</strong><span>serving large downloads</span></div>
       </div>
+      <p class="lineage reveal">Inspired by the work done in <a href="https://github.com/luizfonseca/proksi">Proksi</a>, Super takes it further.</p>
     </div>
-
-    <section id="why">
-      <div class="wrap story">
-        <div class="reveal">
-          <div class="kicker">Proksi, rebuilt</div>
-          <h2>Same proxy. A new heart.</h2>
-          <p>Super started with a question: what would <a href="https://github.com/luizfonseca/proksi">Proksi</a> look like on <a href="https://hyper.rs">hyper</a> instead of Pingora? Proksi already did the hard parts: certificates that renew themselves, Docker and Kubernetes discovery, plugins, rules, an admin UI. Super keeps all of it.</p>
-          <p><strong>Your configuration doesn't change.</strong> The same <code>config.hcl</code>, environment variables, plugins, stores and metrics. Point Super at Proksi's files and it runs.</p>
-          <p><strong>What changed is the core.</strong> A hyper engine that keeps Pingora's request phases, allocates nothing on the hot path, keeps each connection on its thread, and adds what Pingora can't: HTTP/3 and websockets over HTTP/2.</p>
-        </div>
-        <div class="layers reveal" aria-label="What Super shares with Proksi, and what's new">
-          <div class="layer same">Configuration, HCL and YAML <small>Proksi's</small></div>
-          <div class="layer same">Plugins and rules <small>Proksi's</small></div>
-          <div class="layer same">Admin UI, metrics, stores <small>Proksi's</small></div>
-          <div class="layer same">Let's Encrypt, Docker, Kubernetes <small>Proksi's</small></div>
-          <div class="layer new">The core: hyper, tokio, HTTP/3 <small>new</small></div>
-        </div>
-      </div>
-    </section>
 
     <section id="speed">
       <div class="wrap">
