@@ -95,18 +95,37 @@ async fn answer<A: HttpServerApp>(
     app: Arc<A>,
     connection: Arc<Connection>,
     shutdown: ShutdownWatch,
-    (request, stream): (
+    (request, mut stream): (
         http::Request<()>,
         h3::server::RequestStream<h3_quinn::BidiStream<Bytes>, Bytes>,
     ),
     stopping: bool,
 ) {
+    if is_malformed(&request) {
+        stream.stop_sending(h3::error::Code::H3_MESSAGE_ERROR);
+        stream.stop_stream(h3::error::Code::H3_MESSAGE_ERROR);
+        return;
+    }
     let (mut responder, body) = stream.split();
     let request = request.map(|()| RequestBody::h3(body));
     match handle(app, connection, shutdown, request, ((), stopping)).await {
         Ok(response) => respond(&mut responder, response).await,
         Err(_) => responder.stop_stream(h3::error::Code::H3_INTERNAL_ERROR),
     }
+}
+
+/// Whether a request has a header of HTTP/1.1's connections, which HTTP/3 requests can't have
+/// (RFC 9114 §4.2): `connection`, `keep-alive`, `proxy-connection`, `transfer-encoding`, `upgrade`,
+/// or `te` other than `trailers`
+fn is_malformed(request: &http::Request<()>) -> bool {
+    use http::header::{CONNECTION, TE, TRANSFER_ENCODING, UPGRADE};
+    let headers = request.headers();
+    let connection_specific = [CONNECTION, TRANSFER_ENCODING, UPGRADE]
+        .iter()
+        .any(|name| headers.contains_key(name))
+        || headers.contains_key("keep-alive")
+        || headers.contains_key("proxy-connection");
+    connection_specific || headers.get_all(TE).iter().any(|te| te != "trailers")
 }
 
 /// Sends `response` on the request's stream: its header, then its body, as hyper would

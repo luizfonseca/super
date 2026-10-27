@@ -815,6 +815,40 @@ async fn test_requests_over_http3() {
     }
 }
 
+/// HTTP/3 requests with a header of HTTP/1.1's connections are malformed (RFC 9114 §4.2): their
+/// stream is reset with `H3_MESSAGE_ERROR`, and they reach no upstream
+#[tokio::test]
+async fn test_http3_requests_with_connection_headers_are_refused() {
+    let mut client = http3_proxy_to(vec![upstream().await]).await;
+    for (name, value) in [
+        ("connection", "close"),
+        ("keep-alive", "timeout=5"),
+        ("transfer-encoding", "chunked"),
+        ("upgrade", "websocket"),
+        ("te", "gzip"),
+    ] {
+        let request = http::Request::get("https://a.test/a")
+            .header(name, value)
+            .body(())
+            .unwrap();
+        let mut stream = client.send_request(request).await.unwrap();
+        stream.finish().await.ok();
+        let refused = stream.recv_response().await.unwrap_err();
+        assert!(
+            refused.to_string().contains("H3_MESSAGE_ERROR"),
+            "{name}: {refused}"
+        );
+    }
+    // `te: trailers` is the one allowed
+    let request = http::Request::get("https://a.test/a")
+        .header("te", "trailers")
+        .body(())
+        .unwrap();
+    let mut stream = client.send_request(request).await.unwrap();
+    stream.finish().await.unwrap();
+    assert_eq!(stream.recv_response().await.unwrap().status(), 200);
+}
+
 /// An HTTP/3 upload answered before it's read (a `413`): its client can still send it all (not
 /// stopped with an error HTTP/3 doesn't know, `0`), and reads the answer
 #[tokio::test]
