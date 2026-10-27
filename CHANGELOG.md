@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.0](https://github.com/luizfonseca/super/compare/super-v0.4.0...super-v0.5.0) (2026-10-27)
+
+
+### Features
+
+* upstreams over TLS on any port, and their certificates checked ([ce32e42](https://github.com/luizfonseca/super/commit/ce32e42d31a903568e6cec306e8c1b9091ac346c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.4.0 to 0.5.0
+    * super_plugins bumped from 0.4.0 to 0.5.0
+    * super_core bumped from 0.4.0 to 0.5.0
+    * super_store bumped from 0.4.0 to 0.5.0
+  * dev-dependencies
+    * super_plugins bumped from 0.4.0 to 0.5.0
+    * super_store bumped from 0.4.0 to 0.5.0
+
 ## [0.4.0](https://github.com/luizfonseca/super/compare/super-v0.3.2...super-v0.4.0) (2026-10-27)
 
 
