@@ -1,0 +1,4 @@
+# Autobahn's cases known to fail through Super, and why: one a line, the case (`1.1.1`), then
+# ` # ` and the reason.
+# None: every case passes. Sections 12 and 13 (permessage-deflate) are skipped: Autobahn's echo
+# server doesn't negotiate compression (Super forwards the extension's headers as they are).

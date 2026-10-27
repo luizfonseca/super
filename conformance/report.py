@@ -39,10 +39,14 @@ SUITES = {
     },
     "super": {
         "spec": (
-            f"HTTP as a proxy: [RFC 9110]({RFC.format(9110)}), [RFC 9112]({RFC.format(9112)}), "
+            f"Proxy: [RFC 9110]({RFC.format(9110)}), [RFC 9112]({RFC.format(9112)}), "
             f"[RFC 9113]({RFC.format(9113)}) and [RFC 9114]({RFC.format(9114)})"
         ),
-        "suite": "[Super's own](crates/super/tests/spec.rs)",
+        "suite": "[super](crates/super/tests/spec.rs)",
+    },
+    "autobahn": {
+        "spec": f"WebSockets: [RFC 6455]({RFC.format(6455)})",
+        "suite": "[Autobahn](https://github.com/crossbario/autobahn-testsuite)",
     },
 }
 
@@ -75,6 +79,24 @@ def h3spec(output: Path) -> dict:
     return {"passed": [None] * passed, "failed": failed, "skipped": [None] * pending}
 
 
+def autobahn(output: Path) -> dict:
+    """Autobahn's report: each case's behaviour, and its closing handshake's (`OK`, `NON-STRICT`
+    and `INFORMATIONAL` pass, `UNIMPLEMENTED` is skipped, `FAILED` fails)"""
+    cases = {"passed": [], "failed": [], "skipped": []}
+    if not output.exists():
+        sys.exit("Autobahn didn't write its report: is Docker running?")
+    report = json.loads(output.read_text())
+    for case, result in report.get("super", {}).items():
+        behaviours = (result.get("behavior"), result.get("behaviorClose"))
+        if "FAILED" in behaviours:
+            cases["failed"].append(case)
+        elif "UNIMPLEMENTED" in behaviours:
+            cases["skipped"].append(case)
+        else:
+            cases["passed"].append(case)
+    return cases
+
+
 def expected(suite: str) -> dict:
     """The cases known to fail, and why"""
     known = {}
@@ -89,7 +111,7 @@ def expected(suite: str) -> dict:
 
 
 def record(suite: str, output: Path, version: str) -> int:
-    cases = {"h2spec": h2spec, "h3spec": h3spec}[suite](output)
+    cases = {"h2spec": h2spec, "h3spec": h3spec, "autobahn": autobahn}[suite](output)
     known = expected(suite)
     failed = set(cases["failed"])
     unexpected = sorted(failed - set(known))

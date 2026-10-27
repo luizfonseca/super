@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs conformance suites against Super, and checks their results against what's expected
-# (`expected/<suite>.txt`): `conformance/run.sh [h2spec] [h3spec] [super]` (all without any).
+# (`expected/<suite>.txt`): `conformance/run.sh [h2spec] [h3spec] [super] [autobahn]` (all
+# without any; Autobahn needs Docker).
 #
 # The suites' binaries are downloaded once (pinned, checked) to `conformance/.tools`. Super is
 # built unless `SUPER_BIN` names one. Results go to `conformance/results/<suite>.json`; the
@@ -10,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 root=conformance
 suites=("$@")
-[ ${#suites[@]} -eq 0 ] && suites=(h2spec h3spec super)
+[ ${#suites[@]} -eq 0 ] && suites=(h2spec h3spec super autobahn)
 port=${CONFORMANCE_PORT:-19443}
 tools="$root/.tools"
 work=$(mktemp -d)
@@ -19,6 +20,9 @@ mkdir -p "$tools" "$root/results"
 # The pinned binaries of each suite, by system: name, URL, SHA-256
 H2SPEC_VERSION=2.6.0
 H3SPEC_VERSION=0.1.14
+# Autobahn's testsuite, pinned by digest (amd64: emulated elsewhere)
+AUTOBAHN_VERSION=25.10.1
+AUTOBAHN_IMAGE=crossbario/autobahn-testsuite@sha256:519915fb568b04c9383f70a1c405ae3ff44ab9e35835b085239c258b6fac3074
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64)
     h2spec_archive=h2spec_linux_amd64.tar.gz
@@ -69,6 +73,35 @@ h3spec() {
 # results (results/super.json) and checking them against expected/super.txt
 super() {
   cargo test -q --all-features --test spec
+}
+
+# Autobahn's fuzzing client, through Super (plain HTTP), to Autobahn's own echo server: what
+# Super's tunnels change in websockets' frames, messages and closes
+autobahn() {
+  local echo=super-conformance-echo
+  docker rm -f "$echo" >/dev/null 2>&1 || true
+  docker run -d --rm --platform linux/amd64 --name "$echo" -p 127.0.0.1:19002:19002 "$AUTOBAHN_IMAGE" \
+    wstest -m echoserver -w ws://0.0.0.0:19002 >/dev/null
+  # Super, as the client container sees it
+  local network=(--add-host host.docker.internal:host-gateway) address=host.docker.internal
+  if [ "$(uname -s)" = Linux ]; then
+    network=(--network host) address=127.0.0.1
+  fi
+  mkdir -p "$work/autobahn/reports"
+  cat >"$work/autobahn/fuzzingclient.json" <<JSON
+{
+  "outdir": "/autobahn/reports",
+  "servers": [{ "agent": "super", "url": "ws://$address:$((port + 1))" }],
+  "cases": ["*"],
+  "exclude-cases": [],
+  "exclude-agent-cases": {}
+}
+JSON
+  sleep 2
+  docker run --rm --platform linux/amd64 "${network[@]}" -v "$work/autobahn:/autobahn" "$AUTOBAHN_IMAGE" \
+    wstest -m fuzzingclient -s /autobahn/fuzzingclient.json >"$work/autobahn.out" 2>&1 || true
+  docker rm -f "$echo" >/dev/null 2>&1 || true
+  python3 "$root/report.py" autobahn "$work/autobahn/reports/index.json" "$AUTOBAHN_VERSION"
 }
 
 # Super: HTTPS and HTTP/3 on `localhost`, IPv4 and IPv6, with a certificate of its own
