@@ -2,7 +2,8 @@
 """The results of the conformance suites, and the README's table of them.
 
     report.py <suite> <output> <version>   results/<suite>.json from a suite's output, checked
-                                           against expected/<suite>.txt
+                                           against expected/<suite>.txt (Super's own table,
+                                           `super`, writes its results itself)
     report.py readme [--check]             the README's table, from results/*.json (--check: is
                                            it up to date?)
 
@@ -35,6 +36,13 @@ SUITES = {
             f"[RFC 9000]({RFC.format(9000)}) and [RFC 9001]({RFC.format(9001)})"
         ),
         "suite": "[h3spec](https://github.com/kazu-yamamoto/h3spec)",
+    },
+    "super": {
+        "spec": (
+            f"HTTP as a proxy: [RFC 9110]({RFC.format(9110)}), [RFC 9112]({RFC.format(9112)}), "
+            f"[RFC 9113]({RFC.format(9113)}) and [RFC 9114]({RFC.format(9114)})"
+        ),
+        "suite": "[Super's own](crates/super/tests/spec.rs)",
     },
 }
 

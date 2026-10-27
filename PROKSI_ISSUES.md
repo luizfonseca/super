@@ -118,3 +118,19 @@ HTTP/1.1 server lingers.
 Fix (as Super does, and nginx's lingering close): once its side of the connection is shut down,
 keep reading and discarding what the client sends, for 10s at most and 2s without anything, then
 close. Not for upgraded connections (tunnels), whose bytes are the upstream's.
+
+### What HTTP's RFCs require of a proxy — to verify
+
+Super's table of RFC 9110, 9112, 9113 and 9114's requirements on a proxy
+(`crates/super/tests/spec.rs`) failed these before Super was fixed. Proksi may well fail them
+too (they're in what Pingora hands it, or in what Proksi's phases add):
+
+- RFC 9113 §8.2.3 / RFC 9114 §4.2.1: an HTTP/2 client's `Cookie` fields (crumbs) are sent to an
+  HTTP/1.1 upstream as several lines: they MUST be joined by `; `. Many apps read the first only.
+- RFC 9112 §3.2: a request with two `Host` fields MUST get a `400` (it was proxied).
+- RFC 9112 §3.2.2: an absolute-form target's host MUST be used, not `Host`'s.
+- RFC 9110 §8.6: a `204` MUST NOT have `Content-Length` (an upstream's went on to HTTP/2 clients).
+- RFC 9110 §7.6.2: `Max-Forwards` (an `OPTIONS` or `TRACE` at `0` is answered, not forwarded).
+- RFC 9110 §7.6.3: a gateway MUST add `Via` to the requests it forwards.
+
+Run the table against Proksi (`PROKSI_BIN` makes the harness start another binary) to see which.

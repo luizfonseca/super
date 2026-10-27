@@ -139,7 +139,58 @@ pub struct Harness {
     pub service: service::Service,
 }
 
+/// The protocols a client speaks to proksi
+#[derive(Clone, Copy, Debug)]
+pub enum Client {
+    Http1,
+    Http2,
+    Http3,
+}
+
+/// Every client protocol, HTTP/1.1 first: its HTTPS handshake readies a host's certificate for
+/// HTTP/3
+pub const CLIENTS: [Client; 3] = [Client::Http1, Client::Http2, Client::Http3];
+
+/// A response: its status, headers and body
+pub type Answer = (u16, http::HeaderMap, String);
+
 impl Harness {
+    /// `method` `path` from `host`, as `client` sends it, with `headers` and `body`
+    pub async fn send(
+        &self,
+        client: Client,
+        method: &str,
+        host: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: &[u8],
+    ) -> Answer {
+        let sender = match client {
+            Client::Http1 => self.client(),
+            Client::Http2 => self.client_h2(),
+            Client::Http3 => {
+                let answer = self.http3_request(method, host, path, headers, body);
+                return answer.await.unwrap();
+            }
+        };
+        let url = format!("https://{host}:{}{path}", self.https_port);
+        let mut request = sender
+            .request(method.parse().unwrap(), url)
+            .body(body.to_vec());
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let response = request.send().await.unwrap();
+        let wanted = match client {
+            Client::Http1 => http::Version::HTTP_11,
+            Client::Http2 | Client::Http3 => http::Version::HTTP_2,
+        };
+        assert_eq!(response.version(), wanted, "{client:?} {host}{path}");
+        let status = response.status().as_u16();
+        let headers = response.headers().clone();
+        (status, headers, response.text().await.unwrap())
+    }
+
     pub async fn start(routes: Vec<Route>) -> Self {
         Self::start_with(routes, "").await
     }

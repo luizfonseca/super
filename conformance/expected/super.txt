@@ -1,0 +1,3 @@
+# Rows of Super's own table (crates/super/tests/spec.rs) known to fail, and why: one a line, the
+# row as the test names it, then ` # ` and the reason.
+# None: every row passes.

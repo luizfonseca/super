@@ -11,64 +11,13 @@
 
 mod harness;
 
-use harness::{service::SERVICE, Harness};
-use http::HeaderMap;
-
-#[derive(Clone, Copy, Debug)]
-enum Client {
-    Http1,
-    Http2,
-    Http3,
-}
-
-/// Every client protocol, HTTP/1.1 first: its HTTPS handshake readies a host's certificate for
-/// HTTP/3
-const CLIENTS: [Client; 3] = [Client::Http1, Client::Http2, Client::Http3];
-
-/// A response: its status, headers and body
-type Answer = (u16, HeaderMap, String);
+use harness::{service::SERVICE, Answer, Client, Harness, CLIENTS};
 
 /// `GET path` from `host`, as `client` sends it (with a header Cloudflare adds,
 /// `cf-connecting-ip`)
 async fn get(proksi: &Harness, client: Client, host: &str, path: &str) -> Answer {
     let headers = [("cf-connecting-ip", "203.0.113.7")];
-    send(proksi, client, "GET", host, path, &headers, b"").await
-}
-
-/// `method` `path` from `host`, as `client` sends it, with `headers` and `body`
-async fn send(
-    proksi: &Harness,
-    client: Client,
-    method: &str,
-    host: &str,
-    path: &str,
-    headers: &[(&str, &str)],
-    body: &[u8],
-) -> Answer {
-    let sender = match client {
-        Client::Http1 => proksi.client(),
-        Client::Http2 => proksi.client_h2(),
-        Client::Http3 => {
-            let answer = proksi.http3_request(method, host, path, headers, body);
-            return answer.await.unwrap();
-        }
-    };
-    let url = format!("https://{host}:{}{path}", proksi.https_port);
-    let mut request = sender
-        .request(method.parse().unwrap(), url)
-        .body(body.to_vec());
-    for (name, value) in headers {
-        request = request.header(*name, *value);
-    }
-    let response = request.send().await.unwrap();
-    let wanted = match client {
-        Client::Http1 => http::Version::HTTP_11,
-        Client::Http2 | Client::Http3 => http::Version::HTTP_2,
-    };
-    assert_eq!(response.version(), wanted, "{client:?} {host}{path}");
-    let status = response.status().as_u16();
-    let headers = response.headers().clone();
-    (status, headers, response.text().await.unwrap())
+    proksi.send(client, "GET", host, path, &headers, b"").await
 }
 
 /// The request the service got, as it echoed it
@@ -327,7 +276,7 @@ host "own.test" {{
 
     for client in CLIENTS {
         let ask = |method, path, headers, body| {
-            send(&proksi, client, method, "own.test", path, headers, body)
+            proksi.send(client, method, "own.test", path, headers, body)
         };
         let (status, headers, _) = ask("GET", "/redirect/a?b=1", &[], b"").await;
         assert_eq!(status, 301, "{client:?}");
@@ -486,17 +435,7 @@ async fn test_example_behind_a_load_balancer() {
     let office = [("x-forwarded-for", "203.0.113.9")];
     let elsewhere = [("x-forwarded-for", "198.51.100.1")];
     for client in CLIENTS {
-        let ask = |headers| {
-            send(
-                &proksi,
-                client,
-                "GET",
-                "app.example.test",
-                "/admin",
-                headers,
-                b"",
-            )
-        };
+        let ask = |headers| proksi.send(client, "GET", "app.example.test", "/admin", headers, b"");
         assert_eq!(ask(&office).await.0, 200, "{client:?}");
         assert_eq!(ask(&elsewhere).await.0, 403, "{client:?}");
     }
@@ -543,16 +482,9 @@ async fn test_example_public_api() {
     let page = [("origin", "https://shop.example.test")];
     let too_big = vec![b'a'; 2 * 1024 * 1024];
     for client in CLIENTS {
-        let (status, headers, _) = send(
-            &proksi,
-            client,
-            "GET",
-            "api.example.test",
-            "/items",
-            &page,
-            b"",
-        )
-        .await;
+        let (status, headers, _) = proksi
+            .send(client, "GET", "api.example.test", "/items", &page, b"")
+            .await;
         assert_eq!(status, 200, "{client:?}");
         assert_eq!(
             headers["access-control-allow-origin"],
@@ -560,16 +492,9 @@ async fn test_example_public_api() {
         );
         assert_eq!(headers["access-control-allow-credentials"], "true");
         assert!(headers.contains_key("x-request-id"), "{client:?}");
-        let (status, _, _) = send(
-            &proksi,
-            client,
-            "POST",
-            "api.example.test",
-            "/items",
-            &[],
-            &too_big,
-        )
-        .await;
+        let (status, _, _) = proksi
+            .send(client, "POST", "api.example.test", "/items", &[], &too_big)
+            .await;
         assert_eq!(status, 413, "{client:?}");
     }
 }

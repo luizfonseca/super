@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs conformance suites against Super, and checks their results against what's expected
-# (`expected/<suite>.txt`): `conformance/run.sh [h2spec] [h3spec]` (both without any).
+# (`expected/<suite>.txt`): `conformance/run.sh [h2spec] [h3spec] [super]` (all without any).
 #
 # The suites' binaries are downloaded once (pinned, checked) to `conformance/.tools`. Super is
 # built unless `SUPER_BIN` names one. Results go to `conformance/results/<suite>.json`; the
@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 root=conformance
 suites=("$@")
-[ ${#suites[@]} -eq 0 ] && suites=(h2spec h3spec)
+[ ${#suites[@]} -eq 0 ] && suites=(h2spec h3spec super)
 port=${CONFORMANCE_PORT:-19443}
 tools="$root/.tools"
 work=$(mktemp -d)
@@ -63,6 +63,12 @@ h3spec() {
   chmod +x "$binary"
   "$binary" localhost "$port" --no-validate >"$work/h3spec.out" 2>&1 || true
   python3 "$root/report.py" h3spec "$work/h3spec.out" "$H3SPEC_VERSION"
+}
+
+# Super's own table of what HTTP's RFCs require of a proxy: a test of its own, writing its
+# results (results/super.json) and checking them against expected/super.txt
+super() {
+  cargo test -q --all-features --test spec
 }
 
 # Super: HTTPS and HTTP/3 on `localhost`, IPv4 and IPv6, with a certificate of its own

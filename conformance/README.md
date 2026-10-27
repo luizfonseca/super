@@ -7,6 +7,7 @@ run here.
 | --- | --- | --- |
 | [h2spec](https://github.com/summerwind/h2spec) | HTTP/2 (RFC 9113) and HPACK (RFC 7541), strict: the SHOULDs too | `conformance/run.sh h2spec` |
 | [h3spec](https://github.com/kazu-yamamoto/h3spec) | HTTP/3 (RFC 9114), QPACK (RFC 9204), QUIC (RFC 9000, 9001) | `conformance/run.sh h3spec` |
+| [Super's own table](../crates/super/tests/spec.rs) | What RFC 9110, 9112, 9113 and 9114 require of a proxy, row by row (`MUST`s and `SHOULD`s): framing and smuggling, `Host`, hop-by-hop fields, `Via`, `Max-Forwards`, bodiless responses, cookie crumbs | `conformance/run.sh super` (or `cargo test --test spec`) |
 
 `make conformance` runs them all and updates the README's table; CI runs `make conformance.check`,
 which fails when a case fails that isn't known to, when a known one passes, or when the table is
