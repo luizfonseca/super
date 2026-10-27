@@ -90,7 +90,7 @@
 
 ### Features
 
-* **plugins:** Proksi's plugins, on the core's sessions ([4ad1e34](https://github.com/luizfonseca/super/commit/4ad1e340d1f011237afe81da6a4bedf7923721ff))
+* **plugins:** Proksi's plugins, on the core's sessions ([7b894f0](https://github.com/luizfonseca/super/commit/7b894f08f1ce6f97feb46617fe02751ad597b041))
 
 
 ### Dependencies

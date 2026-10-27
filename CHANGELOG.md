@@ -5,7 +5,7 @@
 
 ### Features
 
-* upstreams over TLS on any port, and their certificates checked ([ce32e42](https://github.com/luizfonseca/super/commit/ce32e42d31a903568e6cec306e8c1b9091ac346c))
+* upstreams over TLS on any port, and their certificates checked ([7b4bd41](https://github.com/luizfonseca/super/commit/7b4bd414959e40ab609dc699b42d05cc82620908))
 
 
 ### Dependencies
@@ -25,7 +25,7 @@
 
 ### Features
 
-* config.hcl, read before Proksi's proksi.hcl ([de55638](https://github.com/luizfonseca/super/commit/de5563849fc91c4b3aead01e1a765e91c2fc1af2))
+* config.hcl, read before Proksi's proksi.hcl ([9056b22](https://github.com/luizfonseca/super/commit/9056b22b54d200bcc72379466f9bd6cbe643b5ba))
 
 
 ### Dependencies
@@ -45,7 +45,7 @@
 
 ### Bug Fixes
 
-* proxy and upstream times in access logs and the admin ([422702b](https://github.com/luizfonseca/super/commit/422702b7839f1919b42787043977b25561ceeaab))
+* proxy and upstream times in access logs and the admin ([3c08331](https://github.com/luizfonseca/super/commit/3c08331e9a3b37daf610f949044cf2a5a9815629))
 
 
 ### Dependencies
@@ -65,7 +65,7 @@
 
 ### Bug Fixes
 
-* supervise only command lines that serve ([5e3fb21](https://github.com/luizfonseca/super/commit/5e3fb21186968a5ecfa6c8fbadca9c25434276d0))
+* supervise only command lines that serve ([3e07d53](https://github.com/luizfonseca/super/commit/3e07d533551117aacf716680278984bdd8f4225d))
 
 
 ### Dependencies
@@ -85,13 +85,13 @@
 
 ### Features
 
-* **core:** websockets over HTTP/2 (RFC 8441) ([64b668e](https://github.com/luizfonseca/super/commit/64b668ee371d93186d1e28fdab54bc4a003e472d))
-* HTTP/3 on the HTTPS addresses (server.http3) ([15b30fa](https://github.com/luizfonseca/super/commit/15b30fada2cca85ca38e978a74ebb9ad33f4cff4))
+* **core:** websockets over HTTP/2 (RFC 8441) ([b496a92](https://github.com/luizfonseca/super/commit/b496a92af1e91c3162e39cb20fb9b71caf8fddd8))
+* HTTP/3 on the HTTPS addresses (server.http3) ([678d8d6](https://github.com/luizfonseca/super/commit/678d8d6e2de667c8724bd5c1c02a3df588cfc3a5))
 
 
 ### Bug Fixes
 
-* pedantic lints of the HTTP/3 code ([013f83d](https://github.com/luizfonseca/super/commit/013f83dff9e579e7237739088c993673e5ccebd8))
+* pedantic lints of the HTTP/3 code ([03f1f01](https://github.com/luizfonseca/super/commit/03f1f0119e11f2cbfbe00cd393e0fad30c309aba))
 
 
 ### Dependencies
@@ -111,21 +111,21 @@
 
 ### Features
 
-* **core:** stale-while-revalidate, revalidation, and 304s and ranges from the cache ([a65f063](https://github.com/luizfonseca/super/commit/a65f063c624679a068949fa390c28db58dc437eb))
-* **core:** work_stealing = false, as Pingora's ([790788c](https://github.com/luizfonseca/super/commit/790788c92cda5c38901508c487c2304f9b30b8ec))
-* mimalloc, as an option (feature mimalloc) ([8d94fc7](https://github.com/luizfonseca/super/commit/8d94fc7f66cdb5b6ea82dd76f3687d6cdf6223ac))
-* Proksi, on the hyper core ([dd80f1f](https://github.com/luizfonseca/super/commit/dd80f1f9a4bdf1c7e56f0834742382351ab04514))
+* **core:** stale-while-revalidate, revalidation, and 304s and ranges from the cache ([2c4c13b](https://github.com/luizfonseca/super/commit/2c4c13bac9b5250e15252dd04354fdd876d7ef3d))
+* **core:** work_stealing = false, as Pingora's ([7ecfe50](https://github.com/luizfonseca/super/commit/7ecfe500c5b7f155a161332d29a380b86658a5d4))
+* mimalloc, as an option (feature mimalloc) ([1b59f5a](https://github.com/luizfonseca/super/commit/1b59f5acfc43f0f7be0b6354935c7816e9932ba0))
+* Proksi, on the hyper core ([622fedc](https://github.com/luizfonseca/super/commit/622fedcc977d90c83dbacfde38da25121c17c632))
 
 
 ### Bug Fixes
 
-* **core:** upgrades and shutdowns as Pingora's ([fab8626](https://github.com/luizfonseca/super/commit/fab86261cb2d3abbf36ce90e564a59c5b7ff98ec))
+* **core:** upgrades and shutdowns as Pingora's ([663cf7c](https://github.com/luizfonseca/super/commit/663cf7c26c69d4b10037dfb05b4e961a1e0f591b))
 
 
 ### Performance Improvements
 
-* **core:** threads borrow each other's idle connections; work_stealing off by default ([7732056](https://github.com/luizfonseca/super/commit/7732056f817eebcf59ae0bce610dd82663805043))
-* the kernel sizes upstream connections' receive buffers ([6221eb9](https://github.com/luizfonseca/super/commit/6221eb90da77231f40dade1f27842c3e62594bd1))
+* **core:** threads borrow each other's idle connections; work_stealing off by default ([7b3329f](https://github.com/luizfonseca/super/commit/7b3329fff9195b1d010ca31f4b8855572dff18a0))
+* the kernel sizes upstream connections' receive buffers ([b28702a](https://github.com/luizfonseca/super/commit/b28702a657490db3c3e57d55368cdc01b1730751))
 
 
 ### Dependencies

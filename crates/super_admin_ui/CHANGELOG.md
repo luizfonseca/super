@@ -12,14 +12,14 @@
 
 ### Bug Fixes
 
-* the admin checks Super's releases, and calls itself Super ([d542c93](https://github.com/luizfonseca/super/commit/d542c938a851cc3f1f9024a0862bac7fd4d447cc))
+* the admin checks Super's releases, and calls itself Super ([75739eb](https://github.com/luizfonseca/super/commit/75739eb2eed71242c6ca87ab3d38889e18304fa3))
 
 ## [0.3.2](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.3.1...super_admin_ui-v0.3.2) (2026-10-26)
 
 
 ### Bug Fixes
 
-* proxy and upstream times in access logs and the admin ([422702b](https://github.com/luizfonseca/super/commit/422702b7839f1919b42787043977b25561ceeaab))
+* proxy and upstream times in access logs and the admin ([3c08331](https://github.com/luizfonseca/super/commit/3c08331e9a3b37daf610f949044cf2a5a9815629))
 
 ## [0.3.1](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.3.0...super_admin_ui-v0.3.1) (2026-10-26)
 
