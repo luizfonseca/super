@@ -166,6 +166,14 @@ impl ProxyHttp for Phases {
 
     async fn request_filter(&self, session: &mut Session, _ctx: &mut Ctx) -> Result<bool> {
         let path = session.req_header().uri.path().to_string();
+        // An upload refused before it's read
+        if path == "/too-large" {
+            let header = ResponseHeader::build(413, None)?;
+            session
+                .write_response_header(Box::new(header), true)
+                .await?;
+            return Ok(true);
+        }
         if path == "/answered" {
             let mut header = ResponseHeader::build(204, None)?;
             header.insert_header("x-answered", "yes")?;
@@ -759,6 +767,27 @@ async fn h3_request(
         received.extend_from_slice(&data.copy_to_bytes(data.remaining()));
     }
     (response.into_parts().0, Bytes::from(received))
+}
+
+/// An upload answered before it's read (a `413`): its client can still send it all (it isn't
+/// reset), then read the answer, as clients writing a body before reading do
+#[tokio::test]
+async fn test_uploads_refused_early_are_answered() {
+    let (addr, _) = listen(vec![upstream().await], false, false).await;
+    let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let (mut reading, mut writing) = socket.into_split();
+    let size = 8 << 20;
+    let head =
+        format!("POST /too-large HTTP/1.1\r\nhost: a.test\r\ncontent-length: {size}\r\n\r\n");
+    writing.write_all(head.as_bytes()).await.unwrap();
+    let part = vec![b'a'; 64 * 1024];
+    for sent in 0..size / part.len() {
+        let written = writing.write_all(&part).await;
+        assert!(written.is_ok(), "reset after {sent} parts: {written:?}");
+    }
+    let mut answer = vec![0; 12];
+    reading.read_exact(&mut answer).await.unwrap();
+    assert_eq!(answer, b"HTTP/1.1 413");
 }
 
 #[tokio::test]

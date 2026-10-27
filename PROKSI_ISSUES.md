@@ -105,3 +105,16 @@ Fix (as Super does): upstream settings `tls` (TLS on any port; port 443 by defau
 refused without `sni` or TLS). Pingora's connector looks for certificate authorities where the
 vendored OpenSSL was built, not where the system has them: load the system's (`openssl-probe`)
 or `verify` fails for every certificate.
+
+### Uploads refused early can reach clients as a reset connection — to verify
+
+When a request is answered before its body is read (`body_limit`'s `413`, `basic_auth`'s `401`),
+Super's HTTP/1.1 connections were closed while the client still sent the body: Linux then resets
+the connection, and clients that write their body before reading (hyper, so reqwest; browsers
+often) fail with a broken pipe instead of reading the answer. Super's test of it:
+`test_uploads_refused_early_are_answered` (it only fails on Linux). Check whether Pingora's
+HTTP/1.1 server lingers.
+
+Fix (as Super does, and nginx's lingering close): once its side of the connection is shut down,
+keep reading and discarding what the client sends, for 10s at most and 2s without anything, then
+close. Not for upgraded connections (tunnels), whose bytes are the upstream's.
