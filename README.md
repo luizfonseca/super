@@ -30,7 +30,7 @@ see [conformance](./conformance)):
 <!-- conformance:start -->
 | Specification | Suite | Passing |
 | --- | --- | --- |
-| HTTP/2: [RFC 9113](https://www.rfc-editor.org/rfc/rfc9113), [RFC 7541](https://www.rfc-editor.org/rfc/rfc7541) | [h2spec](https://github.com/summerwind/h2spec) | 146/146  |
+| HTTP/2: [RFC 9113](https://www.rfc-editor.org/rfc/rfc9113), [RFC 7541](https://www.rfc-editor.org/rfc/rfc7541) | [h2spec](https://github.com/summerwind/h2spec) | 146/146 |
 | HTTP/3: [RFC 9114](https://www.rfc-editor.org/rfc/rfc9114), [RFC 9204](https://www.rfc-editor.org/rfc/rfc9204), [RFC 9000](https://www.rfc-editor.org/rfc/rfc9000) and [RFC 9001](https://www.rfc-editor.org/rfc/rfc9001) | [h3spec](https://github.com/kazu-yamamoto/h3spec) | 64/77 (13 known to fail, [listed](conformance/expected/h3spec.txt)) |
 <!-- conformance:end -->
 
@@ -39,7 +39,7 @@ see [conformance](./conformance)):
 ## Contents
 
 - [About](#about)
-- [Conformance](#conformance)
+- [HTTP/* Compliance](#http-compliance)
 - [Features](#features)
 - [Quick start](#quick-start)
   - [Configuration File Handling](#configuration-file-handling)

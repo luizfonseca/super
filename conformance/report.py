@@ -26,15 +26,15 @@ RFC = "https://www.rfc-editor.org/rfc/rfc{}"
 # What each suite checks, as the README says it
 SUITES = {
     "h2spec": {
-        "spec": f"HTTP/2: [RFC 9113]({RFC.format(9113)}), HPACK [RFC 7541]({RFC.format(7541)})",
-        "suite": "[h2spec](https://github.com/summerwind/h2spec) {version}, strict",
+        "spec": f"HTTP/2: [RFC 9113]({RFC.format(9113)}), [RFC 7541]({RFC.format(7541)})",
+        "suite": "[h2spec](https://github.com/summerwind/h2spec)",
     },
     "h3spec": {
         "spec": (
-            f"HTTP/3: [RFC 9114]({RFC.format(9114)}), QPACK [RFC 9204]({RFC.format(9204)}), "
-            f"QUIC [RFC 9000]({RFC.format(9000)}) and [RFC 9001]({RFC.format(9001)})"
+            f"HTTP/3: [RFC 9114]({RFC.format(9114)}), [RFC 9204]({RFC.format(9204)}), "
+            f"[RFC 9000]({RFC.format(9000)}) and [RFC 9001]({RFC.format(9001)})"
         ),
-        "suite": "[h3spec](https://github.com/kazu-yamamoto/h3spec) {version}",
+        "suite": "[h3spec](https://github.com/kazu-yamamoto/h3spec)",
     },
 }
 
@@ -107,16 +107,13 @@ def record(suite: str, output: Path, version: str) -> int:
 
 
 def passing(result: dict) -> str:
-    """`passed/run`, with what's known to fail (linked to its list) and what was skipped"""
+    """`passed/run`, with what's known to fail (linked to its list)"""
     run = result["passed"] + result["failed"]
     text = f"{result['passed']}/{run}"
-    notes = []
-    if result["failed"]:
-        listed = f"conformance/expected/{result['suite']}.txt"
-        notes.append(f"{result['failed']} known to fail, [listed]({listed})")
-    if result["skipped"]:
-        notes.append(f"{result['skipped']} skipped")
-    return f"{text} ({', '.join(notes)})" if notes else text
+    if not result["failed"]:
+        return text
+    listed = f"conformance/expected/{result['suite']}.txt"
+    return f"{text} ({result['failed']} known to fail, [listed]({listed}))"
 
 
 def table() -> str:
@@ -129,8 +126,7 @@ def table() -> str:
         if not path.exists():
             sys.exit(f"no results for {suite}: run conformance/run.sh")
         result = json.loads(path.read_text())
-        name = about["suite"].format(version=result["version"])
-        rows.append(f"| {about['spec']} | {name} | {passing(result)} |")
+        rows.append(f"| {about['spec']} | {about['suite']} | {passing(result)} |")
     return "\n".join(rows)
 
 
