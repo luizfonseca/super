@@ -24,7 +24,7 @@ impl fmt::Display for CheckError {
 
 impl std::error::Error for CheckError {}
 
-/// Loads `path` (a file, or a directory with `proksi.hcl` or `proksi.yaml`) as Proksi's
+/// Loads `path` (a file, or a directory with `config.hcl` or `proksi.hcl`...) as Super's
 /// configuration, and sums it up
 pub fn check_file(path: &str) -> Result<String, CheckError> {
     let config = load_from_path(path, &Config::parse_from(["proksi"]), false)

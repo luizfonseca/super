@@ -7,7 +7,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/proksi-flow-dark.svg?v=1">
-  <img src="./docs/assets/proksi-flow-light.svg?v=1" alt="proksi.hcl and a terminal on one side; on the other, the routes and events, live: a container's host appears with a certificate, an edit to proksi.hcl applies without dropping connections, and a rule rate limits a request">
+  <img src="./docs/assets/proksi-flow-light.svg?v=1" alt="A configuration file and a terminal on one side; on the other, the routes and events, live: a container's host appears with a certificate, an edit to it applies without dropping connections, and a rule rate limits a request">
 </picture>
 
 
@@ -87,7 +87,7 @@ cargo install --git https://github.com/luizfonseca/super super_proxy
 docker run -d -p 80:80 -p 443:443 -v /path/to/config:/etc/proksi/ luizfonseca/super
 ```
 
-2. Create a configuration file named `proksi.hcl`
+2. Create a configuration file named `config.hcl`
 3. Add the following content to the file:
 
 ```hcl
@@ -124,10 +124,9 @@ host "mysite.localhost" {
 4. Run Super with your configuration:
 ```bash
 # Option 1: Specify exact config file path
-proksi -c /path/to/your/proksi.hcl
-super -c /path/to/your/config.yml
+super -c /path/to/your/config.hcl
 
-# Option 2: Specify directory (looks for proksi.hcl, proksi.yml, proksi.yaml)
+# Option 2: Specify directory (looks for config.hcl, config.yml, config.yaml)
 super -c /path/to/config-directory/
 
 # Option 3: No config (uses minimal defaults with Let's Encrypt disabled)
@@ -139,7 +138,7 @@ super
 Super supports flexible configuration file loading:
 
 - **Direct file paths**: Specify any filename with a supported extension (`.hcl`, `.yml`, `.yaml`)
-- **Directory paths**: Proksi will look for `proksi.hcl`, `proksi.yml`, or `proksi.yaml` in the specified directory
+- **Directory paths**: Super looks for `config.hcl`, `config.yml` or `config.yaml` in the specified directory, or for Proksi's `proksi.hcl`, `proksi.yml` or `proksi.yaml` when it has none
 - **No configuration**: If no `-c` flag is provided, Super uses minimal default settings with Let's Encrypt disabled and emits a warning
 
 

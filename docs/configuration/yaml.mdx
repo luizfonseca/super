@@ -26,7 +26,7 @@ To match a version of Proksi, use its tag instead of `main`, such as `.../proksi
 Proksi supports flexible configuration file loading via the `-c` flag:
 
 - **Direct file path**: `proksi -c /path/to/my-config.yml` - Load any YAML file directly
-- **Directory path**: `proksi -c /path/to/directory/` - Proksi looks for `proksi.yaml`, `proksi.yml`, or `proksi.hcl` in the directory
+- **Directory path**: `super -c /path/to/directory/` - Super looks for `config.yaml`, `config.yml`, or `config.hcl` in the directory (or for Proksi's `proksi.yaml`, `proksi.yml`, or `proksi.hcl` when it has none)
 - **No configuration**: `proksi` (without `-c`) - Uses minimal default configuration with Let's Encrypt disabled
 
 When no configuration is found, Proksi will emit a warning and start with minimal defaults that include:

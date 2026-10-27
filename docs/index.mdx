@@ -3,8 +3,8 @@ title: "Getting started"
 description: "A batteries-included reverse proxy and load balancer, built on Cloudflare Pingora."
 ---
 
-<Image theme="light" src="/assets/proksi-flow-light.svg" alt="proksi.hcl and a terminal on one side; on the other, Proksi's routes and events, live: a container's host appears with a certificate, an edit to proksi.hcl applies without dropping connections, and a rule rate limits a request" caption="Proksi reads hosts, upstreams and rules from proksi.hcl (and Docker labels, Kubernetes ingresses and its admin API), and applies changes live: new hosts get a Let's Encrypt certificate, edits apply without dropping connections, and rules apply blocks to the requests they match" />
-<Image theme="dark" src="/assets/proksi-flow-dark.svg" alt="proksi.hcl and a terminal on one side; on the other, Proksi's routes and events, live: a container's host appears with a certificate, an edit to proksi.hcl applies without dropping connections, and a rule rate limits a request" caption="Proksi reads hosts, upstreams and rules from proksi.hcl (and Docker labels, Kubernetes ingresses and its admin API), and applies changes live: new hosts get a Let's Encrypt certificate, edits apply without dropping connections, and rules apply blocks to the requests they match" />
+<Image theme="light" src="/assets/proksi-flow-light.svg" alt="config.hcl and a terminal on one side; on the other, Proksi's routes and events, live: a container's host appears with a certificate, an edit to config.hcl applies without dropping connections, and a rule rate limits a request" caption="Proksi reads hosts, upstreams and rules from config.hcl (and Docker labels, Kubernetes ingresses and its admin API), and applies changes live: new hosts get a Let's Encrypt certificate, edits apply without dropping connections, and rules apply blocks to the requests they match" />
+<Image theme="dark" src="/assets/proksi-flow-dark.svg" alt="config.hcl and a terminal on one side; on the other, Proksi's routes and events, live: a container's host appears with a certificate, an edit to config.hcl applies without dropping connections, and a rule rate limits a request" caption="Proksi reads hosts, upstreams and rules from config.hcl (and Docker labels, Kubernetes ingresses and its admin API), and applies changes live: new hosts get a Let's Encrypt certificate, edits apply without dropping connections, and rules apply blocks to the requests they match" />
 
 **Proksi** is a **simple**, **lightweight**, and easy-to-use proxy server that proxies HTTP, HTTPS and TCP, with certificates handled for you (Let's Encrypt, your own files, or Kubernetes secrets). It is designed to be used as a standalone proxy server or as a component in a larger system. Proksi is written in [Rust](https://www.rust-lang.org/) and uses [Cloudflare Pingora](https://blog.cloudflare.com/pingora-open-source) as its core networking library.
 
@@ -19,7 +19,7 @@ Create a configuration file or specify a direct file path:
 ```bash
 # Option 1: Create a directory and configuration file
 mkdir config
-touch config/proksi.hcl
+touch config/config.hcl
 
 # Option 2: Create a configuration file anywhere with any name
 touch my-proxy-config.yml
@@ -68,10 +68,10 @@ Then run Proksi with your configuration:
 
 ```bash
 # Direct file path (any filename)
-proksi -c ./config/proksi.hcl
+proksi -c ./config/config.hcl
 proksi -c ./my-proxy-config.yml
 
-# Directory path (looks for proksi.hcl, proksi.yml, proksi.yaml)
+# Directory path (looks for config.hcl, config.yml, config.yaml)
 proksi -c ./config/
 
 # No configuration (minimal defaults, Let's Encrypt disabled)
