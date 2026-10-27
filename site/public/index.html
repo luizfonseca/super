@@ -218,7 +218,8 @@
     .costs div { padding: 24px var(--pad); }
     .costs strong { display: block; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
     .costs div:last-child strong { color: var(--dim); }
-    .costs span { color: var(--muted); font-size: 14px; }
+    .costs span { display: block; color: var(--muted); font-size: 14px; }
+    .costs i { display: block; margin-top: 1px; font-style: normal; font-variant-caps: all-small-caps; letter-spacing: .04em; color: var(--dim); font-size: 14px; line-height: 1.2; }
     @media (max-width: 600px) { .costs { grid-template-columns: 1fr; } pre { font-size: 13px; } }
 
     /* Features */
@@ -441,9 +442,9 @@
         <p class="intro">And so fast they barely touch performance. Rules are compiled when the configuration loads and indexed by method, host and path, and each part of a request is read once, however many rules ask about it.</p>
       </div>
       <div class="grid costs reveal">
-        <div><strong>~170 ns</strong><span>for 100 rules</span></div>
-        <div><strong>~1.2 µs</strong><span>for 1,000 rules</span></div>
-        <div><strong>~14 µs</strong><span>for a whole request, for scale</span></div>
+        <div><strong>~170 ns</strong><span>for 100 rules</span><i>(that's 0.00017 milliseconds)</i></div>
+        <div><strong>~1.2 µs</strong><span>for 1,000 rules</span><i>(that's 0.0012 milliseconds)</i></div>
+        <div><strong>~14 µs</strong><span>for a whole request, for scale</span><i>(that's 0.014 milliseconds)</i></div>
       </div>
     </section>
 
