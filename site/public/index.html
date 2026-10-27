@@ -362,19 +362,11 @@
           <h2>Configuration? A <span style="white-space: nowrap">no-brainer.</span></h2>
           <p class="intro">Change it while Super runs, without losing a connection.</p>
           <ul class="tree">
-            <li><code>config.hcl</code>
+            <li><code>host <b class="s">"example.com"</b></code><span>HTTP redirected to HTTPS; HTTP/2 and HTTP/3 answered</span>
               <ul>
-                <li><code>lets_encrypt</code><span>A certificate for every host, renewed before it expires</span></li>
-                <li><code>host <b class="s">"example.com"</b></code><span>HTTP redirected to HTTPS; HTTP/2 and HTTP/3 answered</span>
-                  <ul>
-                    <li><code>location <b class="s">"/"</b></code><span>Every path of the host</span>
-                      <ul>
-                        <li><code>upstream</code> <code>upstream</code><span>Requests spread across both, retried when one fails</span></li>
-                        <li><code>rate_limit</code><span>100 requests a minute per visitor, then a 429</span></li>
-                      </ul>
-                    </li>
-                  </ul>
-                </li>
+                <li><code>lets_encrypt</code><span>A certificate, renewed before it expires</span></li>
+                <li><code>upstream</code> <code>upstream</code><span>Requests spread across both, retried when one fails</span></li>
+                <li><code>rate_limit</code><span>100 requests a minute per visitor, then a 429</span></li>
               </ul>
             </li>
           </ul>
@@ -390,17 +382,9 @@
           <ul class="tree">
             <li><code>request</code>
               <ul>
-                <li><code>server</code><span>Rules for every request, before any host</span>
-                  <ul>
-                    <li><code>host <b class="s">"shop.example.com"</b></code><span><b>scanners</b>: paths like /.env answered with a 404, never reaching the app</span>
-                      <ul>
-                        <li><code>location <b class="s">"/api"</b></code><span><b>limit writes</b>: anything but GET and HEAD, 60 a minute</span>
-                          <ul><li><code>upstream <b class="s">"api:4000"</b></code><span>What's left, forwarded</span></li></ul>
-                        </li>
-                      </ul>
-                    </li>
-                  </ul>
-                </li>
+                <li><code>rule <b class="s">"scanners"</b></code><span>/.env, /.git and the like answered with a 404, never reaching the app</span></li>
+                <li><code>rule <b class="s">"limit writes"</b></code><span>On /api, anything but GET and HEAD, 60 a minute</span></li>
+                <li><code>upstream <b class="s">"api:4000"</b></code><span>What's left, forwarded</span></li>
               </ul>
             </li>
           </ul>
