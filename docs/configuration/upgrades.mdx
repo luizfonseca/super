@@ -1,13 +1,13 @@
 ---
 title: "Restarts and upgrades"
-description: "Hosts (host blocks, routes, docker labels, the store, Kubernetes) are applied while Proksi runs."
+description: "Hosts (host blocks, routes, docker labels, the store, Kubernetes) are applied while Super runs."
 ---
 
-Hosts (`host` blocks, `routes`, docker labels, the store, Kubernetes) are applied while Proksi runs. Everything else (listening addresses, `server`, `logging`, `store`, ...) is read at startup, so changing it needs a new Proksi process. On Linux, that new process takes over without dropping a connection.
+Hosts (`host` blocks, `routes`, docker labels, the store, Kubernetes) are applied while Super runs. Everything else (listening addresses, `server`, `logging`, `store`, ...) is read at startup, so changing it needs a new Super process. On Linux, that new process takes over without dropping a connection.
 
 ## How it works (Linux)
 
-Proksi runs as two kinds of processes:
+Super runs as two kinds of processes:
 
 - a **supervisor**, the process you start (PID 1 in a container), which only starts and replaces the others;
 - a **worker**, started by the supervisor, which serves every request.
@@ -23,7 +23,7 @@ Addresses removed from the configuration are closed once the previous worker sto
 An upgrade happens:
 
 - when the configuration changes, with [auto reload](/configuration/auto-reload), and settings other than hosts changed;
-- when the supervisor receives `SIGHUP`. It starts the new worker from the binary and configuration on disk, so it's also how to move to a new version of Proksi in place:
+- when the supervisor receives `SIGHUP`. It starts the new worker from the binary and configuration on disk, so it's also how to move to a new version of Super in place:
 
 ```bash
 cp proksi-new /usr/local/bin/proksi
@@ -34,7 +34,7 @@ An invalid configuration is refused before anything is replaced: the current wor
 
 ## Stopping
 
-`SIGTERM` (`docker stop`, Kubernetes, `systemctl stop`) and `SIGINT` (Ctrl-C) are passed to the workers, which stop accepting and let their connections finish, for up to `server.shutdown_timeout_secs`. The supervisor exits once they have. Give the platform a little longer than that timeout before it kills Proksi:
+`SIGTERM` (`docker stop`, Kubernetes, `systemctl stop`) and `SIGINT` (Ctrl-C) are passed to the workers, which stop accepting and let their connections finish, for up to `server.shutdown_timeout_secs`. The supervisor exits once they have. Give the platform a little longer than that timeout before it kills Super:
 
 | Platform | Setting |
 | --- | --- |
@@ -47,7 +47,7 @@ An invalid configuration is refused before anything is replaced: the current wor
 
 ```ini
 [Service]
-ExecStart=/usr/local/bin/proksi -c /etc/proksi
+ExecStart=/usr/local/bin/super -c /etc/proksi
 ExecReload=/bin/kill -HUP $MAINPID
 TimeoutStopSec=35
 ```
@@ -56,7 +56,7 @@ The supervisor is the main process, so systemd keeps tracking the service while 
 
 ## Kubernetes
 
-In Kubernetes, configuration changes usually reach Proksi as a new pod: the helm chart restarts the pods when its `ConfigMap` changes, one at a time, and each stops as above. Upgrades in place apply when `auto_reload` is enabled and the mounted configuration changes.
+In Kubernetes, configuration changes usually reach Super as a new pod: the helm chart restarts the pods when its `ConfigMap` changes, one at a time, and each stops as above. Upgrades in place apply when `auto_reload` is enabled and the mounted configuration changes.
 
 ## Logs
 
@@ -64,6 +64,6 @@ Workers log as configured in `logging`. The supervisor writes a line to stderr w
 
 ## Other platforms
 
-The listening sockets can only be handed over on Linux. Elsewhere (macOS, or with `--daemon`), there's no supervisor: a settings change restarts Proksi in place, and its open connections are closed.
+The listening sockets can only be handed over on Linux. Elsewhere (macOS, or with `--daemon`), there's no supervisor: a settings change restarts Super in place, and its open connections are closed.
 
-The socket used for the handover is in the temporary directory (`proksi-upgrade-<id>.sock`), one per configuration path, so several Proksi instances can run on the same machine.
+The socket used for the handover is in the temporary directory (`proksi-upgrade-<id>.sock`), one per configuration path, so several Super instances can run on the same machine.

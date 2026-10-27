@@ -1,13 +1,13 @@
 ---
 title: "Migrating from Traefik"
-description: "Traefik and Proksi do the same job, organised a little differently."
+description: "Traefik and Super do the same job, organised a little differently."
 ---
 
-Traefik and Proksi do the same job, organised a little differently. This page maps one onto the other, for a configuration file, Docker and Kubernetes.
+Traefik and Super do the same job, organised a little differently. This page maps one onto the other, for a configuration file, Docker and Kubernetes.
 
 ## Concepts
 
-| Traefik | Proksi |
+| Traefik | Super |
 | --- | --- |
 | Entrypoint (`web`, `websecure`) | `server.http_address`, `server.https_address`, or a host's `listen` |
 | Router (`Host(...) && PathPrefix(...)`) | A `host` and its `location`s |
@@ -59,7 +59,7 @@ host "app.example.com" {
 
 ## Middlewares
 
-| Traefik middleware | Proksi |
+| Traefik middleware | Super |
 | --- | --- |
 | `basicAuth` | [`basic_auth { user, pass }`](/plugins/basic-auth) (one user) |
 | `rateLimit` | [`rate_limit { requests, per }`](/plugins/rate-limit), per client |
@@ -95,13 +95,13 @@ labels:
   proksi.port: "8080"
 ```
 
-Containers with the same `proksi.host` are load balanced. See [Docker swarm](/use-cases/docker-swarm) for the other labels. Labels can't set `tcp` blocks, `rate_limit` or `body_limit` yet: define those hosts in the configuration file, with the container's name as the upstream (`upstream "app:8080" {}`), which Proksi follows when the container is recreated.
+Containers with the same `proksi.host` are load balanced. See [Docker swarm](/use-cases/docker-swarm) for the other labels. Labels can't set `tcp` blocks, `rate_limit` or `body_limit` yet: define those hosts in the configuration file, with the container's name as the upstream (`upstream "app:8080" {}`), which Super follows when the container is recreated.
 
 ## Kubernetes
 
-Proksi is an ingress controller for standard `Ingress` resources (see [Kubernetes](/installation/kubernetes)). Traefik's `IngressRoute`, `Middleware` and `IngressRouteTCP` resources have no equivalent: they become `Ingress`es with annotations.
+Super is an ingress controller for standard `Ingress` resources (see [Kubernetes](/installation/kubernetes)). Traefik's `IngressRoute`, `Middleware` and `IngressRouteTCP` resources have no equivalent: they become `Ingress`es with annotations.
 
-| Traefik | Proksi |
+| Traefik | Super |
 | --- | --- |
 | `kubernetes.io/ingress.class: traefik` or `ingressClassName: traefik` | `ingressClassName: proksi` (the annotation works too) |
 | `traefik.ingress.kubernetes.io/router.middlewares` | `proksi.ingress/blocks`: written like the inside of a `location` (`rate_limit`, `headers`, `basic_auth`...), see below |
@@ -121,7 +121,7 @@ metadata:
 ```
 
 - **cert-manager** works as before: certificates come from the `tls` secrets of `Ingress`es, and are picked up when renewed. With an HTTP-01 solver, set its class to `proksi` (see [cert-manager](/installation/kubernetes#cert-manager)).
-- **Running both side by side**: install Proksi with a `NodePort` or another `LoadBalancer` address, move `Ingress`es one at a time by changing their class, and check them with `curl --resolve app.example.com:443:<proksi address>`. Then free ports 80 and 443 from Traefik (on k3s: `--disable=traefik`).
+- **Running both side by side**: install Super with a `NodePort` or another `LoadBalancer` address, move `Ingress`es one at a time by changing their class, and check them with `curl --resolve app.example.com:443:<proksi address>`. Then free ports 80 and 443 from Traefik (on k3s: `--disable=traefik`).
 - **Metrics**: enable the [admin API](/configuration/admin); it needs a `token` to listen on a non-loopback address, which Prometheus then scrapes with.
 
 ## TCP

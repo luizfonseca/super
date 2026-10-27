@@ -63,7 +63,7 @@ jwt {
 
 ### Good to know
 
-- Keys of a `jwks_url` are fetched in the background, never while a request waits: when Proksi starts, every 10 minutes, and when a token names a key not seen yet (at most once a minute), so rotated keys are picked up. If fetching fails, the keys fetched before are kept. Locations with the same `jwks_url` share one copy.
+- Keys of a `jwks_url` are fetched in the background, never while a request waits: when Super starts, every 10 minutes, and when a token names a key not seen yet (at most once a minute), so rotated keys are picked up. If fetching fails, the keys fetched before are kept. Locations with the same `jwks_url` share one copy.
 - Requests are refused with `401` and `WWW-Authenticate: Bearer` (no token) or `Bearer error="invalid_token"`. Why a token was refused is logged at the `debug` level, not told to the client.
 - The token is passed on to the upstream as it came.
 - The admin UI and API don't show the block's settings, as they can hold a secret.

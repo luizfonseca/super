@@ -1,27 +1,29 @@
 ---
 title: "Kubernetes"
-description: "Proksi can run as an ingress controller"
+description: "Super can run as an ingress controller"
 ---
 
-Proksi can run as an ingress controller: it serves the `Ingress` resources of its class, sending requests straight to the ready pods of each backend service. See [ADR 0005](/adrs/0005-kubernetes-ingress) for the design.
+Super can run as an ingress controller: it serves the `Ingress` resources of its class, sending requests straight to the ready pods of each backend service. See [ADR 0005](/adrs/0005-kubernetes-ingress) for the design.
 
 ## Installing
 
-With Helm, from a clone of the repository:
+Super is deployed with [Proksi](https://github.com/luizfonseca/proksi)'s chart and manifest, with Super's image. With Helm, from a clone of Proksi's repository:
 
 ```bash
-helm install proksi deploy/helm/proksi --namespace proksi --create-namespace
+helm install proksi deploy/helm/proksi --namespace proksi --create-namespace \
+  --set image.repository=luizfonseca/super --set image.tag=latest
 ```
 
-The chart's [values](https://github.com/luizfonseca/proksi/blob/main/deploy/helm/proksi/values.yaml) set the image, replicas, the `Service` type, the `IngressClass` (and whether it's the default one), the watched namespaces, and the rest of Proksi's configuration (`config`).
+The chart's [values](https://github.com/luizfonseca/proksi/blob/main/deploy/helm/proksi/values.yaml) set the image, replicas, the `Service` type, the `IngressClass` (and whether it's the default one), the watched namespaces, and the rest of Super's configuration (`config`).
 
 Or with a single manifest:
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/luizfonseca/proksi/main/deploy/kubernetes/proksi.yaml
+kubectl -n proksi set image deployment/proksi proksi=luizfonseca/super:latest
 ```
 
-This creates the `proksi` namespace with Proksi's `Deployment`, a `LoadBalancer` `Service` for ports 80 and 443, its permissions (read `Ingress`es, `IngressClass`es, `Service`s, `EndpointSlice`s and TLS `Secret`s), the `proksi` `IngressClass`, and a `ConfigMap` with Proksi's configuration:
+This creates the `proksi` namespace with Super's `Deployment`, a `LoadBalancer` `Service` for ports 80 and 443, its permissions (read `Ingress`es, `IngressClass`es, `Service`s, `EndpointSlice`s and TLS `Secret`s), the `proksi` `IngressClass`, and a `ConfigMap` with Super's configuration:
 
 ```hcl
 kubernetes {
@@ -36,13 +38,13 @@ The `kubernetes` block takes:
 | `enabled` | `false` | Watch the cluster |
 | `ingress_class` | `"proksi"` | The class of the `Ingress`es to serve |
 | `namespaces` | `[]` | Namespaces to watch (all of them by default) |
-| `publish_service` | | `namespace/name` of Proksi's `Service`: its address (load balancer, external IPs, or cluster IP) is written to the status of each `Ingress`, for tools waiting for one (`kubectl wait`, external-dns, Argo CD). The manifest sets `proksi/proksi` |
+| `publish_service` | | `namespace/name` of Super's `Service`: its address (load balancer, external IPs, or cluster IP) is written to the status of each `Ingress`, for tools waiting for one (`kubectl wait`, external-dns, Argo CD). The manifest sets `proksi/proksi` |
 
-Outside a cluster (for development), Proksi uses your kubeconfig.
+Outside a cluster (for development), Super uses your kubeconfig.
 
 ## Client addresses
 
-The `Service` of the chart and the manifest has `externalTrafficPolicy: Local`, so Proksi sees the address of each client (the default, `Cluster`, replaces it with a node's address, such as `10.42.0.1`). Cloud load balancers then send traffic only to nodes running Proksi. With k3s' ServiceLB, or DNS pointing at a node, that node must run Proksi (or set `service.externalTrafficPolicy: Cluster`, and lose the client's address).
+The `Service` of the chart and the manifest has `externalTrafficPolicy: Local`, so Super sees the address of each client (the default, `Cluster`, replaces it with a node's address, such as `10.42.0.1`). Cloud load balancers then send traffic only to nodes running Super. With k3s' ServiceLB, or DNS pointing at a node, that node must run Super (or set `service.externalTrafficPolicy: Cluster`, and lose the client's address).
 
 Behind a CDN or load balancer, requests come from its addresses, and the client is in `X-Forwarded-For`. List its networks in `server.trusted_proxies` so that the client is used for access logs, rate limits and `ip_filter`. For Cloudflare ([its current ranges](https://www.cloudflare.com/ips/)), in the chart's `config`:
 
@@ -59,7 +61,7 @@ server {
 }
 ```
 
-Only trust what's in front of Proksi: anyone else can send any `X-Forwarded-For`. Access logs show it as sent (`x_forwarded_for`) either way, and the proxy's own address as `remote_addr`.
+Only trust what's in front of Super: anyone else can send any `X-Forwarded-For`. Access logs show it as sent (`x_forwarded_for`) either way, and the proxy's own address as `remote_addr`.
 
 ## Ingresses
 
@@ -83,7 +85,7 @@ spec:
                   name: http
 ```
 
-- Each `host` is a host in Proksi, and each path a location. `Prefix` matches the path and everything below it (`/api` matches `/api` and `/api/users`, not `/apis`), `Exact` only the path, and `ImplementationSpecific` uses Proksi's patterns (`/users/:id`, `/static/*`).
+- Each `host` is a host in Super, and each path a location. `Prefix` matches the path and everything below it (`/api` matches `/api` and `/api/users`, not `/apis`), `Exact` only the path, and `ImplementationSpecific` uses Super's patterns (`/users/:id`, `/static/*`).
 - Upstreams are the ready pods of the backend service, for the port it targets. They follow the pods as they scale or restart. A service without ready pods answers `503`.
 - Rules of several `Ingress`es for the same host are merged. When two define the same path, the oldest `Ingress` keeps it and the other is logged.
 - A rule without a `host`, and `defaultBackend`, are served for any other name (`host "*"`).
@@ -121,7 +123,7 @@ spec:
             ingressClassName: proksi   # or `class: proksi`, which sets the annotation
 ```
 
-To prove a domain, cert-manager adds a temporary `Ingress` for `/.well-known/acme-challenge/<token>`, which Let's Encrypt requests over plain HTTP. On the HTTP port, Proksi proxies the challenges of locations of their own (under `/.well-known/acme-challenge/`) to their upstream, even for hosts with TLS, whose other paths are still redirected to HTTPS. Proksi's own Let's Encrypt challenges, when it orders a certificate itself, are answered first.
+To prove a domain, cert-manager adds a temporary `Ingress` for `/.well-known/acme-challenge/<token>`, which Let's Encrypt requests over plain HTTP. On the HTTP port, Super proxies the challenges of locations of their own (under `/.well-known/acme-challenge/`) to their upstream, even for hosts with TLS, whose other paths are still redirected to HTTPS. Super's own Let's Encrypt challenges, when it orders a certificate itself, are answered first.
 
 ## Plugins
 
@@ -160,8 +162,8 @@ metadata:
 
 Only labelled `Secret`s (and TLS ones) are watched. An `Ingress` with invalid blocks, or whose auth secret is missing, isn't served, and the reason is logged and recorded as a warning `Event` on it (`kubectl describe ingress`).
 
-Hosts can still come from Proksi's configuration file, docker labels or the store. When the same host comes from several places, the store wins over Kubernetes, which wins over docker labels and the configuration file.
+Hosts can still come from Super's configuration file, docker labels or the store. When the same host comes from several places, the store wins over Kubernetes, which wins over docker labels and the configuration file.
 
 ## More than one replica
 
-With more than one replica, use a shared store (Redis or Postgres) so certificates are ordered once and every replica serves them. With the memory store, Proksi logs a warning. The status of `Ingress`es is written by one replica at a time (through a lease in the store).
+With more than one replica, use a shared store (Redis or Postgres) so certificates are ordered once and every replica serves them. With the memory store, Super logs a warning. The status of `Ingress`es is written by one replica at a time (through a lease in the store).

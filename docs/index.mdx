@@ -1,12 +1,12 @@
 ---
 title: "Getting started"
-description: "A batteries-included reverse proxy and load balancer, built on Cloudflare Pingora."
+description: "A batteries-included reverse proxy and load balancer, built on hyper."
 ---
 
 <Image theme="light" src="/assets/super-flow-light.svg" alt="config.hcl and a terminal on one side; on the other, Super's routes and events, live: a container's host appears with a certificate, an edit to config.hcl applies without dropping connections, and a rule rate limits a request" caption="Super reads hosts, upstreams and rules from config.hcl (and Docker labels, Kubernetes ingresses and its admin API), and applies changes live: new hosts get a Let's Encrypt certificate, edits apply without dropping connections, and rules apply blocks to the requests they match" />
 <Image theme="dark" src="/assets/super-flow-dark.svg" alt="config.hcl and a terminal on one side; on the other, Super's routes and events, live: a container's host appears with a certificate, an edit to config.hcl applies without dropping connections, and a rule rate limits a request" caption="Super reads hosts, upstreams and rules from config.hcl (and Docker labels, Kubernetes ingresses and its admin API), and applies changes live: new hosts get a Let's Encrypt certificate, edits apply without dropping connections, and rules apply blocks to the requests they match" />
 
-**Proksi** is a **simple**, **lightweight**, and easy-to-use proxy server that proxies HTTP, HTTPS and TCP, with certificates handled for you (Let's Encrypt, your own files, or Kubernetes secrets). It is designed to be used as a standalone proxy server or as a component in a larger system. Proksi is written in [Rust](https://www.rust-lang.org/) and uses [Cloudflare Pingora](https://blog.cloudflare.com/pingora-open-source) as its core networking library.
+**Super** is a **simple**, **lightweight**, and easy-to-use proxy server that proxies HTTP, HTTPS and TCP, with certificates handled for you (Let's Encrypt, your own files, or Kubernetes secrets). It is designed to be used as a standalone proxy server or as a component in a larger system. Super is written in [Rust](https://www.rust-lang.org/): it's [Proksi](https://github.com/luizfonseca/proksi) rebuilt on [hyper](https://hyper.rs) instead of [Cloudflare Pingora](https://blog.cloudflare.com/pingora-open-source), and takes the same configuration.
 
 For a quick introduction, watch [a recording of a small configuration](https://asciinema.org/a/ORhG5Na2SHIBI8TH2mPPUHMVZ).
 
@@ -44,7 +44,7 @@ paths {
   # lets_encrypt = env("HOME")
 }
 
-# The hosts Proksi should handle
+# The hosts Super should handle
 # You might need to edit your /etc/hosts file here.
 host "mysite.localhost" {
   tls {
@@ -64,25 +64,25 @@ host "mysite.localhost" {
 }
 ```
 
-Then run Proksi with your configuration:
+Then run Super with your configuration:
 
 ```bash
 # Direct file path (any filename)
-proksi -c ./config/config.hcl
-proksi -c ./my-proxy-config.yml
+super -c ./config/config.hcl
+super -c ./my-proxy-config.yml
 
 # Directory path (looks for config.hcl, config.yml, config.yaml)
-proksi -c ./config/
+super -c ./config/
 
 # No configuration (minimal defaults, Let's Encrypt disabled)
-proksi
+super
 ```
 
 
 
 ## Features
 
-Of the many features **Proksi** offers is the ability to **load balance** to your infrastructure or **any IP** that supports your host configurations. Other features of **Proksi** also include:
+Of the many features **Super** offers is the ability to **load balance** to your infrastructure or **any IP** that supports your host configurations. Other features of **Super** also include:
 
 1. Automatic **Docker** and **Docker Swarm** service discovery through labels, and a **Kubernetes** ingress controller
 2. Built-in most common middlewares such as **OAuth**, **Rate Limiting**, **CDN** **Caching** and others

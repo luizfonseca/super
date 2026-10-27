@@ -1,9 +1,9 @@
 ---
 title: "Admin API and metrics"
-description: "Proksi can serve metrics and an admin API on an address of its own."
+description: "Super can serve metrics and an admin API on an address of its own."
 ---
 
-Proksi can serve metrics and an admin API on an address of its own. It's off unless the configuration has an `admin` block:
+Super can serve metrics and an admin API on an address of its own. It's off unless the configuration has an `admin` block:
 
 ```hcl
 admin {
@@ -38,7 +38,7 @@ host "admin.example.com" {
 }
 ```
 
-Like the other listeners, the `admin` block is read when Proksi starts: changing it restarts Proksi.
+Like the other listeners, the `admin` block is read when Super starts: changing it restarts Super.
 
 ### The requests being served
 
@@ -55,15 +55,15 @@ See [Admin UI](/admin-ui) for a tour, how-tos and good practices.
 The admin listener also serves a UI, at its address (`http://127.0.0.1:7555`):
 
 - **Overview**: requests by status, errors, latency (p50, p90, p99), CPU and memory, charted from the moment the page is opened (up to 15 minutes, kept by the page); the latest requests; and the instances sharing the store.
-- **Hosts**: every host served, from every source. A host's page shows its traffic as a graph, from clients to its locations and upstreams (each line green while traffic flows, amber or red with errors or an unhealthy upstream), its requests and latency, and its latest requests; then its locations, upstreams (with what they resolved to) and their health, plugins and rules. With a token that can write, hosts in the store can be created, changed and removed, and their rules built with a form (conditions as a tree of all of, any of and none of; actions with their settings), checked by Proksi as they're edited.
+- **Hosts**: every host served, from every source. A host's page shows its traffic as a graph, from clients to its locations and upstreams (each line green while traffic flows, amber or red with errors or an unhealthy upstream), its requests and latency, and its latest requests; then its locations, upstreams (with what they resolved to) and their health, plugins and rules. With a token that can write, hosts in the store can be created, changed and removed, and their rules built with a form (conditions as a tree of all of, any of and none of; actions with their settings), checked by Super as they're edited.
 - **Notifications**: each `notify` block, the hosts it's told about (each opening its page), how its last send went, and a button to send it a test. With a token that can write, blocks in the store can be created, changed and removed.
-- **Certificates** and **Server** (the settings Proksi started with).
+- **Certificates** and **Server** (the settings Super started with).
 
 Rules are shown without what can be a secret: the values headers, cookies and query parameters are compared with, the settings of `basic_auth`, `oauth2` and `forward_auth`, and the values of headers a rule adds.
 
-The UI signs in with a token's name and secret, exchanged for a session cookie (`HttpOnly`, `SameSite=Strict`, and `Secure` unless the address is loopback): the page never keeps the secret. Sessions end after 12 hours without a request, and when Proksi restarts. Changes made with a session must come from the UI's own pages: their `Origin` must match the address the admin listener is reached at (`Host`), or be listed in `trusted_origins`, for a proxy in front that changes `Host` ([details](/admin-ui/good-practices#behind-another-proxy)).
+The UI signs in with a token's name and secret, exchanged for a session cookie (`HttpOnly`, `SameSite=Strict`, and `Secure` unless the address is loopback): the page never keeps the secret. Sessions end after 12 hours without a request, and when Super restarts. Changes made with a session must come from the UI's own pages: their `Origin` must match the address the admin listener is reached at (`Host`), or be listed in `trusted_origins`, for a proxy in front that changes `Host` ([details](/admin-ui/good-practices#behind-another-proxy)).
 
-When the UI opens, the browser asks GitHub for Proksi's latest release, once, and shows a badge next to the version when there's a newer one. Proksi itself never contacts GitHub; without access to it, nothing is shown.
+When the UI opens, the browser asks GitHub for Super's latest release, once, and shows a badge next to the version when there's a newer one. Super itself never contacts GitHub; without access to it, nothing is shown.
 
 To reach it on a server, use a tunnel: `ssh -L 7555:127.0.0.1:7555 your-server`, or `kubectl port-forward`, then open `http://127.0.0.1:7555`. See [ADR 0008](/adrs/0008-admin-ui) for what comes next.
 
@@ -108,7 +108,7 @@ A scrape configuration with the token:
 
 ```yaml
 scrape_configs:
-  - job_name: proksi
+  - job_name: super
     authorization:
       credentials: "<token>"
     static_configs:
@@ -210,26 +210,26 @@ Without running Prometheus, `GET /api/v1/stats?window=60` returns what happened 
 curl -N -H "Authorization: Bearer $PROKSI_ADMIN_TOKEN" "http://127.0.0.1:7555/api/v1/stats/stream?window=10"
 ```
 
-`total` adds up every host and location. `process` is Proksi's own: CPU used over the window (`cpu_percent`, of one core), resident memory (`memory_bytes`), and in a container, its limits (cgroups v2; `null` otherwise).
+`total` adds up every host and location. `process` is Super's own: CPU used over the window (`cpu_percent`, of one core), resident memory (`memory_bytes`), and in a container, its limits (cgroups v2; `null` otherwise).
 
-The stats come from the same metrics, sampled every second while someone reads them, so they cost nothing more per request, and nothing at all when no one looks: 5 minutes after the last read, sampling stops until the next one (whose window then starts at that read). Samples are kept every second for a minute, then every 10 seconds up to 5 minutes: longer windows are within 10 seconds of the one asked for (`window_seconds` says which). Percentiles are interpolated within the histogram buckets (as Prometheus' `histogram_quantile` does), and `null` when there were no requests. Each Proksi instance has its own stats; to combine several, use Prometheus.
+The stats come from the same metrics, sampled every second while someone reads them, so they cost nothing more per request, and nothing at all when no one looks: 5 minutes after the last read, sampling stops until the next one (whose window then starts at that read). Samples are kept every second for a minute, then every 10 seconds up to 5 minutes: longer windows are within 10 seconds of the one asked for (`window_seconds` says which). Percentiles are interpolated within the histogram buckets (as Prometheus' `histogram_quantile` does), and `null` when there were no requests. Each Super instance has its own stats; to combine several, use Prometheus.
 
 ## Status, hosts and certificates
 
 | Endpoint | |
 | --- | --- |
-| `GET /api/v1/status` | Version, replica id, uptime, the addresses Proksi listens on, the store (its revision, the revision this instance applied, and the instances reporting to it), and hosts by source, with conflicts and invalid routes |
+| `GET /api/v1/status` | Version, replica id, uptime, the addresses Super listens on, the store (its revision, the revision this instance applied, and the instances reporting to it), and hosts by source, with conflicts and invalid routes |
 | `GET /api/v1/hosts` | Every host being served: its source (`file`, `docker`, `kubernetes`, `store`), TLS, locations, the plugins of each location (by name, without their settings, which can hold secrets), and upstreams as written, with what they came from (a docker label or Kubernetes service), their weight, and the addresses they resolved to with their health |
 | `GET /api/v1/tcp` | Every `tcp` block: its name as the stats and metrics name it (`block`), its host if any, the address it listens on, TLS (`none`, `terminate` or `passthrough`), the protocols (ALPN) it's chosen by, and its upstreams with the addresses they resolved to and their health |
 | `GET /api/v1/schema` | What rules and blocks accept, generated from the code that reads them: rule fields and the operators each takes, and each block's settings as JSON Schema (types, required, limits, descriptions) |
-| `GET /api/v1/server` | The settings read when Proksi starts (addresses, store, cache, Let's Encrypt, logging, workers, admin tokens' names and access), with their defaults. Secrets and credentials are never included |
+| `GET /api/v1/server` | The settings read when Super starts (addresses, store, cache, Let's Encrypt, logging, workers, admin tokens' names and access), with their defaults. Secrets and credentials are never included |
 | `GET /api/v1/certificates` | Every certificate: domain, issuer, whether it's self-signed, when it expires (`expires_at`, `days_left`), and which instance holds its lease while it's being ordered or renewed |
 
 With several instances sharing a store, `status` shows each instance and the routes revision it applied, so a change can be confirmed as applied everywhere.
 
 ## Routes
 
-Hosts can be added, changed and removed through the API. They're written to the [store](/configuration/redis), so every Proksi instance sharing it applies them, and the instance that received the request applies them right away:
+Hosts can be added, changed and removed through the API. They're written to the [store](/configuration/redis), so every Super instance sharing it applies them, and the instance that received the request applies them right away:
 
 | Endpoint | |
 | --- | --- |
@@ -252,15 +252,15 @@ curl -X PUT -H "Authorization: Bearer $PROKSI_ADMIN_TOKEN" -H "Content-Type: app
 ```
 
 - Hosts are validated like hosts from any other source; an invalid one is refused (`400`) with the reason.
-- `listen` can't be set: Proksi opens its ports when it starts, so hosts from the store are served on the default addresses.
+- `listen` can't be set: Super opens its ports when it starts, so hosts from the store are served on the default addresses.
 - A host in the store takes priority over the same host in the configuration file or docker labels. Removing it from the store brings the other one back.
-- With the memory store (the default), routes written through the API live as long as the Proksi process.
+- With the memory store (the default), routes written through the API live as long as the Super process.
 
 ### History and rollbacks
 
 The store keeps the last versions of each host (`store.history_per_host`, 50 by default), and every change with the name of the token that made it. A rollback is a change too: it makes an older version active again, and appears in the history.
 
-Before rolling back, the version is checked by this version of Proksi: if it's no longer valid (an option was removed, for example), the rollback is refused (`422`) with the reason.
+Before rolling back, the version is checked by this version of Super: if it's no longer valid (an option was removed, for example), the rollback is refused (`422`) with the reason.
 
 ### Concurrent changes
 

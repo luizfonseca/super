@@ -1,9 +1,9 @@
 ---
 title: "TCP"
-description: "Proksi can also forward TCP connections, for services that don't speak HTTP (databases, game servers, message brokers...)."
+description: "Super can also forward TCP connections, for services that don't speak HTTP (databases, game servers, message brokers...)."
 ---
 
-Proksi can also forward TCP connections, for services that don't speak HTTP (databases, game servers, message brokers...). A `tcp` block accepts connections on its own address and forwards them to its upstreams, with the same load balancing (`weight`) and health checks as HTTP.
+Super can also forward TCP connections, for services that don't speak HTTP (databases, game servers, message brokers...). A `tcp` block accepts connections on its own address and forwards them to its upstreams, with the same load balancing (`weight`) and health checks as HTTP.
 
 ## Plain TCP
 
@@ -105,7 +105,7 @@ host "secure.example.com" {
 }
 ```
 
-Proksi reads the name the client asks for from its first TLS message (the `ClientHello`), before any handshake. So passthrough blocks of different hosts can share an address, and they can share the HTTPS port: connections asking for a passthrough host are forwarded untouched, and every other name is handshaken by Proksi and served as usual (HTTPS, or `tcp` blocks with TLS terminated):
+Super reads the name the client asks for from its first TLS message (the `ClientHello`), before any handshake. So passthrough blocks of different hosts can share an address, and they can share the HTTPS port: connections asking for a passthrough host are forwarded untouched, and every other name is handshaken by Super and served as usual (HTTPS, or `tcp` blocks with TLS terminated):
 
 ```hcl
 host "secure.example.com" {
@@ -124,7 +124,7 @@ In a host with `tls = false`, a `tcp` block is plain TCP.
 ## Good to know
 
 - Each `tcp` block needs its own address: it can't be used by HTTP hosts, or by other `tcp` blocks. Blocks of different hosts with TLS are the exception: they can share an address with each other and with HTTPS hosts (see above).
-- `tcp` blocks come from the configuration file (not from docker labels or the store), and are set up when Proksi starts: changing them restarts Proksi.
+- `tcp` blocks come from the configuration file (not from docker labels or the store), and are set up when Super starts: changing them restarts Super.
 - Upstreams of a `tcp` block only take `weight`.
 - Each connection gets an [access log](/configuration/logging#access-logs) line when it closes, with its bytes in each direction.
 - A host with a `tcp` block on the HTTPS port takes every connection asking for its name, including names added later through docker labels or the store.

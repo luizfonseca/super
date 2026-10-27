@@ -9,6 +9,8 @@ Many reasons, but the main one is that I wanted to learn more about how proxies 
 
 I also wanted to build something that was easy to use and configure, and that could be extended with custom plugins AND offered out-of-the-box things that other projects needed the community to make.
 
-Also, Rust is a very good use case for proxies (lower CPU usage, lower memory usage etc) and Cloudflare Pingora is basically a blueprint that you can create things with.
+Also, Rust is a very good use case for proxies (lower CPU usage, lower memory usage etc).
+
+Super started as [Proksi](https://github.com/luizfonseca/proksi), built on Cloudflare Pingora: it's Proksi rebuilt on [hyper](https://hyper.rs), to see what a hyper core looks like and how it performs. Its configuration, plugins and stores are Proksi's; only the core changed, and it's faster for it (see [performance](/general/performance)).
 
 This project will be used in VPSes and I welcome you to explore and contribute as you wish.

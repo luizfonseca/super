@@ -25,7 +25,7 @@ CPU time to evaluate a scope's rules for a request matching none of them (the wo
 For scale, a request through proksi takes around 14µs of CPU. These numbers come from a benchmark run on every change to rules, which fails if they grow past their budget:
 
 ```bash
-cargo test --release -p proksi --bin proksi rules::bench -- --ignored --nocapture
+cargo test --release -p super_proxy --bin super rules::bench -- --ignored --nocapture
 ```
 
 ## Writing rules that stay cheap

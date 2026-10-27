@@ -1,19 +1,19 @@
 ---
 title: "Docker"
-description: "Similar to other proxies, Proksi can be run as a Docker container."
+description: "Similar to other proxies, Super can be run as a Docker container."
 ---
 
-Similar to other proxies, Proksi can be run as a Docker container. The following command will run the latest version of it:
+Similar to other proxies, Super can be run as a Docker container. The following command will run the latest version of it:
 
 ```bash
-docker run -d -p 80:80 -p 443:443 -v /path/to/config:/etc/proksi/ luizfonseca/proksi
+docker run -d -p 80:80 -p 443:443 -v /path/to/config:/etc/proksi/ luizfonseca/super
 ```
 
-Images are tagged with each release (`luizfonseca/proksi:proksi-v0.8.0`) and `latest`.
+Images are tagged with each release (`luizfonseca/super:super-v0.4.0`) and `latest`.
 
-The image is available for `amd64` and `arm64`, and ships a static binary (it doesn't depend on the image's libraries). Proksi only opens the ports its hosts need, so publish the ports of your configuration: `80` and `443` by default, or the `listen` addresses of your hosts.
+The image is available for `amd64` and `arm64`, and ships a static binary (it doesn't depend on the image's libraries). Super only opens the ports its hosts need, so publish the ports of your configuration: `80` and `443` by default, or the `listen` addresses of your hosts.
 
-If you are using `docker-compose.yml` to manage your services, you can configure Proksi as your main host-mode container without even creating a `config.hcl` file.
+If you are using `docker-compose.yml` to manage your services, you can configure Super as your main host-mode container without even creating a `config.hcl` file.
 
 ```yaml
 services:
@@ -31,9 +31,9 @@ services:
       PROKSI_LETS_ENCRYPT__EMAIL: "contact@email.net"
 
       PROKSI_PATHS__LETS_ENCRYPT: "/etc/proksi/certs"
-    image: luizfonseca/proksi:latest
+    image: luizfonseca/super:latest
     networks:
-      # Any service in the same network will be able to communicate with Proksi
+      # Any service in the same network will be able to communicate with Super
       - web
     ports:
       - "80:80"
@@ -56,7 +56,7 @@ And then you can expose any service by using the `proksi.enabled` and `proksi.ho
 
 ```yaml
 services:
-  # ... (include Proksi configuration)
+  # ... (include Super configuration)
   web:
     image: nginxdemos/hello
 

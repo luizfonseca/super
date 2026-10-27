@@ -66,7 +66,7 @@ When a location and a rule both limit a response, the slower limit wins.
 
 ### Good to know
 
-- Each location (and each rule) has its own limits, kept in memory on each Proksi server. They start over when the configuration changes.
+- Each location (and each rule) has its own limits, kept in memory on each Super server. They start over when the configuration changes.
 - A client that stops downloading gets its `burst` back at `rate`, and costs no memory once it has.
 - Clients are identified as for [`rate_limit`](/plugins/rate-limit): behind a proxy or load balancer, list it in `server.trusted_proxies`.
 - Request bodies (uploads) aren't limited.

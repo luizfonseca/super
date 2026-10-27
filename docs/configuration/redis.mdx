@@ -3,11 +3,11 @@ title: "Distributed configuration with Redis/Dragonfly"
 description: "Most use cases require a distributed configuration setup."
 ---
 
-Most use cases require a distributed configuration setup. This can be achieved by using Redis or Dragonfly as a distributed cache for storing certificates and distributing Proksi instances across multiple servers.
+Most use cases require a distributed configuration setup. This can be achieved by using Redis or Dragonfly as a distributed cache for storing certificates and distributing Super instances across multiple servers.
 
 ## Redis Configuration
 
-To configure Proksi to use Redis as a distributed cache, you can set the following in your `config.hcl` file:
+To configure Super to use Redis as a distributed cache, you can set the following in your `config.hcl` file:
 
 **config.hcl**
 ```hcl
@@ -17,7 +17,7 @@ store {
 }
 ```
 
-This will then use Redis as backend storage for certificates, challenges and routes, shared by every Proksi instance. [Rate limits](/plugins/rate-limit) are shared too.
+This will then use Redis as backend storage for certificates, challenges and routes, shared by every Super instance. [Rate limits](/plugins/rate-limit) are shared too.
 
 ## Routes
 
