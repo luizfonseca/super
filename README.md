@@ -7,13 +7,13 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/proksi-flow-dark.svg?v=1">
-  <img src="./docs/assets/proksi-flow-light.svg?v=1" alt="proksi.hcl and a terminal on one side; on the other, Proksi's routes and events, live: a container's host appears with a certificate, an edit to proksi.hcl applies without dropping connections, and a rule rate limits a request">
+  <img src="./docs/assets/proksi-flow-light.svg?v=1" alt="proksi.hcl and a terminal on one side; on the other, the routes and events, live: a container's host appears with a certificate, an edit to proksi.hcl applies without dropping connections, and a rule rate limits a request">
 </picture>
 
 
-# Proksi
+# Super
 
-Proksi is a simple, lightweight, and easy-to-use proxy server that automatically handles SSL, HTTP, **TCP** and DNS traffic. It is designed to be used as a standalone proxy server or as a component in a larger system. Proksi is written in [Rust](https://www.rust-lang.org/) and uses [Pingora](https://github.com/cloudflare/pingora) as its core networking library.
+Super is a simple, lightweight, and easy-to-use proxy server that automatically handles SSL, HTTP, **TCP** and DNS traffic. It is designed to be used as a standalone proxy server or as a component in a larger system. Super is [Proksi](https://github.com/luizfonseca/proksi) rebuilt on [hyper](https://hyper.rs) instead of [Pingora](https://github.com/cloudflare/pingora), written in [Rust](https://www.rust-lang.org/), and takes the same configuration: see [PROKSI.md](./PROKSI.md) for what differs, and the benchmarks.
 
 
 <p>
@@ -55,7 +55,7 @@ Proksi is a simple, lightweight, and easy-to-use proxy server that automatically
 
 # Features
 
-Of the many features Proksi offers is the ability to load balance to your infrastructure or any IP that supports your host configurations. Other features of Proksi also include:
+Of the many features Super offers is the ability to load balance to your infrastructure or any IP that supports your host configurations. Other features of Super also include:
 
 - Automatic Docker and Docker Swarm service discovery through labels
 - Kubernetes Ingress Controller, drop-in replacement to Traefik.
@@ -74,17 +74,17 @@ See the [admin UI documentation](https://docs.proksi.info/admin-ui) for a tour o
 
 # Quick start
 
-1. Install Proksi:
+1. Install Super:
 
 ```bash
 # Option 1: Download the latest release for your system
-# https://github.com/luizfonseca/proksi/releases
+# https://github.com/luizfonseca/super/releases
 
 # Option 2: Install it with cargo
-cargo install proksi
+cargo install --git https://github.com/luizfonseca/super super_proxy
 
 # Option 3: Run it with Docker
-docker run -d -p 80:80 -p 443:443 -v /path/to/config:/etc/proksi/ luizfonseca/proksi
+docker run -d -p 80:80 -p 443:443 -v /path/to/config:/etc/proksi/ luizfonseca/super
 ```
 
 2. Create a configuration file named `proksi.hcl`
@@ -101,7 +101,7 @@ paths {
   lets_encrypt = "./"
 }
 
-# The hosts Proksi should handle
+# The hosts Super should handle
 # You might need to edit your /etc/hosts file here.
 host "mysite.localhost" {
   # Will create a self-signed certificate for mysite.localhost
@@ -121,38 +121,38 @@ host "mysite.localhost" {
 }
 ```
 
-4. Run Proksi with your configuration:
+4. Run Super with your configuration:
 ```bash
 # Option 1: Specify exact config file path
 proksi -c /path/to/your/proksi.hcl
-proksi -c /path/to/your/config.yml
+super -c /path/to/your/config.yml
 
 # Option 2: Specify directory (looks for proksi.hcl, proksi.yml, proksi.yaml)
-proksi -c /path/to/config-directory/
+super -c /path/to/config-directory/
 
 # Option 3: No config (uses minimal defaults with Let's Encrypt disabled)
-proksi
+super
 ```
 
 ## Configuration File Handling
 
-Proksi supports flexible configuration file loading:
+Super supports flexible configuration file loading:
 
 - **Direct file paths**: Specify any filename with a supported extension (`.hcl`, `.yml`, `.yaml`)
 - **Directory paths**: Proksi will look for `proksi.hcl`, `proksi.yml`, or `proksi.yaml` in the specified directory
-- **No configuration**: If no `-c` flag is provided, Proksi uses minimal default settings with Let's Encrypt disabled and emits a warning
+- **No configuration**: If no `-c` flag is provided, Super uses minimal default settings with Let's Encrypt disabled and emits a warning
 
 
 # Configuration
 
-Proksi is configured through **HCL** (recommended), **YAML** or **environment variables**. Below is everything you need to get going; the [documentation](https://docs.proksi.info) goes into more detail.
+Super is configured through **HCL** (recommended), **YAML** or **environment variables**. Below is everything you need to get going; the [documentation](https://docs.proksi.info) goes into more detail.
 
 ## Server
 
 All of these are optional, the values below are the defaults:
 
 ```hcl
-service_name = "proksi"
+service_name = "super"
 
 # Defaults to 80% of the available CPUs (at least 2)
 worker_threads = 4
@@ -168,7 +168,7 @@ server {
   # X-Forwarded-For (for rate limits and access logs)
   # trusted_proxies = ["10.0.0.0/8"]
 
-  # When stopping, open connections get this long to finish (proksi stops as soon as they
+  # When stopping, open connections get this long to finish (super stops as soon as they
   # have). Give docker or kubernetes a little longer before they kill it, e.g.
   # `stop_grace_period: 35s` in compose, or `terminationGracePeriodSeconds: 35`.
   # shutdown_timeout_secs = 30
@@ -194,7 +194,7 @@ logging {
 
 ## Hosts and locations
 
-Every host Proksi accepts requests for is a `host` block. The label is matched against the `Host` header (case-insensitive), and it's also the name certificates are issued for.
+Every host Super accepts requests for is a `host` block. The label is matched against the `Host` header (case-insensitive), and it's also the name certificates are issued for.
 
 Inside a host, `location` blocks decide where requests go based on their path:
 
@@ -216,14 +216,14 @@ host "api.example.com" {
 
 ### Ports, plain HTTP, and any host
 
-Each host decides where it's served with `listen`. Without it, a host is served on `server.https_address` (443), and HTTP requests are redirected to it. Proksi only opens the ports its hosts need.
+Each host decides where it's served with `listen`. Without it, a host is served on `server.https_address` (443), and HTTP requests are redirected to it. Super only opens the ports its hosts need.
 
-A host with `tls = false` is served over plain HTTP (on `server.http_address` without `listen`), and no certificate is issued for it. This is useful behind another proxy or load balancer that already handles TLS, or when running Proksi on an IP address.
+A host with `tls = false` is served over plain HTTP (on `server.http_address` without `listen`), and no certificate is issued for it. This is useful behind another proxy or load balancer that already handles TLS, or when running Super on an IP address.
 
 `host "*"` serves requests for any name that doesn't have a host of its own (it needs `tls = false`, as certificates are issued per name):
 
 ```hcl
-# Plain HTTP on port 8080 for any name: Proksi doesn't open 443 at all
+# Plain HTTP on port 8080 for any name: Super doesn't open 443 at all
 host "*" {
   tls = false
   listen = ["0.0.0.0:8080"]
@@ -296,7 +296,7 @@ host "app.example.com" {
 
 ## Certificates
 
-With Let's Encrypt enabled, Proksi issues and renews a certificate for every host automatically:
+With Let's Encrypt enabled, Super issues and renews a certificate for every host automatically:
 
 ```hcl
 lets_encrypt {
@@ -336,7 +336,7 @@ host "example.com" {
 }
 ```
 
-The `pem` file holds the certificate followed by its intermediates (a "fullchain"), which proksi sends to clients along with it. Both files are checked every 10 seconds: a renewed certificate is served without restarting proksi (a certificate and a key that don't match yet, while they're being replaced, are skipped until they do).
+The `pem` file holds the certificate followed by its intermediates (a "fullchain"), which Super sends to clients along with it. Both files are checked every 10 seconds: a renewed certificate is served without restarting Super (a certificate and a key that don't match yet, while they're being replaced, are skipped until they do).
 
 ## Headers
 
@@ -492,7 +492,7 @@ cache {
 
 ## Docker
 
-Proksi can find your containers (or Docker Swarm services) through labels, without touching the configuration file:
+Super can find your containers (or Docker Swarm services) through labels, without touching the configuration file:
 
 ```hcl
 docker {
@@ -514,22 +514,26 @@ services:
       proksi.ssl_certificate.self_signed_on_failure: "true"
 ```
 
-Routes from labels are kept when a container stops (requests get a `503`) and are removed when Proksi restarts.
+Routes from labels are kept when a container stops (requests get a `503`) and are removed when Super restarts.
 
 ## Kubernetes
 
-Proksi can run as a Kubernetes ingress controller, serving the `Ingress` resources of class `proksi` and sending requests straight to the ready pods of each service:
+Super can run as a Kubernetes ingress controller, serving the `Ingress` resources of class `proksi` and sending requests straight to the ready pods of each service. Proksi's chart and manifest deploy it with Super's image:
 
 ```bash
-helm install proksi deploy/helm/proksi --namespace proksi --create-namespace
-# or: kubectl apply -f https://raw.githubusercontent.com/luizfonseca/proksi/main/deploy/kubernetes/proksi.yaml
+# From a clone of https://github.com/luizfonseca/proksi
+helm install proksi deploy/helm/proksi --namespace proksi --create-namespace \
+  --set image.repository=luizfonseca/super --set image.tag=latest
+# or
+kubectl apply -f https://raw.githubusercontent.com/luizfonseca/proksi/main/deploy/kubernetes/proksi.yaml
+kubectl -n proksi set image deployment/proksi proksi=luizfonseca/super:latest
 ```
 
 See the [Kubernetes documentation](https://docs.proksi.info/installation/kubernetes) for paths, TLS and running more than one replica.
 
 ## Running many servers
 
-To run more than one Proksi server with the same routes and certificates, use a shared store. Routes in the store take priority over the configuration file and docker labels, and every server syncs them every `sync_interval_secs`:
+To run more than one Super server with the same routes and certificates, use a shared store. Routes in the store take priority over the configuration file and docker labels, and every server syncs them every `sync_interval_secs`:
 
 ```hcl
 store {
@@ -540,11 +544,11 @@ store {
 }
 ```
 
-SQLite and Postgres need Proksi to be built with the `store-sqlite` / `store-postgres` features.
+SQLite and Postgres need Super to be built with the `store-sqlite` / `store-postgres` features.
 
 ## Metrics
 
-With an `admin` block, Proksi serves Prometheus metrics (requests, latency and upstream errors per host, location and upstream) on an address of its own:
+With an `admin` block, Super serves Prometheus metrics (requests, latency and upstream errors per host, location and upstream) on an address of its own:
 
 ```hcl
 admin {
@@ -561,7 +565,7 @@ Without a `token` block, `listen` must be a loopback address. The same address s
 
 ## Auto reload
 
-Proksi can watch the configuration file and apply changes on the fly. Changes to hosts are applied without restarting; an invalid file is ignored (and logged), so Proksi keeps running:
+Super can watch the configuration file and apply changes on the fly. Changes to hosts are applied without restarting; an invalid file is ignored (and logged), so Super keeps running:
 
 ```hcl
 auto_reload {
@@ -624,11 +628,11 @@ See the [features](https://docs.proksi.info/general/features) page for what's av
 
 
 # Documentation
-Documentation for Proksi can be found at [https://docs.proksi.info](https://docs.proksi.info) which is also available in the [docs](./docs/) folder of this repository (served by [docs.page](https://docs.page)).
+Super takes Proksi's configuration, so Proksi's documentation applies as it is: [https://docs.proksi.info](https://docs.proksi.info), also in the [docs](./docs/) folder of this repository (served by [docs.page](https://docs.page)). What differs is in [PROKSI.md](./PROKSI.md).
 
 
 # Contributing
-We welcome contributions to Proksi. If you have any **suggestions** or **ideas**, please feel free to open an issue or a pull request on the GitHub repository and follow the guidelines in [the Contributing guide](./CONTRIBUTING.md).
+We welcome contributions to Super. If you have any **suggestions** or **ideas**, please feel free to open an issue or a pull request on the [GitHub repository](https://github.com/luizfonseca/super).
 
 # License
-Proksi is licensed under the [MIT License](https://github.com/luizfonseca/proksi/blob/main/LICENSE), the [Apache License 2.0](https://github.com/luizfonseca/proksi/blob/main/LICENSE-APACHE) and is free to use and modify.
+Super is licensed under the MIT License or the [Apache License 2.0](./LICENSE), at your option, and is free to use and modify.
