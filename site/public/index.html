@@ -239,8 +239,7 @@
 
     /* Start */
     .start { text-align: center; padding-block: 96px; }
-    .start h2 { margin-inline: auto; }
-    .start .intro { margin: 0 auto 30px; }
+    .start h2 { margin: 0 auto 32px; }
     .start pre { text-align: left; max-width: 760px; margin: 0 auto 30px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 
     footer { border-top: 1px solid var(--line); padding-block: 26px; color: var(--dim); font-size: 14px; display: flex; flex-wrap: wrap; gap: 18px; justify-content: space-between; }
@@ -459,7 +458,6 @@
     <section class="start pad" id="start">
       <div class="reveal">
         <h2>Running in a minute.</h2>
-        <p class="intro">Write a <code>config.hcl</code>, then start Super with Docker, a single binary, or cargo.</p>
         <pre><code><span class="c"># Docker</span>
 docker run -d -p 80:80 -p 443:443 -v ./config:/etc/superconfig luizfonseca/super
 
