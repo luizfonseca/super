@@ -67,6 +67,7 @@ pub(crate) fn upstream_request(
     if upgrade || has_hop_by_hop(&upstream.headers) {
         remove_hop_by_hop(&mut upstream.headers, upgrade);
     }
+    join_cookies(&mut upstream.headers);
     // The phases see one form, whatever the client sent and the upstream speaks: the host in
     // `Host`, and a path (`set_target` gives HTTP/2 upstreams theirs once they ran)
     set_target(&mut upstream, false);
@@ -138,6 +139,28 @@ fn http2_target(request: &mut RequestHeader) {
 pub(crate) fn downstream_response(response: &mut ResponseHeader, upgrade: bool) {
     if upgrade || has_hop_by_hop(&response.headers) {
         remove_hop_by_hop(&mut response.headers, upgrade);
+    }
+    // They have no content, nor its length (RFC 9110 §8.6), whatever the upstream sent
+    if response.status.is_informational() || response.status == http::StatusCode::NO_CONTENT {
+        response.headers.remove(header::CONTENT_LENGTH);
+    }
+}
+
+/// `Cookie` in one field: HTTP/2 and HTTP/3 clients may split it in several (crumbs), which an
+/// HTTP/1.1 upstream must get joined by `; ` (RFC 9113 §8.2.3, RFC 9114 §4.2.1)
+fn join_cookies(headers: &mut HeaderMap) {
+    let mut crumbs = headers.get_all(header::COOKIE).iter();
+    if crumbs.next().is_none() || crumbs.next().is_none() {
+        return;
+    }
+    let joined = headers
+        .get_all(header::COOKIE)
+        .iter()
+        .map(http::HeaderValue::as_bytes)
+        .collect::<Vec<_>>()
+        .join(&b"; "[..]);
+    if let Ok(joined) = http::HeaderValue::from_bytes(&joined) {
+        headers.insert(header::COOKIE, joined);
     }
 }
 

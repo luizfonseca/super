@@ -214,9 +214,14 @@ pub(crate) async fn handle<A: HttpServerApp>(
     app: Arc<A>,
     connection: Arc<Connection>,
     shutdown: ShutdownWatch,
-    request: http::Request<RequestBody>,
+    mut request: http::Request<RequestBody>,
     (active, stopping): (impl Send + 'static, bool),
 ) -> Result<hyper::Response<ResponseBody>, Unanswered> {
+    if !host_of_target(&mut request) {
+        let mut refused = hyper::Response::new(ResponseBody::empty());
+        *refused.status_mut() = http::StatusCode::BAD_REQUEST;
+        return Ok(refused);
+    }
     let (sender, mut response) = oneshot::channel();
     let mut session = ServerSession::new(request, connection, sender);
     if stopping {
@@ -247,6 +252,28 @@ pub(crate) async fn handle<A: HttpServerApp>(
         answered.body_mut().drive(handling);
     }
     Ok(answered)
+}
+
+/// The request's host, from one place (RFC 9112 §3.2, §3.2.2): an HTTP/1.1 request with an
+/// absolute-form target (`GET http://a.test/`) has the target's host as `Host`, whatever `Host`
+/// said. `false` for a request with more than one `Host`, or an invalid one: it gets a `400`.
+fn host_of_target(request: &mut http::Request<RequestBody>) -> bool {
+    let mut hosts = request.headers().get_all(http::header::HOST).iter();
+    let first = hosts.next();
+    if hosts.next().is_some() || first.is_some_and(|host| host.to_str().is_err()) {
+        return false;
+    }
+    if request.version() > http::Version::HTTP_11 {
+        return true;
+    }
+    let Some(authority) = request.uri().authority() else {
+        return true;
+    };
+    let Ok(host) = http::HeaderValue::from_str(authority.as_str()) else {
+        return false;
+    };
+    request.headers_mut().insert(http::header::HOST, host);
+    true
 }
 
 /// The requests in progress on a connection, and how many started: counted, without reading
