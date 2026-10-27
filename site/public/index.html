@@ -99,6 +99,8 @@
     nav ul { display: flex; gap: 26px; list-style: none; margin: 0; padding: 0; font-size: 15px; }
     nav ul a { color: var(--muted); text-decoration: none; transition: color .2s; }
     nav ul a:hover { color: var(--text); }
+    nav ul { align-items: center; }
+    nav .github svg { display: block; width: 20px; height: 20px; fill: currentColor; }
     @media (max-width: 720px) { nav ul li.hide-small { display: none; } nav ul { gap: 16px; } }
 
     /* Hero */
@@ -130,6 +132,20 @@
     }
     .button:hover { transform: translateY(-1px); }
     .button.primary { background: var(--text); color: var(--bg); }
+    /* Get started: a light running around its border */
+    @property --angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+    .button.glow { position: relative; isolation: isolate; box-shadow: 0 0 0 1px rgba(255, 255, 255, .1), 0 10px 40px -12px rgba(255, 90, 31, .55); transition: transform .2s, box-shadow .3s; }
+    .button.glow::before {
+      content: ""; position: absolute; inset: -3px; z-index: -1; border-radius: 13px; padding: 2px;
+      background: conic-gradient(from var(--angle), transparent 0 62%, rgba(255, 90, 31, .9) 80%, #ffd2bd 88%, transparent 96%);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+      mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+      animation: orbit 3.2s linear infinite;
+    }
+    .button.glow:hover { box-shadow: 0 0 0 1px rgba(255, 255, 255, .15), 0 12px 50px -8px rgba(255, 90, 31, .8); }
+    .button.glow span { transition: transform .25s; }
+    .button.glow:hover span { transform: translateX(3px); }
+    @keyframes orbit { to { --angle: 360deg; } }
     .button.ghost { border: 1px solid var(--line); background: rgba(13, 15, 18, .7); }
     .button.ghost:hover { border-color: #33363f; }
     .install {
@@ -265,7 +281,7 @@
         <li class="hide-small"><a href="#rules">Rules</a></li>
         <li class="hide-small"><a href="#specs">Spec compliant</a></li>
         <li><a href="https://docs.superproxy.dev">Docs</a></li>
-        <li><a href="https://github.com/luizfonseca/super">GitHub</a></li>
+        <li><a class="github" href="https://github.com/luizfonseca/super" aria-label="GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.82 1.19 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg></a></li>
       </ul>
     </div>
   </nav>
@@ -276,7 +292,7 @@
       <h1>The reverse proxy, <em>without the overhead</em></h1>
       <p class="lede">Automatic HTTPS, load balancing, plugins, HTTP/3 and an admin UI. Fast enough to forget it's there.</p>
       <div class="actions">
-        <a class="button primary" href="https://docs.superproxy.dev">Get started</a>
+        <a class="button primary glow" href="https://docs.superproxy.dev">Get started <span aria-hidden="true">→</span></a>
         <a class="button ghost" href="https://github.com/luizfonseca/super">View on GitHub</a>
       </div>
       <div class="install">
