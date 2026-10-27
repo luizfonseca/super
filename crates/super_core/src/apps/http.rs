@@ -58,9 +58,15 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
     });
     let options = app.server_options().cloned().unwrap_or_default();
     let activity = Arc::new(Activity::new());
+    // An HTTP/1.1 connection becomes a tunnel with an upgrade: closed, it doesn't linger
+    let upgraded = Arc::new(AtomicBool::new(false));
     let service = {
         let (app, shutdown, activity) = (app.clone(), shutdown.clone(), activity.clone());
+        let upgraded = upgraded.clone();
         service_fn(move |request: hyper::Request<Incoming>| {
+            if request.headers().contains_key(http::header::UPGRADE) {
+                upgraded.store(true, Ordering::Relaxed);
+            }
             let active = activity.start();
             let stopping = activity.is_stopping();
             handle(
@@ -72,9 +78,9 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
             )
         })
     };
-    let io = TokioIo::new(stream);
     let mut shutdown = shutdown.clone();
     if http2 {
+        let io = TokioIo::new(stream);
         let mut builder = hyper::server::conn::http2::Builder::new(TokioExecutor::new());
         builder
             .timer(TokioTimer::new())
@@ -98,6 +104,7 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
     if let Some(timeout) = options.header_read_timeout {
         builder.header_read_timeout(timeout);
     }
+    let io = TokioIo::new(super::linger::Lingering::new(stream, upgraded));
     let connection = builder.serve_connection(io, service).with_upgrades();
     drive(connection, &activity, &options, &mut shutdown, false).await;
 }

@@ -10,6 +10,7 @@ use crate::{
 
 mod http;
 mod http3;
+mod linger;
 
 pub use http::serve;
 pub(crate) use http::{MAX_HEADERS, MAX_HEADER_SIZE};
