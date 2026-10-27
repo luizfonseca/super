@@ -304,8 +304,8 @@
 
   <main>
     <div class="grid stats reveal">
-      <div class="stat"><strong>275<small>k</small></strong><span>requests/s on 4 threads</span></div>
-      <div class="stat"><strong>13.6<small>µs</small></strong><span>CPU per request</span><i>(that's 0.0136 milliseconds)</i></div>
+      <div class="stat"><strong>278<small>k</small></strong><span>requests/s on 4 threads</span></div>
+      <div class="stat"><strong>13.5<small>µs</small></strong><span>CPU per request</span><i>(that's 0.0135 milliseconds)</i></div>
       <div class="stat"><strong>6<small>MB</small></strong><span>memory when idle</span></div>
       <div class="stat"><strong>21<small>GB/s</small></strong><span>throughput on file transfers</span></div>
     </div>
@@ -319,32 +319,35 @@
         <div class="chart reveal">
           <h3>Requests per second</h3>
           <p>HTTP, 4 threads. Higher is better.</p>
-          <div class="bar"><label>nginx <b>371k</b></label><div class="track"><div class="fill" style="--w:100%"></div></div></div>
-          <div class="bar super"><label>Super <b>275k</b></label><div class="track"><div class="fill" style="--w:74%"></div></div></div>
-          <div class="bar"><label>Traefik <b>104k</b></label><div class="track"><div class="fill" style="--w:28%"></div></div></div>
-          <div class="bar"><label>Proksi <b>77k</b></label><div class="track"><div class="fill" style="--w:21%"></div></div></div>
-          <div class="bar"><label>Caddy <b>76k</b></label><div class="track"><div class="fill" style="--w:20%"></div></div></div>
+          <div class="bar"><label>nginx <b>343k</b></label><div class="track"><div class="fill" style="--w:100%"></div></div></div>
+          <div class="bar super"><label>Super <b>278k</b></label><div class="track"><div class="fill" style="--w:81%"></div></div></div>
+          <div class="bar"><label>Traefik <b>104k</b></label><div class="track"><div class="fill" style="--w:30%"></div></div></div>
+          <div class="bar"><label>Pingap <b>102k</b></label><div class="track"><div class="fill" style="--w:30%"></div></div></div>
+          <div class="bar"><label>Proksi <b>77k</b></label><div class="track"><div class="fill" style="--w:22%"></div></div></div>
+          <div class="bar"><label>Caddy <b>74k</b></label><div class="track"><div class="fill" style="--w:22%"></div></div></div>
         </div>
         <div class="chart reveal">
           <h3>CPU per request</h3>
           <p>HTTP, 4 threads. Lower is better.</p>
-          <div class="bar"><label>nginx <b>8.8 µs</b></label><div class="track"><div class="fill" style="--w:18%"></div></div></div>
-          <div class="bar super"><label>Super <b>13.6 µs</b></label><div class="track"><div class="fill" style="--w:27%"></div></div></div>
-          <div class="bar"><label>Traefik <b>37.3 µs</b></label><div class="track"><div class="fill" style="--w:74%"></div></div></div>
-          <div class="bar"><label>Proksi <b>44.1 µs</b></label><div class="track"><div class="fill" style="--w:88%"></div></div></div>
-          <div class="bar"><label>Caddy <b>50.2 µs</b></label><div class="track"><div class="fill" style="--w:100%"></div></div></div>
+          <div class="bar"><label>nginx <b>9.2 µs</b></label><div class="track"><div class="fill" style="--w:18%"></div></div></div>
+          <div class="bar super"><label>Super <b>13.5 µs</b></label><div class="track"><div class="fill" style="--w:26%"></div></div></div>
+          <div class="bar"><label>Pingap <b>34.3 µs</b></label><div class="track"><div class="fill" style="--w:67%"></div></div></div>
+          <div class="bar"><label>Traefik <b>37.2 µs</b></label><div class="track"><div class="fill" style="--w:73%"></div></div></div>
+          <div class="bar"><label>Proksi <b>43.7 µs</b></label><div class="track"><div class="fill" style="--w:85%"></div></div></div>
+          <div class="bar"><label>Caddy <b>51.3 µs</b></label><div class="track"><div class="fill" style="--w:100%"></div></div></div>
         </div>
         <div class="chart reveal">
           <h3>Memory under load</h3>
           <p>4 threads. Lower is better.</p>
-          <div class="bar super"><label>Super <b>14 MB</b></label><div class="track"><div class="fill" style="--w:33%"></div></div></div>
-          <div class="bar"><label>Proksi <b>20 MB</b></label><div class="track"><div class="fill" style="--w:47%"></div></div></div>
-          <div class="bar"><label>nginx <b>25 MB</b></label><div class="track"><div class="fill" style="--w:58%"></div></div></div>
-          <div class="bar"><label>Caddy <b>25 MB</b></label><div class="track"><div class="fill" style="--w:58%"></div></div></div>
-          <div class="bar"><label>Traefik <b>43 MB</b></label><div class="track"><div class="fill" style="--w:100%"></div></div></div>
+          <div class="bar super"><label>Super <b>13 MB</b></label><div class="track"><div class="fill" style="--w:30%"></div></div></div>
+          <div class="bar"><label>Pingap <b>17 MB</b></label><div class="track"><div class="fill" style="--w:39%"></div></div></div>
+          <div class="bar"><label>Proksi <b>20 MB</b></label><div class="track"><div class="fill" style="--w:45%"></div></div></div>
+          <div class="bar"><label>Caddy <b>25 MB</b></label><div class="track"><div class="fill" style="--w:57%"></div></div></div>
+          <div class="bar"><label>nginx <b>26 MB</b></label><div class="track"><div class="fill" style="--w:59%"></div></div></div>
+          <div class="bar"><label>Traefik <b>44 MB</b></label><div class="track"><div class="fill" style="--w:100%"></div></div></div>
         </div>
       </div>
-      <p class="note pad">Linux arm64, 8 CPUs, with <a href="https://github.com/hatoo/oha">oha</a> and 50 connections; nginx 1.26.3, Traefik 3.7.16, Caddy 2.11.7, Proksi 0.17.4. All measured in one run, each proxy alone in turn, the median of three rounds. One machine runs the proxy, the upstream and the load: a comparison, not production throughput. <a href="https://github.com/luizfonseca/super/blob/main/PROKSI.md#benchmarks">How it's measured</a>.</p>
+      <p class="note pad">Linux arm64, 8 CPUs, with <a href="https://github.com/hatoo/oha">oha</a> and 50 connections; nginx 1.26.3, Traefik 3.7.16, Caddy 2.11.7, Pingap 0.16.1, Proksi 0.17.4. All measured in one run, each proxy alone in turn, the median of three rounds. One machine runs the proxy, the upstream and the load: a comparison, not production throughput. <a href="https://github.com/luizfonseca/super/blob/main/PROKSI.md#benchmarks">How it's measured</a>.</p>
     </section>
 
     <section id="config">
