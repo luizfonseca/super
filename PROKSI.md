@@ -29,6 +29,12 @@ Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What 
 - **Upstreams over TLS**: `tls = true` reaches an upstream over TLS on any port (Proksi only
   does on port 443), and `verify = true` checks its certificate (Proksi never does). Super
   also trusts the system's certificate authorities. Proksi refuses both settings.
+- **What HTTP's RFCs require of a proxy** (Super's own table, `crates/super/tests/spec.rs`):
+  requests to upstreams carry `Via` (`1.1 super`, `2 super`...); an `OPTIONS` or `TRACE` with
+  `Max-Forwards: 0` is answered by Super, and `Max-Forwards` is decremented otherwise; a request
+  with two `Host` fields gets a `400`; an HTTP/1.1 absolute-form target (`GET http://a.test/`)
+  is routed by its host, not `Host`'s; HTTP/2 and HTTP/3 `Cookie` fields reach upstreams joined
+  in one; and a `204` has no `Content-Length`.
 - **Header names** of HTTP/1.1 responses: those of upstreams keep their case, as Proksi; those
   Super adds are Title-Case (`X-Request-Id`), where Proksi keeps them as written. HTTP/2 is
   lowercase in both.

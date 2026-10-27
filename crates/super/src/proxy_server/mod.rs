@@ -14,6 +14,7 @@ pub mod handshakes;
 pub mod http3;
 pub mod http_proxy;
 pub mod https_proxy;
+pub mod intermediary;
 pub mod listener;
 pub use super_plugins::respond;
 pub mod services;

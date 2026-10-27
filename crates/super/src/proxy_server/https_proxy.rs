@@ -253,6 +253,11 @@ impl ProxyHttp for Router {
             session.set_read_timeout(Some(read.min(body)));
         }
 
+        // An `OPTIONS` or `TRACE` going no further than Super is its to answer (RFC 9110 §7.6.2)
+        if super::intermediary::answer_last_hop(session).await? {
+            return Ok(true);
+        }
+
         // The location's building blocks, in order: a block can answer the request (e.g. a `401`)
         // The location's rules, then its blocks
         if let Some(rules) = &route_container.rules {
@@ -492,6 +497,9 @@ impl ProxyHttp for Router {
             }
             upstream_request.insert_header(X_REAL_IP, forwarded.real_ip)?;
         }
+
+        // `Max-Forwards` and `Via` (RFC 9110 §7.6), before the location's headers
+        super::intermediary::forward(session.req_header(), upstream_request);
 
         // The headers of the upstream chosen, parsed when its location was built
         let added = ctx
