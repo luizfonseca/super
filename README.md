@@ -32,7 +32,7 @@ see [conformance](./conformance)):
 | --- | --- | --- |
 | HTTP/2: [RFC 9113](https://www.rfc-editor.org/rfc/rfc9113), [RFC 7541](https://www.rfc-editor.org/rfc/rfc7541) | [h2spec](https://github.com/summerwind/h2spec) | 146/146 |
 | HTTP/3: [RFC 9114](https://www.rfc-editor.org/rfc/rfc9114), [RFC 9204](https://www.rfc-editor.org/rfc/rfc9204), [RFC 9000](https://www.rfc-editor.org/rfc/rfc9000) and [RFC 9001](https://www.rfc-editor.org/rfc/rfc9001) | [h3spec](https://github.com/kazu-yamamoto/h3spec) | 64/77 (13 known to fail, [listed](conformance/expected/h3spec.txt)) |
-| HTTP as a proxy: [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110), [RFC 9112](https://www.rfc-editor.org/rfc/rfc9112), [RFC 9113](https://www.rfc-editor.org/rfc/rfc9113) and [RFC 9114](https://www.rfc-editor.org/rfc/rfc9114) | [Super's own](crates/super/tests/spec.rs) | 23/23 |
+| Proxy: [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110), [RFC 9112](https://www.rfc-editor.org/rfc/rfc9112), [RFC 9113](https://www.rfc-editor.org/rfc/rfc9113) and [RFC 9114](https://www.rfc-editor.org/rfc/rfc9114) | [super](crates/super/tests/spec.rs) | 23/23 |
 <!-- conformance:end -->
 
 
