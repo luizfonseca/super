@@ -7,7 +7,7 @@ pub fn deprecation_warnings(config: &Config) -> Vec<&'static str> {
     let mut warnings = vec![];
     if !config.routes.is_empty() {
         warnings.push(
-            "`routes = [...]` is deprecated and will be removed in a future major version, use `host` blocks instead (https://docs.proksi.info/#/configuration/hcl/)",
+            "`routes = [...]` is deprecated and will be removed in a future major version, use `host` blocks instead (https://superproxy.dev/configuration/hcl)",
         );
     }
     warnings

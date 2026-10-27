@@ -10,6 +10,7 @@ import {
   type UpstreamForm,
   toForm,
 } from '../features/hosts/hostForm';
+import { DOCS } from '../lib/links';
 import { navigate, onLink } from '../router';
 import { RulesEditor } from '../features/rules/RuleEditor';
 import { Alert } from '../components/ui/Alert';
@@ -34,7 +35,7 @@ function RulesSection({ rules, onChange }: { rules: unknown[]; onChange: (rules:
 
 /** How rules work, in the docs */
 const RULES_DOCS = (
-  <a class="hover:underline" href="https://docs.proksi.info/rules" target="_blank" rel="noreferrer">
+  <a class="hover:underline" href={`${DOCS}/rules`} target="_blank" rel="noreferrer">
     How rules work
   </a>
 );

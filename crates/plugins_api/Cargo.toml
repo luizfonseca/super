@@ -10,7 +10,7 @@ categories = ["web-programming::http-server", "network-programming"]
 authors = ["The Super Contributors"]
 
 readme = "../../README.md"
-homepage = "https://github.com/luizfonseca/super"
+homepage = "https://superproxy.dev"
 repository = "https://github.com/luizfonseca/super"
 rust-version.workspace = true
 workspace = "../.."

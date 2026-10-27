@@ -1,6 +1,6 @@
 # super_admin_ui
 
-The admin UI of [Proksi](https://github.com/luizfonseca/proksi), served by its admin listener ([ADR 0008](https://docs.proksi.info/adrs/0008-admin-ui)): a Preact application styled with [daisyUI](https://daisyui.com) (on Tailwind), built into `dist/` and embedded by `build.rs`.
+The admin UI of [Super](https://github.com/luizfonseca/super), served by its admin listener ([ADR 0008](https://superproxy.dev/adrs/0008-admin-ui)): a Preact application styled with [daisyUI](https://daisyui.com) (on Tailwind), built into `dist/` and embedded by `build.rs`.
 
 ```bash
 npm ci
