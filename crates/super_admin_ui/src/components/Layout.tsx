@@ -33,13 +33,13 @@ function Brand({ version }: { version?: string }) {
   return (
     <a class="flex shrink-0 items-center gap-2.5 text-lg font-semibold" href="/overview" onClick={onLink}>
       <img class="w-7" src="/logo.svg" alt="" />
-      Proksi
+      Super
       {version && <small class="font-mono text-xs font-medium text-base-content/45">v{version}</small>}
     </a>
   );
 }
 
-/** A newer release of Proksi than this one, opening its notes */
+/** A newer release of Super than this one, opening its notes */
 function NewRelease({ version }: { version?: string }) {
   const release = useNewRelease(version);
   if (!release) return null;
@@ -103,7 +103,7 @@ function Account({ session, onSignOut }: { session: Session; onSignOut: () => vo
               <Book /> Documentation
             </a>
             <a class="flex items-center gap-2 text-base-content/70 hover:text-base-content" href={GITHUB} target="_blank" rel="noreferrer">
-              <External /> Proksi on GitHub
+              <External /> Super on GitHub
             </a>
           </div>
           <div class="mt-2.5 border-t border-base-300 pt-2">
@@ -117,13 +117,13 @@ function Account({ session, onSignOut }: { session: Session; onSignOut: () => vo
   );
 }
 
-/** Under every page: the version, and where to read about Proksi or ask about it */
+/** Under every page: the version, and where to read about Super or ask about it */
 function Footer({ version }: { version?: string }) {
   const link = 'hover:text-base-content';
   return (
     <footer class="border-t border-base-300">
       <div class={`${WIDTH} flex flex-wrap items-center gap-x-5 gap-y-1 py-5 text-xs text-base-content/45`}>
-        <span>Proksi{version && ` v${version}`}</span>
+        <span>Super{version && ` v${version}`}</span>
         <a class={link} href={DOCS} target="_blank" rel="noreferrer">
           Documentation
         </a>

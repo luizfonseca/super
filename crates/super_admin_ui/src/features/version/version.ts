@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'preact/hooks';
 
-// The newest release of Proksi, asked of GitHub by the browser once each time the UI is opened.
-// Proksi itself never asks: without access to GitHub, nothing is shown.
+// The newest release of Super, asked of GitHub by the browser once each time the UI is opened.
+// Super itself never asks: without access to GitHub, nothing is shown.
 
-const RELEASES = 'https://api.github.com/repos/luizfonseca/proksi/releases?per_page=20';
+const RELEASES = 'https://api.github.com/repos/luizfonseca/super/releases?per_page=20';
 
-/** Proksi's own releases: the crates are released apart (`proksi_store-v0.17.0`) */
-const TAG = /^proksi-v(\d+\.\d+\.\d+)$/;
+/** Super's own releases: the crates are released apart (`super_store-v0.3.2`) */
+const TAG = /^super-v(\d+\.\d+\.\d+)$/;
 
 export type Release = { version: string; url: string };
 
 type GithubRelease = { tag_name: string; html_url: string; draft: boolean; prerelease: boolean };
 
-/** The newest of Proksi's releases among GitHub's answer (newest first), if any */
+/** The newest of Super's releases among GitHub's answer (newest first), if any */
 export function newest(answer: unknown): Release | null {
   if (!Array.isArray(answer)) return null;
   for (const release of answer as GithubRelease[]) {

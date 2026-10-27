@@ -208,12 +208,12 @@ export function Host({ name }: { name: string }) {
                   </Stack>
                   <Section label="Upstreams">
                     {location.upstreams.length === 0 ? (
-                      <None>Answered by Proksi (no upstream)</None>
+                      <None>Answered by Super (no upstream)</None>
                     ) : (
                       location.upstreams.map((upstream) => <UpstreamRow upstream={upstream} />)
                     )}
                     {location.mirror && (
-                      <Hint block class="mt-1.5" title="Copies of the requests sent to the mirror since Proksi started">
+                      <Hint block class="mt-1.5" title="Copies of the requests sent to the mirror since Super started">
                         Mirror: {location.mirror.sent} sent · {location.mirror.failed} failed
                         {location.mirror.dropped > 0 && ` · ${location.mirror.dropped} dropped (too many at once)`}
                         {location.mirror.too_large > 0 && ` · ${location.mirror.too_large} not copied (body too large)`}

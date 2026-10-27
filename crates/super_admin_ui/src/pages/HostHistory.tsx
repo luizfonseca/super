@@ -110,7 +110,7 @@ export function HostHistory({ name }: { name: string }) {
       {changes.length === 0 ? (
         <Panel>
           <Empty title="No changes recorded yet">
-            The history starts with the next change to this host. Changes made before Proksi kept versions aren't recorded.
+            The history starts with the next change to this host. Changes made before versions were kept aren't recorded.
           </Empty>
         </Panel>
       ) : (

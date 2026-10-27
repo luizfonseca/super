@@ -63,7 +63,7 @@ export function Hosts() {
     <>
       <PageHead
         title="Hosts"
-        description="Every host Proksi serves, from every source."
+        description="Every host Super serves, from every source."
         actions={canWrite && <Button variant="primary" href="/hosts/new">New host</Button>}
       />
       <Loaded data={data}>

@@ -27,7 +27,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: (session: Session) => void 
     <div class="grid min-h-screen place-items-center p-6">
       <Panel class="w-full max-w-[380px] p-7">
         <img class="w-10" src="/logo.svg" alt="" />
-        <h1 class="mt-3.5 mb-1 text-lg font-semibold">Sign in to Proksi</h1>
+        <h1 class="mt-3.5 mb-1 text-lg font-semibold">Sign in to Super</h1>
         <p class="mb-4 text-sm text-base-content/60">
           Use the name and <code>secret</code> of a <code>token</code> block in your <code>admin</code> configuration.
         </p>
