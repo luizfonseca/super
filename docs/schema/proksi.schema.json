@@ -2279,11 +2279,11 @@
     "RouteSslPath": {
       "properties": {
         "key": {
-          "description": "Path to the certificate .key file (e.g. `/etc/proksi/certs/my-host.key`)",
+          "description": "Path to the certificate .key file (e.g. `/etc/superconfig/certs/my-host.key`)",
           "type": "string"
         },
         "pem": {
-          "description": "Path to the certificate .pem file (e.g. `/etc/proksi/certs/my-host.pem`)",
+          "description": "Path to the certificate .pem file (e.g. `/etc/superconfig/certs/my-host.pem`)",
           "type": "string"
         }
       },
@@ -4480,7 +4480,7 @@
   },
   "$id": "https://raw.githubusercontent.com/luizfonseca/proksi/main/docs/schema/proksi.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The main configuration struct.\nA configuration file (YAML, TOML or through ENV) will be parsed into this struct.\nExample:\n\n```yaml\n\n# Example configuration file\nservice_name: \"proksi\"\nlogging:\n  level: \"INFO\"\n  access_logs_enabled: true\n  error_logs_enabled: false\nletsencrypt:\n  enabled: true\n  email: \"youremail@example.com\"\n  production: true\npaths:\n  config_file: \"/etc/proksi/config.toml\"\n  lets_encrypt: \"/etc/proksi/letsencrypt\"\nroutes:\n  - host: \"example.com\"\n    match_with:\n      path:\n        patterns:\n         - \"/api/v1/*\"\n    headers:\n      add:\n        - name: \"X-Forwarded-For\"\n          value: \"<value>\"\n        - name: \"X-Api-Version\"\n          value: \"1.0\"\n      remove:\n        - name: \"Server\"\n    upstreams:\n      - ip: \"10.1.2.24/24\"\n        port: 3000\n        network: \"public\"\n      - ip: \"10.1.2.23/24\"\n        port: 3000\n        network: \"shared\"\n```",
+  "description": "The main configuration struct.\nA configuration file (YAML, TOML or through ENV) will be parsed into this struct.\nExample:\n\n```yaml\n\n# Example configuration file\nservice_name: \"proksi\"\nlogging:\n  level: \"INFO\"\n  access_logs_enabled: true\n  error_logs_enabled: false\nletsencrypt:\n  enabled: true\n  email: \"youremail@example.com\"\n  production: true\npaths:\n  config_file: \"/etc/superconfig/config.toml\"\n  lets_encrypt: \"/etc/superconfig/letsencrypt\"\nroutes:\n  - host: \"example.com\"\n    match_with:\n      path:\n        patterns:\n         - \"/api/v1/*\"\n    headers:\n      add:\n        - name: \"X-Forwarded-For\"\n          value: \"<value>\"\n        - name: \"X-Api-Version\"\n          value: \"1.0\"\n      remove:\n        - name: \"Server\"\n    upstreams:\n      - ip: \"10.1.2.24/24\"\n        port: 3000\n        network: \"public\"\n      - ip: \"10.1.2.23/24\"\n        port: 3000\n        network: \"shared\"\n```",
   "properties": {
     "admin": {
       "anyOf": [

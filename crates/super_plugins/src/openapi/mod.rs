@@ -1,4 +1,4 @@
-//! `openapi { file = "/etc/proksi/api.json" }`: only lets through requests in an API's
+//! `openapi { file = "/etc/superconfig/api.json" }`: only lets through requests in an API's
 //! contract, as an `OpenAPI` 3 spec (JSON or YAML) says: a path of the spec (`404` otherwise), one
 //! of its methods (`405`, with `Allow`), and its required query and header parameters (`400`).
 //! Bodies aren't checked.

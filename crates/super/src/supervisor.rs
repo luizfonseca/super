@@ -226,7 +226,7 @@ impl Workers {
 
     fn start_upgrade(&mut self, exe: &Path, args: &[OsString]) -> Result<u32, anyhow::Error> {
         // Checked first: the current worker stops accepting once it has handed its sockets over
-        let config = crate::config::load("/etc/proksi/configs").map_err(|err| {
+        let config = crate::config::load(crate::config::default_directory()).map_err(|err| {
             anyhow::anyhow!("invalid configuration, keeping the current one: {err}")
         })?;
         crate::config::listeners::listeners(&config).map_err(anyhow::Error::msg)?;

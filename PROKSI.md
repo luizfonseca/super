@@ -23,6 +23,9 @@ Proksi while porting it are in [`PROKSI_ISSUES.md`](./PROKSI_ISSUES.md).
 
 Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What still differs:
 
+- **Where Super looks**: without `-c`, in `/etc/superconfig`, then Proksi's `/etc/proksi` (and
+  `/etc/proksi/configs`, where Proksi looks); certificates go to `/etc/superconfig/letsencrypt`,
+  unless only Proksi's `/etc/proksi/letsencrypt` has some.
 - **Configuration files**: in a directory, Super reads `config.hcl` (or `config.yml`,
   `config.yaml`), and Proksi's `proksi.hcl` (or `proksi.yml`, `proksi.yaml`) when there's no
   `config.*` file. Proksi only reads `proksi.*`: keep that name for a directory both read.

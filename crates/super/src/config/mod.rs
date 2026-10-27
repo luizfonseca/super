@@ -250,10 +250,21 @@ pub struct Path {
 impl Default for Path {
     fn default() -> Self {
         Self {
-            lets_encrypt: PathBuf::from("/etc/proksi/letsencrypt"),
+            lets_encrypt: default_lets_encrypt(),
             openapi: None,
         }
     }
+}
+
+/// Where certificates are kept: Super's directory, or Proksi's when only it has them (kept,
+/// rather than issued again)
+fn default_lets_encrypt() -> PathBuf {
+    let proksi = std::path::Path::new("/etc/proksi/letsencrypt");
+    let ours = std::path::Path::new("/etc/superconfig/letsencrypt");
+    if !ours.exists() && proksi.exists() {
+        return proksi.to_path_buf();
+    }
+    ours.to_path_buf()
 }
 
 impl Path {
@@ -376,10 +387,10 @@ pub use super_plugins::RoutePlugin;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
 pub struct RouteSslPath {
-    /// Path to the certificate .key file (e.g. `/etc/proksi/certs/my-host.key`)
+    /// Path to the certificate .key file (e.g. `/etc/superconfig/certs/my-host.key`)
     pub key: PathBuf,
 
-    /// Path to the certificate .pem file (e.g. `/etc/proksi/certs/my-host.pem`)
+    /// Path to the certificate .pem file (e.g. `/etc/superconfig/certs/my-host.pem`)
     pub pem: PathBuf,
 }
 
@@ -779,8 +790,8 @@ pub(crate) enum Command {
 ///   email: "youremail@example.com"
 ///   production: true
 /// paths:
-///   config_file: "/etc/proksi/config.toml"
-///   lets_encrypt: "/etc/proksi/letsencrypt"
+///   config_file: "/etc/superconfig/config.toml"
+///   lets_encrypt: "/etc/superconfig/letsencrypt"
 /// routes:
 ///   - host: "example.com"
 ///     match_with:
@@ -909,7 +920,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             command: None,
-            config_path: Some(Cow::Borrowed("/etc/proksi/config")),
+            config_path: Some(Cow::Borrowed("/etc/superconfig")),
             service_name: Cow::Borrowed("proksi"),
             server: ServerCfg {
                 http3: None,
@@ -1063,6 +1074,26 @@ pub(crate) const CONFIG_NAMES: [&str; 2] = ["config", "proksi"];
 
 /// The extensions of configuration files, in the order they're merged (the last one wins)
 pub(crate) const CONFIG_EXTENSIONS: [&str; 3] = ["yml", "yaml", "hcl"];
+
+/// Where the configuration is looked for without `-c`, in order: Super's directory, then Proksi's
+/// (its files in it, or in `configs`, where Proksi looked)
+pub const CONFIG_DIRECTORIES: [&str; 3] =
+    ["/etc/superconfig", "/etc/proksi", "/etc/proksi/configs"];
+
+/// The directory the configuration is in, when none is given: the first of `CONFIG_DIRECTORIES`
+/// with a configuration file, or Super's
+pub fn default_directory() -> &'static str {
+    first_with_config(&CONFIG_DIRECTORIES)
+}
+
+/// The first of `directories` with a configuration file, or the first of them
+fn first_with_config<'a>(directories: &[&'a str]) -> &'a str {
+    let found = directories
+        .iter()
+        .find(|dir| directory_files(dir).is_some())
+        .or(directories.first());
+    found.copied().unwrap_or_default()
+}
 
 /// The configuration files `name` names in `dir`, whether they exist or not
 pub(crate) fn named_files(dir: &str, name: &str) -> [String; 3] {
@@ -1573,6 +1604,25 @@ mod tests {
     }
 
     #[test]
+    fn test_without_a_path_super_s_directory_then_proksi_s() {
+        let ours = tempfile::tempdir().unwrap();
+        let proksi = tempfile::tempdir().unwrap();
+        let (ours_path, proksi_path) = (
+            ours.path().to_str().unwrap(),
+            proksi.path().to_str().unwrap(),
+        );
+        let directories = [ours_path, proksi_path];
+        // Neither has a configuration: Super's
+        assert_eq!(super::first_with_config(&directories), ours_path);
+        // Only Proksi's has one: it's used
+        std::fs::write(proksi.path().join("proksi.hcl"), "").unwrap();
+        assert_eq!(super::first_with_config(&directories), proksi_path);
+        // Super's has one too: Super's
+        std::fs::write(ours.path().join("config.hcl"), "").unwrap();
+        assert_eq!(super::first_with_config(&directories), ours_path);
+    }
+
+    #[test]
     fn test_a_directory_with_config_hcl() {
         figment::Jail::expect_with(|jail| {
             let dir = jail.directory().to_str().unwrap().to_string();
@@ -1714,8 +1764,8 @@ mod tests {
                           allowed_origins: ["*"]
                     ssl:
                       path:
-                        key: "/etc/proksi/certs/my-host.key"
-                        pem: "/etc/proksi/certs/my-host.pem"
+                        key: "/etc/superconfig/certs/my-host.key"
+                        pem: "/etc/superconfig/certs/my-host.pem"
                 "#,
             )?;
 
@@ -1742,7 +1792,10 @@ mod tests {
             assert_eq!(letsencrypt.enabled, Some(false));
             assert_eq!(letsencrypt.staging, Some(true));
 
-            assert_eq!(paths.lets_encrypt.as_os_str(), "/etc/proksi/letsencrypt");
+            assert_eq!(
+                paths.lets_encrypt.as_os_str(),
+                "/etc/superconfig/letsencrypt"
+            );
 
             let route = &proxy_config.routes[0];
             let plugins = route.plugins.as_ref().unwrap();
@@ -1753,8 +1806,8 @@ mod tests {
             let ssl = route.ssl.as_ref().unwrap();
             let path = ssl.path.as_ref().unwrap();
             assert!(ssl.self_signed_fallback);
-            assert_eq!(path.key.as_os_str(), "/etc/proksi/certs/my-host.key");
-            assert_eq!(path.pem.as_os_str(), "/etc/proksi/certs/my-host.pem");
+            assert_eq!(path.key.as_os_str(), "/etc/superconfig/certs/my-host.key");
+            assert_eq!(path.pem.as_os_str(), "/etc/superconfig/certs/my-host.pem");
 
             Ok(())
         });
@@ -1787,7 +1840,7 @@ mod tests {
                     staging = false
                 }
                 paths {
-                    lets_encrypt = "/etc/proksi/letsencrypt"
+                    lets_encrypt = "/etc/superconfig/letsencrypt"
                 }
                     "#,
             )?;

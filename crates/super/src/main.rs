@@ -65,7 +65,7 @@ fn prepare() {
     let _ = nix::sys::prctl::set_thp_disable(true);
 
     // `proksi check`: the configuration is checked, and nothing started
-    config::check::exit_if_requested("/etc/proksi/configs");
+    config::check::exit_if_requested(config::default_directory());
 }
 
 #[deny(
@@ -91,7 +91,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Configuration can be refreshed on file change
     // Loads configuration from command-line, YAML or TOML sources
     let proxy_config = Arc::new(
-        load("/etc/proksi/configs")
+        load(config::default_directory())
             .map_err(|err| anyhow::anyhow!("Failed to load configuration: {err}"))?,
     );
 

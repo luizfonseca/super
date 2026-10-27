@@ -101,7 +101,7 @@ See the [admin UI documentation](https://docs.superproxy.dev/admin-ui) for a tou
 cargo install --git https://github.com/luizfonseca/super super_proxy
 
 # Option 3: Run it with Docker
-docker run -d -p 80:80 -p 443:443 -v /path/to/config:/etc/proksi/ luizfonseca/super
+docker run -d -p 80:80 -p 443:443 -v /path/to/config:/etc/superconfig/ luizfonseca/super
 ```
 
 2. Create a configuration file named `config.hcl`
@@ -156,7 +156,7 @@ Super supports flexible configuration file loading:
 
 - **Direct file paths**: Specify any filename with a supported extension (`.hcl`, `.yml`, `.yaml`)
 - **Directory paths**: Super looks for `config.hcl`, `config.yml` or `config.yaml` in the specified directory, or for Proksi's `proksi.hcl`, `proksi.yml` or `proksi.yaml` when it has none
-- **No configuration**: If no `-c` flag is provided, Super uses minimal default settings with Let's Encrypt disabled and emits a warning
+- **No `-c`**: Super reads `/etc/superconfig` (or Proksi's `/etc/proksi`, when only it has a configuration); without any, it uses minimal default settings with Let's Encrypt disabled and emits a warning
 
 
 # Configuration
@@ -323,7 +323,7 @@ lets_encrypt {
 }
 
 paths {
-  lets_encrypt = "/etc/proksi/letsencrypt"
+  lets_encrypt = "/etc/superconfig/letsencrypt"
 }
 
 host "example.com" {
@@ -339,8 +339,8 @@ You can also bring your own certificate, or fall back to a self-signed one (usef
 host "example.com" {
   tls {
     certificate {
-      pem = "/etc/proksi/certs/example.com.pem"
-      key = "/etc/proksi/certs/example.com.key"
+      pem = "/etc/superconfig/certs/example.com.pem"
+      key = "/etc/superconfig/certs/example.com.key"
     }
 
     self_signed_on_failure = true
@@ -588,7 +588,7 @@ auto_reload {
   enabled = true
   interval_secs = 30
   # Extra paths to watch (e.g. files used with import())
-  paths = ["/etc/proksi/sites"]
+  paths = ["/etc/superconfig/sites"]
 }
 ```
 

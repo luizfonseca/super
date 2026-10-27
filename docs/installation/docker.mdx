@@ -6,7 +6,7 @@ description: "Similar to other proxies, Super can be run as a Docker container."
 Similar to other proxies, Super can be run as a Docker container. The following command will run the latest version of it:
 
 ```bash
-docker run -d -p 80:80 -p 443:443 -v /path/to/config:/etc/proksi/ luizfonseca/super
+docker run -d -p 80:80 -p 443:443 -v /path/to/config:/etc/superconfig/ luizfonseca/super
 ```
 
 Images are tagged with each release (`luizfonseca/super:super-v0.4.0`) and `latest`.
@@ -30,7 +30,7 @@ services:
       PROKSI_LETS_ENCRYPT__STAGING: "true"
       PROKSI_LETS_ENCRYPT__EMAIL: "contact@email.net"
 
-      PROKSI_PATHS__LETS_ENCRYPT: "/etc/proksi/certs"
+      PROKSI_PATHS__LETS_ENCRYPT: "/etc/superconfig/certs"
     image: luizfonseca/super:latest
     networks:
       # Any service in the same network will be able to communicate with Super
@@ -41,7 +41,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Certificates from Let's Encrypt, kept across restarts
-      - certs:/etc/proksi/certs
+      - certs:/etc/superconfig/certs
     # Lets open connections finish when the container stops (see Restarts and upgrades)
     stop_grace_period: 35s
 
