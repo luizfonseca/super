@@ -28,26 +28,44 @@ const CLIENTS: [Client; 3] = [Client::Http1, Client::Http2, Client::Http3];
 /// A response: its status, headers and body
 type Answer = (u16, HeaderMap, String);
 
-/// `GET path` from `host`, as `client` sends it (HTTP/1.1 and HTTP/2 with a header Cloudflare
-/// adds, `cf-connecting-ip`)
+/// `GET path` from `host`, as `client` sends it (with a header Cloudflare adds,
+/// `cf-connecting-ip`)
 async fn get(proksi: &Harness, client: Client, host: &str, path: &str) -> Answer {
+    let headers = [("cf-connecting-ip", "203.0.113.7")];
+    send(proksi, client, "GET", host, path, &headers, b"").await
+}
+
+/// `method` `path` from `host`, as `client` sends it, with `headers` and `body`
+async fn send(
+    proksi: &Harness,
+    client: Client,
+    method: &str,
+    host: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) -> Answer {
     let sender = match client {
         Client::Http1 => proksi.client(),
         Client::Http2 => proksi.client_h2(),
-        Client::Http3 => return proksi.http3_get(host, path).await.unwrap(),
+        Client::Http3 => {
+            let answer = proksi.http3_request(method, host, path, headers, body);
+            return answer.await.unwrap();
+        }
     };
-    let response = sender
-        .get(format!("https://{host}:{}{path}", proksi.https_port))
-        .header("cf-connecting-ip", "203.0.113.7")
-        .send()
-        .await
-        .unwrap();
-    let version = response.version();
+    let url = format!("https://{host}:{}{path}", proksi.https_port);
+    let mut request = sender
+        .request(method.parse().unwrap(), url)
+        .body(body.to_vec());
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let response = request.send().await.unwrap();
     let wanted = match client {
         Client::Http1 => http::Version::HTTP_11,
         Client::Http2 | Client::Http3 => http::Version::HTTP_2,
     };
-    assert_eq!(version, wanted, "{client:?} {host}{path}");
+    assert_eq!(response.version(), wanted, "{client:?} {host}{path}");
     let status = response.status().as_u16();
     let headers = response.headers().clone();
     (status, headers, response.text().await.unwrap())
@@ -199,7 +217,7 @@ host "wrong-name.test" {
         "plain.test",
         "wrong-name.test",
     ];
-    let mut proksi = start(&hosts, &names).await;
+    let proksi = start(&hosts, &names).await;
 
     for client in CLIENTS {
         let (status, _, body) = get(&proksi, client, "verified.test", "/").await;
@@ -215,4 +233,134 @@ host "wrong-name.test" {
         let (status, _, _) = get(&proksi, client, "plain.test", "/").await;
         assert_eq!(status, 502, "{client:?}");
     }
+}
+
+/// What Super answers itself, without its upstream (redirects, set answers, refusals, files):
+/// over every protocol, with the host's response headers (the location's blocks' answers go
+/// through them, as upstreams' responses do)
+#[tokio::test(flavor = "multi_thread")]
+async fn test_answers_of_super_itself() {
+    let files = tempfile::tempdir().unwrap();
+    std::fs::write(files.path().join("hello.txt"), "hi").unwrap();
+    let hosts = format!(
+        r#"
+host "own.test" {{
+  headers {{
+    response {{
+      add = {{ "x-host" = "own" }}
+    }}
+  }}
+
+  location "/redirect" {{
+    redirect {{
+      to     = "https://example.com{{uri}}"
+      status = 301
+    }}
+  }}
+
+  location "/respond" {{
+    respond {{
+      status       = 503
+      body         = "Back soon"
+      content_type = "text/plain"
+    }}
+  }}
+
+  location "/auth" {{
+    upstream "127.0.0.1:{{http_upstream_port}}" {{}}
+    basic_auth {{
+      user = "user"
+      pass = "pass"
+    }}
+  }}
+
+  location "/limited" {{
+    upstream "127.0.0.1:{{http_upstream_port}}" {{}}
+    rate_limit {{
+      requests = 1
+      per      = "1h"
+    }}
+  }}
+
+  location "/blocked" {{
+    upstream "127.0.0.1:{{http_upstream_port}}" {{}}
+    ip_filter {{
+      deny = ["127.0.0.1"]
+    }}
+  }}
+
+  location "/files" {{
+    static_files {{
+      directory = "{files}"
+    }}
+  }}
+
+  location "/cors" {{
+    upstream "127.0.0.1:{{http_upstream_port}}" {{}}
+    cors {{
+      origins = ["https://app.test"]
+    }}
+  }}
+
+  location "/upload" {{
+    upstream "127.0.0.1:{{http_upstream_port}}" {{}}
+    body_limit {{
+      max = "4B"
+    }}
+  }}
+}}
+"#,
+        files = files.path().display()
+    );
+    let mut proksi = start(&hosts, &["own.test"]).await;
+    let preflight = [
+        ("origin", "https://app.test"),
+        ("access-control-request-method", "PUT"),
+    ];
+    let credentials = [("authorization", "Basic dXNlcjpwYXNz")];
+
+    for client in CLIENTS {
+        let ask = |method, path, headers, body| {
+            send(&proksi, client, method, "own.test", path, headers, body)
+        };
+        let (status, headers, _) = ask("GET", "/redirect/a?b=1", &[], b"").await;
+        assert_eq!(status, 301, "{client:?}");
+        assert_eq!(headers["location"], "https://example.com/redirect/a?b=1");
+        assert_eq!(headers["x-host"], "own", "{client:?} redirect");
+
+        let (status, headers, body) = ask("GET", "/respond", &[], b"").await;
+        assert_eq!((status, body.as_str()), (503, "Back soon"), "{client:?}");
+        assert_eq!(headers["x-host"], "own", "{client:?} respond");
+
+        let (status, headers, _) = ask("GET", "/auth", &[], b"").await;
+        assert_eq!(status, 401, "{client:?}");
+        assert!(headers.contains_key("www-authenticate"), "{client:?}");
+        assert_eq!(headers["x-host"], "own", "{client:?} basic_auth");
+        let (status, _, _) = ask("GET", "/auth", &credentials, b"").await;
+        assert_eq!(status, 200, "{client:?} signed in");
+
+        // One request an hour, from one address: the second is refused, whichever came first
+        let _ = ask("GET", "/limited", &[], b"").await;
+        let (status, headers, _) = ask("GET", "/limited", &[], b"").await;
+        assert_eq!(status, 429, "{client:?}");
+        assert_eq!(headers["x-host"], "own", "{client:?} rate_limit");
+
+        let (status, headers, _) = ask("GET", "/blocked", &[], b"").await;
+        assert_eq!(status, 403, "{client:?}");
+        assert_eq!(headers["x-host"], "own", "{client:?} ip_filter");
+
+        let (status, headers, body) = ask("GET", "/files/hello.txt", &[], b"").await;
+        assert_eq!((status, body.as_str()), (200, "hi"), "{client:?}");
+        assert_eq!(headers["x-host"], "own", "{client:?} static_files");
+
+        let (status, headers, _) = ask("OPTIONS", "/cors", &preflight, b"").await;
+        assert_eq!(status, 204, "{client:?}");
+        assert_eq!(headers["access-control-allow-origin"], "https://app.test");
+        assert_eq!(headers["x-host"], "own", "{client:?} cors");
+
+        let (status, headers, _) = ask("POST", "/upload", &[], b"far too long").await;
+        assert_eq!(status, 413, "{client:?}");
+        assert_eq!(headers["x-host"], "own", "{client:?} body_limit");
+    }
+    proksi.assert_healthy();
 }
