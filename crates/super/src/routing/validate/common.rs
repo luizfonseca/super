@@ -6,8 +6,8 @@ use http::{HeaderName, HeaderValue};
 
 use crate::config::{RouteHeader, RouteUpstream};
 
-/// Upstreams need an address, a port and a positive weight (no upstreams is valid:
-/// requests get a `503`)
+/// Upstreams need an address, a port and a positive weight, and those whose certificate is
+/// checked a name to check it for, over TLS (no upstreams is valid: requests get a `503`)
 pub(super) fn validate_upstreams(upstreams: &[RouteUpstream]) -> Result<(), String> {
     for (index, upstream) in upstreams.iter().enumerate() {
         if upstream.ip.is_empty() {
@@ -18,6 +18,18 @@ pub(super) fn validate_upstreams(upstreams: &[RouteUpstream]) -> Result<(), Stri
         }
         if upstream.weight.is_some_and(|weight| weight <= 0) {
             return Err(format!("upstreams[{index}].weight must be greater than 0"));
+        }
+        // The certificate is checked for `sni`, over TLS
+        let verified = upstream.verify == Some(true);
+        if verified && upstream.sni.as_deref().is_none_or(str::is_empty) {
+            return Err(format!(
+                "upstreams[{index}].verify needs `sni`, the name checked"
+            ));
+        }
+        if verified && !upstream.uses_tls() {
+            return Err(format!(
+                "upstreams[{index}].verify needs TLS (`tls = true`)"
+            ));
         }
     }
     Ok(())

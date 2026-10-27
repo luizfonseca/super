@@ -218,10 +218,12 @@ impl Copy {
         let sni = upstream
             .and_then(|upstream| upstream.sni.clone())
             .unwrap_or_default();
-        let mut peer = HttpPeer::new(backend.addr.clone(), port == 443, sni);
+        let tls = upstream.map_or(port == 443, |upstream| upstream.tls.unwrap_or(port == 443));
+        let mut peer = HttpPeer::new(backend.addr.clone(), tls, sni);
         peer.options = crate::proxy_server::default_peer_opts(
             crate::proxy_server::timeouts::upstream_timeouts(),
         );
+        peer.options.verify_cert = upstream.and_then(|upstream| upstream.verify) == Some(true);
 
         // The body's parts, in one
         let body = match body.as_slice() {

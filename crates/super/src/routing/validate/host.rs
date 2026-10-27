@@ -379,6 +379,23 @@ mod tests {
     }
 
     #[test]
+    fn test_verified_upstreams_need_a_name_and_tls() {
+        let mut host = host("a.test", "10.0.0.1");
+        host.locations[0].upstreams[0].verify = Some(true);
+        assert_eq!(
+            validate_host(&host),
+            Err("location \"/*\": upstreams[0].verify needs `sni`, the name checked".to_string())
+        );
+        host.locations[0].upstreams[0].sni = Some("api.test".to_string());
+        assert_eq!(
+            validate_host(&host),
+            Err("location \"/*\": upstreams[0].verify needs TLS (`tls = true`)".to_string())
+        );
+        host.locations[0].upstreams[0].tls = Some(true);
+        assert_eq!(validate_host(&host), Ok(()));
+    }
+
+    #[test]
     fn test_catch_all_host_needs_tls_disabled() {
         let mut catch_all = host("*", "10.0.0.1");
         assert_eq!(

@@ -9,7 +9,7 @@ use std::{
 
 use hyper::client::conn::{http1, http2};
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
-use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
+use openssl::ssl::{SslConnector, SslConnectorBuilder, SslMethod, SslVerifyMode};
 use tokio::net::{TcpSocket, TcpStream};
 use tokio_openssl::SslStream;
 
@@ -54,6 +54,7 @@ pub struct Connector {
 impl Connector {
     pub fn new() -> Self {
         let tls = SslConnector::builder(SslMethod::tls_client())
+            .map(trust_system_certificates)
             .map(openssl::ssl::SslConnectorBuilder::build)
             .map_err(|err| tracing::error!("can't set up TLS to upstreams: {err}"))
             .ok();
@@ -219,6 +220,24 @@ impl Default for Connector {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The system's certificate authorities, to check upstreams' certificates: the vendored
+/// OpenSSL looks for them where it was built, not where the system has them
+fn trust_system_certificates(mut builder: SslConnectorBuilder) -> SslConnectorBuilder {
+    let found = openssl_probe::probe();
+    for dir in &found.cert_dir {
+        if let Err(err) = builder.load_verify_locations(None, Some(dir)) {
+            tracing::debug!("can't read the certificates of {dir:?}: {err}");
+        }
+    }
+    let Some(file) = found.cert_file else {
+        return builder;
+    };
+    if let Err(err) = builder.load_verify_locations(Some(&file), None) {
+        tracing::warn!("can't read the certificates of {file:?}: {err}");
+    }
+    builder
 }
 
 /// A TCP connection to `peer`, set up as its options say

@@ -309,12 +309,28 @@ pub struct RouteUpstream {
 
     pub sni: Option<String>,
 
+    /// Whether requests reach it over TLS (default: on port 443 only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls: Option<bool>,
+
+    /// Whether its certificate is checked: signed by an authority the system trusts, for `sni`
+    /// (default: not checked)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verify: Option<bool>,
+
     pub headers: Option<RouteHeader>,
 
     /// What the address came from, when it isn't the one written: a docker label's upstream, or
     /// a Kubernetes service (`name.namespace:port`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+}
+
+impl RouteUpstream {
+    /// Whether requests reach it over TLS: as `tls` says, or on port 443
+    pub fn uses_tls(&self) -> bool {
+        self.tls.unwrap_or(self.port == 443)
+    }
 }
 
 impl Default for RouteUpstream {
@@ -325,6 +341,8 @@ impl Default for RouteUpstream {
             network: None,
             weight: None,
             sni: None,
+            tls: None,
+            verify: None,
             headers: None,
             name: None,
         }

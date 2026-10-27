@@ -1,8 +1,11 @@
 //! End-to-end test harness.
 //!
 //! Starts the real `proksi` binary with a generated configuration, in front of
-//! in-process upstreams (an HTTP echo server and a websocket echo server).
+//! in-process upstreams (an HTTP echo server, a websocket echo server, and an external HTTPS
+//! service, `service`).
 #![allow(dead_code)]
+
+pub mod service;
 
 use std::{
     collections::HashMap,
@@ -132,6 +135,8 @@ pub struct Harness {
     pub tcp_ports: [u16; 3],
     pub http_upstream: HttpUpstream,
     pub websocket_upstream: WebSocketUpstream,
+    /// An external HTTPS service (`{service_port}`), its root trusted by proksi
+    pub service: service::Service,
 }
 
 impl Harness {
@@ -183,6 +188,7 @@ impl Harness {
 
         let http_upstream = HttpUpstream::start().await;
         let websocket_upstream = WebSocketUpstream::start().await;
+        let service = service::Service::start(&dir.path().join("service-root.pem")).await;
 
         let [https_port, http_port, extra_port, tcp_0, tcp_1, tcp_2] = free_ports();
         let tcp_ports = [tcp_0, tcp_1, tcp_2];
@@ -206,6 +212,7 @@ impl Harness {
             tcp_ports,
             http_upstream,
             websocket_upstream,
+            service,
         };
         harness.rewrite_routes(routes);
 
@@ -216,6 +223,8 @@ impl Harness {
             std::os::unix::process::CommandExt::process_group(&mut Command::new(bin), 0)
                 .arg("-c")
                 .arg(harness.config_path())
+                // The certificate authorities trusted to check upstreams: the service's root
+                .env("SSL_CERT_FILE", harness.dir.path().join("service-root.pem"))
                 .stdout(Stdio::from(stdout))
                 .stderr(Stdio::from(stderr))
                 .spawn()
@@ -350,7 +359,7 @@ paths {{
         )
     }
 
-    /// Extra configuration, with `{http_upstream_port}`, the ports of proksi, `{cert_pem}`,
+    /// Extra configuration, with `{http_upstream_port}`, `{service_port}`, the ports of proksi, `{cert_pem}`,
     /// `{cert_key}`, `{chain_pem}` and `{chain_key}` replaced
     fn render_extra_config(&self) -> String {
         let dir = self.dir.path();
@@ -360,6 +369,7 @@ paths {{
         }
         config
             .replace("{http_upstream_port}", &self.http_upstream.port.to_string())
+            .replace("{service_port}", &self.service.port.to_string())
             .replace("{https_port}", &self.https_port.to_string())
             .replace("{http_port}", &self.http_port.to_string())
             .replace("{extra_port}", &self.extra_port.to_string())

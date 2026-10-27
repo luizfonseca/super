@@ -2336,6 +2336,20 @@
             "null"
           ]
         },
+        "tls": {
+          "description": "Whether requests reach it over TLS (default: on port 443 only)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "verify": {
+          "description": "Whether its certificate is checked: signed by an authority the system trusts, for `sni`\n(default: not checked)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "weight": {
           "description": "Optional: The weight of the upstream (ex: 1, 2, 3, etc.) --\nused for weight-based load balancing.",
           "format": "int8",
@@ -4281,6 +4295,20 @@
           "description": "SNI sent to the upstream (for HTTPS upstreams)",
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "tls": {
+          "description": "Requests reach the upstream over TLS (default: on port 443 only)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "verify": {
+          "description": "The upstream's certificate is checked: signed by an authority the system trusts, for\n`sni` (default: not checked)",
+          "type": [
+            "boolean",
             "null"
           ]
         },

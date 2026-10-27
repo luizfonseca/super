@@ -357,7 +357,7 @@ impl ProxyHttp for Router {
 
         let mut peer = HttpPeer::new(
             picked.addr,
-            picked.addr.port() == 443,
+            upstream.uses_tls(),
             upstream.sni.clone().unwrap_or_default(),
         );
         let timeouts = route_container
@@ -366,6 +366,7 @@ impl ProxyHttp for Router {
             .unwrap_or_default()
             .or(Some(super::timeouts::upstream_timeouts()));
         peer.options = default_peer_opts(timeouts);
+        peer.options.verify_cert = upstream.verify.unwrap_or(false);
         Ok(Box::new(peer))
     }
 

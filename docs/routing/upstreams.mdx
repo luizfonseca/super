@@ -155,12 +155,13 @@ host "app.example.com" {
 
 ## External services (TLS)
 
-Upstreams on port `443` are reached over TLS. Set `sni` to the name of the service, and the `Host` header it expects, as Super forwards the `Host` of the original request:
+Upstreams on port `443` are reached over TLS, and others with `tls = true`. Set `sni` to the name of the service, and the `Host` header it expects, as Super forwards the `Host` of the original request:
 
 ```hcl
 location "/" {
   upstream "docs.proksi.info:443" {
-    sni = "docs.proksi.info"
+    sni    = "docs.proksi.info"
+    verify = true
 
     headers {
       add = { "Host" = "docs.proksi.info" }
@@ -169,12 +170,18 @@ location "/" {
 }
 ```
 
+- `verify = true` checks the upstream's certificate: signed by an authority the system trusts (the Docker image has the usual ones), for `sni`. Without it, any certificate is accepted, as Proksi does: turn it on for services reached over networks you don't control.
+- Services behind a CDN such as Cloudflare refuse requests carrying the CDN's own headers: when Super is behind one too, remove them with a [rule](/rules/actions) (`headers { request { remove = ["cf-connecting-ip"] } }`).
+- A service on another port: `upstream "api.example.com:8443" { tls = true }`.
+
 ## Settings
 
 | Setting | Description |
 | --- | --- |
 | `weight` | The share of requests the upstream receives, relative to the others (`1` by default, up to `127`). |
-| `sni` | The server name sent to an upstream using TLS (port `443`). |
+| `sni` | The server name sent to an upstream using TLS. |
+| `tls` | Whether the upstream is reached over TLS (`true` or `false`; by default, on port `443` only). Super only: Proksi doesn't take it. |
+| `verify` | Whether the upstream's certificate is checked, for `sni` (`false` by default). Needs `sni` and TLS. Super only: Proksi doesn't take it. |
 | `headers { add = { ... } }` | Headers added to the request sent to the upstream. |
 | `network` | The docker network to reach the upstream through (docker integration). |
 
