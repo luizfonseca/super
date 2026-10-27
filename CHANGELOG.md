@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0](https://github.com/luizfonseca/super/compare/super-v0.3.2...super-v0.4.0) (2026-10-27)
+
+
+### Features
+
+* config.hcl, read before Proksi's proksi.hcl ([de55638](https://github.com/luizfonseca/super/commit/de5563849fc91c4b3aead01e1a765e91c2fc1af2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.3.2 to 0.4.0
+    * super_plugins bumped from 0.3.2 to 0.4.0
+    * super_core bumped from 0.3.2 to 0.4.0
+    * super_store bumped from 0.3.2 to 0.4.0
+  * dev-dependencies
+    * super_plugins bumped from 0.3.2 to 0.4.0
+    * super_store bumped from 0.3.2 to 0.4.0
+
 ## [0.3.2](https://github.com/luizfonseca/super/compare/super-v0.3.1...super-v0.3.2) (2026-10-26)
 
 
