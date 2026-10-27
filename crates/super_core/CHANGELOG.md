@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/luizfonseca/super/compare/super_core-v0.4.0...super_core-v0.5.0) (2026-10-27)
+
+
+### Features
+
+* upstreams over TLS on any port, and their certificates checked ([ce32e42](https://github.com/luizfonseca/super/commit/ce32e42d31a903568e6cec306e8c1b9091ac346c))
+
+
+### Bug Fixes
+
+* a rewrite keeps the host of requests to HTTP/2 upstreams ([05e51bd](https://github.com/luizfonseca/super/commit/05e51bd60c77b79cc11f7a8df391fa35219ad298))
+* uploads refused early get their answer, not a reset connection ([1d561d2](https://github.com/luizfonseca/super/commit/1d561d2ca953fcff310ca130dda0227bf3f6609d))
+
 ## [0.4.0](https://github.com/luizfonseca/super/compare/super_core-v0.3.2...super_core-v0.4.0) (2026-10-27)
 
 
