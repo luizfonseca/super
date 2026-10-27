@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.3.2...super_admin_ui-v0.4.0) (2026-10-27)
+
+
+### Bug Fixes
+
+* the admin checks Super's releases, and calls itself Super ([d542c93](https://github.com/luizfonseca/super/commit/d542c938a851cc3f1f9024a0862bac7fd4d447cc))
+
 ## [0.3.2](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.3.1...super_admin_ui-v0.3.2) (2026-10-26)
 
 
