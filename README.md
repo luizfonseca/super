@@ -6,8 +6,8 @@
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/proksi-flow-dark.svg?v=1">
-  <img src="./docs/assets/proksi-flow-light.svg?v=1" alt="A configuration file and a terminal on one side; on the other, the routes and events, live: a container's host appears with a certificate, an edit to it applies without dropping connections, and a rule rate limits a request">
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/proksi-flow-dark.svg?v=2">
+  <img src="./docs/assets/proksi-flow-light.svg?v=2" alt="A configuration file and a terminal on one side; on the other, the routes and events, live: a container's host appears with a certificate, an edit to it applies without dropping connections, and a rule rate limits a request">
 </picture>
 
 
