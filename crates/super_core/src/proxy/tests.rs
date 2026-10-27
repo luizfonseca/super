@@ -815,6 +815,25 @@ async fn test_requests_over_http3() {
     }
 }
 
+/// An HTTP/3 upload answered before it's read (a `413`): its client can still send it all (not
+/// stopped with an error HTTP/3 doesn't know, `0`), and reads the answer
+#[tokio::test]
+async fn test_http3_uploads_refused_early_are_answered() {
+    let mut client = http3_proxy_to(vec![upstream().await]).await;
+    let request = http::Request::post("https://a.test/too-large")
+        .body(())
+        .unwrap();
+    let mut stream = client.send_request(request).await.unwrap();
+    let part = Bytes::from(vec![b'a'; 64 * 1024]);
+    for sent in 0..128 {
+        let written = stream.send_data(part.clone()).await;
+        assert!(written.is_ok(), "stopped after {sent} parts: {written:?}");
+    }
+    stream.finish().await.unwrap();
+    let response = stream.recv_response().await.unwrap();
+    assert_eq!(response.status(), 413);
+}
+
 /// Waits 50ms for its upstream
 struct Impatient(SocketAddr);
 

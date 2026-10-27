@@ -5,6 +5,7 @@ use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use bytes::{Buf, Bytes};
@@ -63,6 +64,38 @@ impl RequestBody {
         }
         body
     }
+}
+
+impl Drop for RequestBody {
+    /// Answered before the rest of an HTTP/3 body came: it's read, and discarded, a while longer
+    /// (as HTTP/1.1 connections linger). Dropped, quinn would ask the client to stop sending
+    /// with code `0`, not one of HTTP/3's, which clients take as the request failing; and
+    /// h3-quinn can't ask with `H3_NO_ERROR` while a read is pending.
+    fn drop(&mut self) {
+        let kind = std::mem::replace(&mut self.kind, RequestKind::Done);
+        let RequestKind::H3 {
+            stream,
+            data_done: false,
+        } = kind
+        else {
+            return;
+        };
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(drain(stream));
+        }
+    }
+}
+
+/// How long an HTTP/3 body nobody reads is read, at most, and without anything coming
+const DRAIN: Duration = Duration::from_secs(10);
+const DRAIN_IDLE: Duration = Duration::from_secs(2);
+
+/// Reads `stream`'s body to its end, discarding it, for `DRAIN` at most
+async fn drain(mut stream: H3Stream) {
+    let reading = async {
+        while let Ok(Ok(Some(_))) = tokio::time::timeout(DRAIN_IDLE, stream.recv_data()).await {}
+    };
+    let _ = tokio::time::timeout(DRAIN, reading).await;
 }
 
 impl Body for RequestBody {

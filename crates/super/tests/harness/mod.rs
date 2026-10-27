@@ -743,13 +743,20 @@ paths {{
             .send_request(request)
             .await
             .map_err(|e| e.to_string())?;
+        // Answered before the request is all sent, the server may stop it without an error
+        // (RFC 9114 §4.1): the answer is still read
+        let no_error = |err: h3::error::StreamError| {
+            if err.is_h3_no_error() {
+                Ok(())
+            } else {
+                Err(err.to_string())
+            }
+        };
         if !body.is_empty() {
-            stream
-                .send_data(bytes::Bytes::copy_from_slice(body))
-                .await
-                .map_err(|e| e.to_string())?;
+            let sent = stream.send_data(bytes::Bytes::copy_from_slice(body)).await;
+            sent.or_else(no_error)?;
         }
-        stream.finish().await.map_err(|e| e.to_string())?;
+        stream.finish().await.or_else(no_error)?;
         let response = stream.recv_response().await.map_err(|e| e.to_string())?;
         let mut body = Vec::new();
         while let Some(mut data) = stream.recv_data().await.map_err(|e| e.to_string())? {
