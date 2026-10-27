@@ -75,6 +75,7 @@
       color: var(--text);
       font: 400 17px/1.6 var(--sans);
       -webkit-font-smoothing: antialiased;
+      overflow-x: clip;
     }
     a { color: inherit; }
 
@@ -101,13 +102,15 @@
     @media (max-width: 720px) { nav ul li.hide-small { display: none; } nav ul { gap: 16px; } }
 
     /* Hero */
-    .hero { position: relative; overflow: hidden; padding: 72px 0 64px; }
-    .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .9; }
+    .hero { position: relative; padding: 72px 0 64px; }
+    /* The streams breach the frame: the whole width of the page, and behind the navigation */
+    .hero canvas, .hero::after { position: absolute; top: -61px; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%); }
+    .hero canvas { height: calc(100% + 61px); opacity: .9; }
     .hero::after {
-      content: ""; position: absolute; inset: 0; pointer-events: none;
+      content: ""; pointer-events: none;
       background:
-        radial-gradient(60% 55% at 50% 42%, transparent 0, var(--bg) 78%),
-        linear-gradient(to bottom, transparent 70%, var(--bg));
+        radial-gradient(75% 70% at 50% 45%, transparent 0, var(--bg) 96%),
+        linear-gradient(to bottom, transparent 75%, var(--bg));
     }
     .hero .pad { position: relative; z-index: 1; text-align: center; }
     h1 {
@@ -301,6 +304,7 @@
           <div class="bar"><label>nginx <b>371k</b></label><div class="track"><div class="fill" style="--w:100%"></div></div></div>
           <div class="bar super"><label>Super <b>275k</b></label><div class="track"><div class="fill" style="--w:74%"></div></div></div>
           <div class="bar"><label>Traefik <b>104k</b></label><div class="track"><div class="fill" style="--w:28%"></div></div></div>
+          <div class="bar"><label>Proksi <b>77k</b></label><div class="track"><div class="fill" style="--w:21%"></div></div></div>
           <div class="bar"><label>Caddy <b>76k</b></label><div class="track"><div class="fill" style="--w:20%"></div></div></div>
         </div>
         <div class="chart reveal">
@@ -309,18 +313,20 @@
           <div class="bar"><label>nginx <b>8.8 µs</b></label><div class="track"><div class="fill" style="--w:18%"></div></div></div>
           <div class="bar super"><label>Super <b>13.6 µs</b></label><div class="track"><div class="fill" style="--w:27%"></div></div></div>
           <div class="bar"><label>Traefik <b>37.3 µs</b></label><div class="track"><div class="fill" style="--w:74%"></div></div></div>
+          <div class="bar"><label>Proksi <b>44.1 µs</b></label><div class="track"><div class="fill" style="--w:88%"></div></div></div>
           <div class="bar"><label>Caddy <b>50.2 µs</b></label><div class="track"><div class="fill" style="--w:100%"></div></div></div>
         </div>
         <div class="chart reveal">
           <h3>Memory under load</h3>
           <p>4 threads. Lower is better.</p>
           <div class="bar super"><label>Super <b>14 MB</b></label><div class="track"><div class="fill" style="--w:33%"></div></div></div>
+          <div class="bar"><label>Proksi <b>20 MB</b></label><div class="track"><div class="fill" style="--w:47%"></div></div></div>
           <div class="bar"><label>nginx <b>25 MB</b></label><div class="track"><div class="fill" style="--w:58%"></div></div></div>
           <div class="bar"><label>Caddy <b>25 MB</b></label><div class="track"><div class="fill" style="--w:58%"></div></div></div>
           <div class="bar"><label>Traefik <b>43 MB</b></label><div class="track"><div class="fill" style="--w:100%"></div></div></div>
         </div>
       </div>
-      <p class="note pad">Linux arm64, 8 CPUs, with <a href="https://github.com/hatoo/oha">oha</a> and 50 connections; nginx 1.26.3, Traefik 3.7.16, Caddy 2.11.7. All measured in one run, each proxy alone in turn, the median of three rounds. One machine runs the proxy, the upstream and the load: a comparison, not production throughput. <a href="https://github.com/luizfonseca/super/blob/main/PROKSI.md#benchmarks">How it's measured</a>.</p>
+      <p class="note pad">Linux arm64, 8 CPUs, with <a href="https://github.com/hatoo/oha">oha</a> and 50 connections; nginx 1.26.3, Traefik 3.7.16, Caddy 2.11.7, Proksi 0.17.4. All measured in one run, each proxy alone in turn, the median of three rounds. One machine runs the proxy, the upstream and the load: a comparison, not production throughput. <a href="https://github.com/luizfonseca/super/blob/main/PROKSI.md#benchmarks">How it's measured</a>.</p>
     </section>
 
     <section id="config">
