@@ -76,7 +76,7 @@ Logs are written in the background, so writing them never slows down requests. U
 
 ### Failed TLS handshakes
 
-Clients that give up on a TLS handshake (scanners, load balancers' TCP health checks, browsers closing connections they opened ahead of time) are common and aren't a problem with Proksi, so they're only logged with `level = "debug"` (or `trace`). They're counted in the `proksi_tls_handshake_failures_total` metric (see [Admin API and metrics](/configuration/admin#metrics)).
+Clients that give up on a TLS handshake (scanners, load balancers' TCP health checks, browsers closing connections they opened ahead of time) are common and aren't a problem with Super, so they're only logged with `level = "debug"` (or `trace`). They're counted in the `proksi_tls_handshake_failures_total` metric (see [Admin API and metrics](/configuration/admin#metrics)).
 
 ### Logging Levels (CLI)
 
@@ -122,13 +122,13 @@ Here are some examples of how to set the logging level, format, path, and rotati
 
 ```bash
 # Set the logging level to debug
-proksi --log.level debug
+super --log.level debug
 
 # Set the logging format to pretty
-proksi --log.format pretty
+super --log.format pretty
 
 # Set the logging path to /var/log/proksi
-proksi --log.path /var/log/proksi
+super --log.path /var/log/proksi
 
 ```
 

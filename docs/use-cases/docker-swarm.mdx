@@ -1,9 +1,9 @@
 ---
 title: "Docker swarm"
-description: "Proksi can be used in conjunction with Docker to automatically discover services and route traffic to them."
+description: "Super can be used in conjunction with Docker to automatically discover services and route traffic to them."
 ---
 
-Proksi can be used in conjunction with Docker to automatically discover **services** and route traffic to them.
+Super can be used in conjunction with Docker to automatically discover **services** and route traffic to them.
 
 To enable this, you need to add labels to your Docker **services** (_swarm_ or not). The following labels are supported:
 
@@ -17,7 +17,7 @@ services:
       # Containers (docker.mode = "container"): `labels` of the container.
       labels:
         # Whether the service should be proxied or not.
-        # By default, Proksi won't discover any services where the value is not explicitly `true`
+        # By default, Super won't discover any services where the value is not explicitly `true`
         proksi.enabled: "true"
 
         # The hostname that the service should be available at. E.g. `example.com`.

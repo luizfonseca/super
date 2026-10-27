@@ -1,11 +1,11 @@
 ---
 title: "HCL"
-description: "Proksi can be configured using HCL (HashiCorp Configuration Language)."
+description: "Super can be configured using HCL (HashiCorp Configuration Language)."
 ---
 
 ## Configuration
 
-Proksi can be configured using HCL ([HashiCorp Configuration Language](https://github.com/hashicorp/hcl/blob/main/hclsyntax/spec.md)). This is the recommended way to configure Proksi, as it is more human-readable and easier to work with than JSON or YAML as well as it offers `functions` that you can use throughout your configuration:
+Super can be configured using HCL ([HashiCorp Configuration Language](https://github.com/hashicorp/hcl/blob/main/hclsyntax/spec.md)). This is the recommended way to configure Super, as it is more human-readable and easier to work with than JSON or YAML as well as it offers `functions` that you can use throughout your configuration:
 
 ```bash
 touch config.hcl
@@ -93,7 +93,7 @@ host "api.example.com" {
 - `host "*.example.com"` serves names one label under `example.com`: `a.example.com`, not `example.com` or `a.b.example.com`. A host with the exact name wins over it. Its certificate comes from certificate files, or from Let's Encrypt with a DNS challenge (below).
 - `host "*"` serves requests whose `Host` has no host of its own, or wildcard host. It needs `tls = false` (certificates are issued per name).
 - Over HTTPS, a client asking for a name no host with TLS serves (or for none, such as an IP address) is refused during the TLS handshake (`unrecognized_name`), before any certificate is looked for: scanners and names pointed at the server by mistake cost nothing.
-- `listen = ["ip:port", ...]` sets the addresses a host is served on, instead of `server.https_address` (or `server.http_address` with `tls = false`). Proksi only opens the ports its hosts need: with only `tls = false` hosts, the HTTPS port isn't opened at all.
+- `listen = ["ip:port", ...]` sets the addresses a host is served on, instead of `server.https_address` (or `server.http_address` with `tls = false`). Super only opens the ports its hosts need: with only `tls = false` hosts, the HTTPS port isn't opened at all.
 - A port is either HTTP or HTTPS: a host with TLS and a host without it can't share an address. Hosts with TLS also need `server.http_address` (port 80) for redirects and Let's Encrypt challenges.
 - Hosts from `routes = [...]`, docker labels and the store use the default addresses, as they can appear while proksi runs (ports are opened at startup). A configuration change that needs other ports restarts proksi.
 
@@ -109,7 +109,7 @@ host "*" {
 
 **Wildcard hosts and DNS challenges**
 
-Let's Encrypt checks that a name is yours before issuing a certificate. By default (`http-01`) it fetches a token from the host over port 80. With `challenge = "dns-01"`, Proksi writes a TXT record at `_acme-challenge.<name>` through your DNS provider instead, waits until the zone's name servers answer it, and removes it once Let's Encrypt has checked it. It's the only way to get a wildcard certificate, and it works for hosts Let's Encrypt can't reach over port 80.
+Let's Encrypt checks that a name is yours before issuing a certificate. By default (`http-01`) it fetches a token from the host over port 80. With `challenge = "dns-01"`, Super writes a TXT record at `_acme-challenge.<name>` through your DNS provider instead, waits until the zone's name servers answer it, and removes it once Let's Encrypt has checked it. It's the only way to get a wildcard certificate, and it works for hosts Let's Encrypt can't reach over port 80.
 
 ```hcl
 lets_encrypt {
@@ -135,7 +135,7 @@ host "*.example.com" {
 
 - Wildcard hosts must say `challenge = "dns-01"` (or have certificate files), and `dns-01` needs the `dns` block.
 - Wildcard hosts from docker labels, the store or Kubernetes use `dns-01`, and need the `dns` block to get a certificate.
-- `cloudflare` is the only provider for now. Give it an [API token](https://dash.cloudflare.com/profile/api-tokens) limited to `Zone:DNS:Edit` on the zones Proksi serves: it can change those zones' records.
+- `cloudflare` is the only provider for now. Give it an [API token](https://dash.cloudflare.com/profile/api-tokens) limited to `Zone:DNS:Edit` on the zones Super serves: it can change those zones' records.
 
 **Matching paths**
 
@@ -310,14 +310,14 @@ TLS 1.3 suites are always the standard ones, all of them strong. A cipher OpenSS
 
 ## Checking a configuration
 
-`proksi check` loads a configuration as Proksi does when it starts, without starting anything: useful in CI, or before a deploy. It prints what it found, or why Proksi wouldn't start with it, and exits with `1` when it's invalid.
+`super check` loads a configuration as Super does when it starts, without starting anything: useful in CI, or before a deploy. It prints what it found, or why Super wouldn't start with it, and exits with `1` when it's invalid.
 
 ```bash
-proksi check -c ./config.hcl
+super check -c ./config.hcl
 # ./config.hcl: valid (3 hosts)
 ```
 
-The configuration's [JSON Schema](https://raw.githubusercontent.com/luizfonseca/proksi/main/docs/schema/proksi.schema.json) describes every setting, with its docs. Editors use it for completion in YAML (see [YAML](/configuration/yaml#editor-completion)).
+The configuration's [JSON Schema](https://raw.githubusercontent.com/luizfonseca/super/main/docs/schema/proksi.schema.json) describes every setting, with its docs. Editors use it for completion in YAML (see [YAML](/configuration/yaml#editor-completion)).
 
 ## Migrating from `routes = [...]`
 

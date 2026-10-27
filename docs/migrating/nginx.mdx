@@ -1,13 +1,13 @@
 ---
 title: "Migrating from nginx"
-description: "Proksi's configuration is close to nginx's"
+description: "Super's configuration is close to nginx's"
 ---
 
-Proksi's configuration is close to nginx's: `host` blocks are `server` blocks, and `location` blocks are `location` blocks. This page covers the differences, for a configuration file and for Kubernetes (ingress-nginx).
+Super's configuration is close to nginx's: `host` blocks are `server` blocks, and `location` blocks are `location` blocks. This page covers the differences, for a configuration file and for Kubernetes (ingress-nginx).
 
 ## Concepts
 
-| nginx | Proksi |
+| nginx | Super |
 | --- | --- |
 | `server { server_name ... }` | `host "<name>" { }` (one name per host) |
 | `listen 443 ssl` | `server.https_address`, or a host's `listen` |
@@ -78,17 +78,17 @@ What you no longer write:
 - **`Host`**: the client's `Host` is forwarded as it is. (nginx sends the upstream's name unless `proxy_set_header Host $host`.) To send another one, set it on the upstream: `headers { add = { "Host" = "..." } }`.
 - **Forwarded headers**: `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host` and `X-Real-IP` are set. Behind another proxy, list it in `server.trusted_proxies` (as `set_real_ip_from`).
 - **WebSockets** are proxied without `Upgrade`/`Connection` headers.
-- **Certificates from certbot** can stay: the files are checked every 10 seconds, so a renewal is served without a reload. Or let Proksi order them with `lets_encrypt`, and drop certbot.
+- **Certificates from certbot** can stay: the files are checked every 10 seconds, so a renewal is served without a reload. Or let Super order them with `lets_encrypt`, and drop certbot.
 
 Mind the defaults that differ:
 
-- **Body size**: nginx refuses bodies over 1 MB unless `client_max_body_size` says otherwise. Proksi has no limit unless a location has a `body_limit`.
+- **Body size**: nginx refuses bodies over 1 MB unless `client_max_body_size` says otherwise. Super has no limit unless a location has a `body_limit`.
 - **Locations** match their path and everything below it: `location "/api"` serves `/api` and `/api/users`, but not `/apis` (nginx's `location /api` serves `/apis` too). The most specific location wins. `location = /x` is `location "/x" { exact = true }`, and `location ~ ^/x` is `location "^/x"` (a [regex location](/routing/regex-locations), matched with case, tried in order before paths). `~*` and `^~` aren't supported: use `(?i)` in the regex to ignore case.
-- **`proxy_pass` with a path** (`location /api/ { proxy_pass http://app/v2/; }`) replaces the matched prefix; in Proksi, that's [`rewrite`](/routing/upstreams#rewriting-paths) with `strip_prefix = "/api"` and `add_prefix = "/v2"`. Without it, the path is forwarded unchanged.
+- **`proxy_pass` with a path** (`location /api/ { proxy_pass http://app/v2/; }`) replaces the matched prefix; in Super, that's [`rewrite`](/routing/upstreams#rewriting-paths) with `strip_prefix = "/api"` and `add_prefix = "/v2"`. Without it, the path is forwarded unchanged.
 
 ## Directives
 
-| nginx | Proksi |
+| nginx | Super |
 | --- | --- |
 | `limit_req_zone` / `limit_req` | [`rate_limit { requests, per, burst }`](/plugins/rate-limit), per client (as `burst=... nodelay`: requests over the limit are refused, not delayed) |
 | `client_max_body_size` | [`body_limit { max }`](/plugins/body-limit) |
@@ -151,9 +151,9 @@ A `tcp` block at the top level forwards plain TCP; `tls = "passthrough"` forward
 
 ## Kubernetes (ingress-nginx)
 
-ingress-nginx has been retired by the Kubernetes project. Proksi serves the same `Ingress` resources (see [Kubernetes](/installation/kubernetes)); set `ingressClassName: proksi`, and replace the `nginx.ingress.kubernetes.io/*` annotations:
+ingress-nginx has been retired by the Kubernetes project. Super serves the same `Ingress` resources (see [Kubernetes](/installation/kubernetes)); set `ingressClassName: proksi`, and replace the `nginx.ingress.kubernetes.io/*` annotations:
 
-| ingress-nginx annotation | Proksi |
+| ingress-nginx annotation | Super |
 | --- | --- |
 | `ssl-redirect`, `force-ssl-redirect` | Built in; `proksi.ingress/tls: "false"` for plain HTTP |
 | `proxy-body-size` | `body_limit { max = "..." }` in `proksi.ingress/blocks` |

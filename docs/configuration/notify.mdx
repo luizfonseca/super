@@ -1,9 +1,9 @@
 ---
 title: "Notifications"
-description: "Proksi can tell a webhook when an upstream goes down, a certificate fails, the configuration changes, and more."
+description: "Super can tell a webhook when an upstream goes down, a certificate fails, the configuration changes, and more."
 ---
 
-Proksi can send what happens to it to a webhook: an upstream going down, a certificate that couldn't be renewed, a configuration change it refused. Each `notify` block names a webhook, at the root of the configuration, and there can be as many as needed:
+Super can send what happens to it to a webhook: an upstream going down, a certificate that couldn't be renewed, a configuration change it refused. Each `notify` block names a webhook, at the root of the configuration, and there can be as many as needed:
 
 ```hcl
 notify "ops" {

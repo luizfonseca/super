@@ -1,9 +1,9 @@
 ---
 title: "Headers"
-description: "Proksi can change the headers of responses (sent to the client) and of requests (sent to the upstream)."
+description: "Super can change the headers of responses (sent to the client) and of requests (sent to the upstream)."
 ---
 
-Proksi can change the headers of responses (sent to the client) and of requests (sent to the upstream).
+Super can change the headers of responses (sent to the client) and of requests (sent to the upstream).
 
 ## Response headers
 
@@ -34,7 +34,7 @@ host "example.com" {
 
 A location's headers are applied after the host's, so a location can override a header added by its host.
 
-They're also applied to the responses Proksi sends itself, such as a `429` from `rate_limit`, a `401` from `basic_auth`, or a `502`, `503` or `504` when an upstream fails. A request that matches no location gets a `404` without them, as it has no location to take them from. Proksi's own responses have no `Server` header.
+They're also applied to the responses Super sends itself, such as a `429` from `rate_limit`, a `401` from `basic_auth`, or a `502`, `503` or `504` when an upstream fails. A request that matches no location gets a `404` without them, as it has no location to take them from. Super's own responses have no `Server` header.
 
 ## Request headers
 

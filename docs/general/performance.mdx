@@ -1,52 +1,63 @@
 ---
 title: "Performance"
-description: "Proksi is built on Cloudflare Pingora, and most of the work of each request (parsing, connection pooling, I/O) happens there."
+description: "Super is Proksi on hyper: the core that does most of the work of each request (parsing, connection pooling, I/O) is its own, and it costs far less CPU per request than Proksi's Pingora."
 ---
 
-Proksi is built on [Cloudflare Pingora](https://github.com/cloudflare/pingora), and most of the work of each request (parsing, connection pooling, I/O) happens there. Proksi adds the routing, plugins, forwarded headers, metrics and logging on top of it, which costs around 3µs per request: proxying with one thread, Proksi uses 14.2µs of CPU per request where a bare Pingora proxy uses 11µs.
+Super is [Proksi](https://github.com/luizfonseca/proksi) rebuilt on [hyper](https://hyper.rs) instead of [Cloudflare Pingora](https://github.com/cloudflare/pingora). Most of the work of each request (parsing, connection pooling, I/O) happens in its core, `super_core`, which keeps Pingora's request phases; the routing, plugins, forwarded headers, metrics and logging on top of it are Proksi's.
 
-Most of the difference with nginx comes from Pingora: it parses requests into owned headers and runs each step of a request as an async task, where nginx reuses its buffers and barely allocates. Pingora's threads also share one pool of upstream connections, so a connection opened on one thread is often reused from another, which costs more as threads are added.
+The core allocates nothing on the hot path where it can, keeps upstream connections per thread (borrowing another thread's idle one when it has none), and by default keeps each connection on the thread that accepted it.
 
-### Compared to nginx and Traefik
+### Compared to nginx and Proksi
 
 All proxies forward plain HTTP and HTTPS requests to the same nginx upstream, with the same certificate (RSA 2048), access logs disabled and keep-alive connections to the upstream. The load comes from [oha](https://github.com/hatoo/oha) with 50 connections, on the same machine.
 
 ```bash
-# Linux (arm64, 8 cores), at 2026-10-16
-# nginx 1.26.3, Traefik 3.7.15, Proksi (main, with mimalloc)
-# Threads: worker_threads (Proksi), worker_processes (nginx), GOMAXPROCS (Traefik)
+# Linux (arm64, 8 CPUs), nginx 1.26.3, medians of 3 alternating rounds
+# Threads: worker_threads (Proksi, Super), worker_processes (nginx)
+# Memory: the proxy's private memory (without its executable's pages)
 ```
 
 **1 thread**
 
 | | Requests/s (HTTP / HTTPS) | CPU per request (HTTP / HTTPS) | Latency p99 (HTTP) | Memory (idle → under load) |
 | --- | ---: | ---: | ---: | ---: |
-| nginx | 112k / 84k | 8.9 / 11.9 µs | 0.65 ms | 15 → 15 MB |
-| **Proksi** | 57k / 45k | 17.6 / 22 µs | 1.35 ms | 37 → 43 MB |
-| Traefik | 34k / 33k | 29.5 / 30.5 µs | 4.6 ms | 89 → 111 MB |
+| nginx | 112k / 85k | 8.9 / 11.7 µs | 0.68 ms | 7 → 10 MB |
+| Proksi | 50k / 41k | 20.1 / 24.6 µs | 1.54 ms | 10 → 17 MB |
+| **Super** | 72k / 61k | 14.0 / 16.4 µs | 1.06 ms | 5 → 10 MB |
 
 **4 threads**
 
 | | Requests/s (HTTP / HTTPS) | CPU per request (HTTP / HTTPS) | Latency p99 (HTTP) | Memory (idle → under load) |
 | --- | ---: | ---: | ---: | ---: |
-| nginx | 398k / 327k | 8.5 / 10.9 µs | 0.37 ms | 29 → 31 MB |
-| **Proksi** | 144k / 129k | 26.4 / 29.6 µs | 0.9 ms | 39 → 49 MB |
-| Traefik | 109k / 106k | 35.4 / 36.3 µs | 2.2 ms | 91 → 119 MB |
+| nginx | 412k / 353k | 8.2 / 10.2 µs | 0.35 ms | 22 → 26 MB |
+| Proksi | 85k / 80k | 40.1 / 43.5 µs | 1.06 ms | 10 → 20 MB |
+| **Super** | 318k / 261k | 12.0 / 14.7 µs | 0.33 ms | 5 → 12 MB |
 
-These numbers were taken with [mimalloc](https://github.com/microsoft/mimalloc). Proksi now uses the system's allocator (musl's, in the release binaries and the Docker image), which gives memory back once traffic drops: in a container with 2 CPUs, under load it peaked at about 46 MB instead of 72 MB, and was back to about 30 MB a minute later instead of 40–60 MB, for about 9% fewer requests per second. With many cores busy at once the gap in requests per second grows, since musl's allocator serves one thread at a time.
+**Other workloads** (4 threads)
+
+| | nginx | Proksi | Super |
+| --- | ---: | ---: | ---: |
+| A new connection for each request (HTTP) | 193k req/s | 63k req/s | 140k req/s |
+| A new connection for each request (TLS) | 20k req/s | 14k req/s | 16k req/s |
+| 1 MB downloads | 10.4 GB/s | 2.6 GB/s | 19.4 GB/s |
+| 10 MB downloads | 7.8 GB/s | 2.4 GB/s | 21.0 GB/s |
+| 1 MB uploads | 7.0 GB/s | 13.9 GB/s | 23.0 GB/s |
+| HTTP/2, 10 connections × 10 streams | 409k req/s | 99k req/s | 336k req/s |
+
+With TLS, most of a new connection's cost is OpenSSL's handshake (RSA, and the post-quantum key exchange Proksi and Super build with).
 
 These numbers come from a single machine, where the proxy, the upstream and the load generator share the same CPUs. Treat them as a comparison, not as the throughput you will get in production.
 
 ### Worker threads
 
-By default, worker threads take over each other's connections when they're idle. With `work_stealing = false`, each connection stays on the thread that accepted it instead:
+By default, each connection stays on the thread that accepted it, which costs far less CPU per request. With `work_stealing = true`, idle threads take over each other's connections instead (Proksi's default):
 
-- With cores to spare (Proksi's threads each get a CPU), it uses about 15% less CPU per request with 4 threads.
-- When Proksi gets less CPU than it has threads (a container with a CPU limit below `worker_threads`, or a machine busy with other work), requests wait for their thread, and throughput drops (about 5% in the benchmark of pull requests).
+- Keep the default when Super's threads each get a CPU.
+- Turn it on when Super gets less CPU than it has threads (a container with a CPU limit below `worker_threads`, or a machine busy with other work): requests then don't wait for a busy thread.
 
 ```hcl
 server {
-  work_stealing = false
+  work_stealing = true
 }
 ```
 
@@ -58,7 +69,7 @@ Every pull request is benchmarked against `main` on the same GitHub runner (requ
 
 ### CDN performance
 
-Using the following configuration we can see that Proksi holds its own in regards to performance.
+Using the following configuration we can see that Proksi holds its own in regards to performance (a test of Proksi's, before Super).
 
 ```hcl
 cache {

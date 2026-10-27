@@ -64,4 +64,4 @@ host "app.example.com" {
 - Only addresses forwarded by trusted proxies are used. A visitor who sends `X-Forwarded-For` themselves can't pass for another address.
 - The same address is used everywhere: [`rate_limit`](/plugins/rate-limit), [`ip_filter`](/plugins/ip-filter), the `client` of [rules](/rules), access logs, and `X-Real-IP` for upstreams.
 - Don't trust networks that visitors can connect from directly. Anyone in them could choose their own address.
-- To accept only Cloudflare's connections, allow its ranges in the server's firewall. Proksi checks the forwarded address, not the connection's.
+- To accept only Cloudflare's connections, allow its ranges in the server's firewall. Super checks the forwarded address, not the connection's.

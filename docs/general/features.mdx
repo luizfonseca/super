@@ -1,9 +1,9 @@
 ---
 title: "Features"
-description: "Proksi is evolving day by day, and new features are being added all the time."
+description: "Super is evolving day by day, and new features are being added all the time."
 ---
 
-Proksi is evolving day by day, and new features are being added with scalability in mind. Below is a list of the features that are currently available in Proksi:
+Super is evolving day by day, and new features are being added with scalability in mind. Below is a list of the features that are currently available in Super:
 
 - [x] **HTTPS**: SSL termination, automatic redirect from HTTP and certificate renewal (Let's Encrypt)
 - [x] **DNS challenges** (Cloudflare) for wildcard certificates and hosts Let's Encrypt can't reach
@@ -12,14 +12,14 @@ Proksi is evolving day by day, and new features are being added with scalability
 - [x] **Path rewriting** per location: strip or add a prefix to the path sent to upstreams
 - [x] **Catch-all host** (`host "*"`) for names without a host of their own
 - [x] **Wildcard hosts** (`host "*.example.com"`) for every name one label under theirs
-- [x] **Listen addresses per host**: Proksi only opens the ports its hosts need
+- [x] **Listen addresses per host**: Super only opens the ports its hosts need
 - [x] **Docker**: Swarm/Compose Label Support
 - [x] **Load Balancing** (✅ Round Robin, ✅ Weighted Round Robin, ✅ Least Connections), and retries on another upstream
 - [x] **Traffic splits** per location: canaries and A/B tests, sticky by cookie or address, chosen by rules too
 - [x] **Request mirroring** per location: copies of a share of the requests, or the ones rules choose, sent to other upstreams in the background
 - [X] Health Checks
 - [x] **Upstream names** (`app:8080`) resolved again as their addresses change, following recreated containers
-- [x] **Shared store** (Redis, SQLite, Postgres) to run many Proksi servers with the same routes and certificates
+- [x] **Shared store** (Redis, SQLite, Postgres) to run many Super servers with the same routes and certificates
 - [x] **Auto reload** of the configuration file: hosts applied live, other settings through an [upgrade](/configuration/upgrades) that keeps connections open (Linux)
 - [x] **HCL functions** Extensible through configuration with `env` and `import`
 - [x] Header manipulation for DOWNSTREAM & UPSTREAM (add/replace, remove)

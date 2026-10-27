@@ -1,13 +1,13 @@
 ---
 title: "Migrating from Caddy"
-description: "Like Caddy, Proksi gets and renews certificates for its hosts, and redirects HTTP to HTTPS without being told to."
+description: "Like Caddy, Super gets and renews certificates for its hosts, and redirects HTTP to HTTPS without being told to."
 ---
 
-Like Caddy, Proksi gets and renews certificates for its hosts, and redirects HTTP to HTTPS without being told to. This page maps a Caddyfile, caddy-docker-proxy labels and the layer4 plugin to Proksi.
+Like Caddy, Super gets and renews certificates for its hosts, and redirects HTTP to HTTPS without being told to. This page maps a Caddyfile, caddy-docker-proxy labels and the layer4 plugin to Super.
 
 ## Concepts
 
-| Caddy | Proksi |
+| Caddy | Super |
 | --- | --- |
 | Site block (`app.example.com { }`) | `host "app.example.com" { }` (one name per host) |
 | `reverse_proxy` | `upstream` blocks of a `location` |
@@ -67,14 +67,14 @@ host "app.example.com" {
 }
 ```
 
-- Let's Encrypt is **off by default** (unlike Caddy), and uses its staging server unless `staging = false`. Certificates are kept in `paths.lets_encrypt` (a volume in containers), or in the [store](/configuration/redis) when several Proksi instances run.
+- Let's Encrypt is **off by default** (unlike Caddy), and uses its staging server unless `staging = false`. Certificates are kept in `paths.lets_encrypt` (a volume in containers), or in the [store](/configuration/redis) when several Super instances run.
 - As with Caddy, the client's `Host` is forwarded unchanged, and `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` are set (plus `X-Real-IP`). `trusted_proxies` is `server.trusted_proxies`.
 - WebSockets and HTTP/2 work without configuration.
 - Upstream names (`web:3000`) are resolved again as their addresses change, like Caddy's dynamic upstreams.
 
 ## Directives
 
-| Caddyfile | Proksi |
+| Caddyfile | Super |
 | --- | --- |
 | `reverse_proxy a b` with `lb_policy weighted_round_robin` | Several `upstream` blocks, with `weight` |
 | `lb_policy least_conn` | [`load_balancing = "least_connections"`](/routing/upstreams#least-connections) |

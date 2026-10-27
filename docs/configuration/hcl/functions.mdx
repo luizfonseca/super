@@ -25,13 +25,13 @@ logging {
 
 ### env
 
-You can use the env function to retrieve environment variables during the configuration parsing process of Proksi.
+You can use the env function to retrieve environment variables during the configuration parsing process of Super.
 
 This is particularly useful if you have secrets or other type of data that you do not want to be part of your `git` or repository:
 
 #### Usage
 
-`env(NAME: string)` where NAME is an environment variable present during Proksi's run.
+`env(NAME: string)` where NAME is an environment variable present during Super's run.
 
 ```hcl
 worker_threads = env("WORKERS_COUNT")
@@ -56,7 +56,7 @@ This function will throw an error if the environment variable is not set.
 
 ### import
 
-Configuring Proksi in one single file is a no-brainer, but it works well only when you don't have hundreds of upstreams, routes, headers and reusable pieces that you want to commit or have others work on them too.
+Configuring Super in one single file is a no-brainer, but it works well only when you don't have hundreds of upstreams, routes, headers and reusable pieces that you want to commit or have others work on them too.
 
 The `import` function is a way to help improve your configuration organization in the long term.
 
@@ -66,7 +66,7 @@ The `import` function is a way to help improve your configuration organization i
 
 `import(RELATIVE_PATH: string)` where relative\_path is always a path relative to the main configuration file (**not** relative to other imports).
 
-This matters because `import`s can be nested: Proksi includes them all together, so it looks for each of them relative to the main configuration file.
+This matters because `import`s can be nested: Super includes them all together, so it looks for each of them relative to the main configuration file.
 
 **config.hcl**
 ```hcl

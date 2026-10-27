@@ -1,13 +1,13 @@
 ---
 title: "Cache"
-description: "Proksi can be configured to use a cache to improve the performance of your proxy server."
+description: "Super can be configured to use a cache to improve the performance of your proxy server."
 ---
 
-Proksi can be configured to use a cache to improve the performance of your proxy server.
+Super can be configured to use a cache to improve the performance of your proxy server.
 
 ## Cache configuration
 
-The cache configuration is defined in the `routes` section of the Proksi configuration file.
+The cache configuration is defined in the `routes` section of the Super configuration file.
 
 Each route can have a `cache` section that specifies the cache configuration for that route.
 
@@ -56,6 +56,6 @@ The limit applies to the cached responses themselves; the process will use somew
 
 ## Cache usage
 
-When a request is made to a route with a cache configuration, Proksi will check if the response is already in the cache. If it is, the response will be served from the cache instead of making a new request to the upstream server.
+When a request is made to a route with a cache configuration, Super will check if the response is already in the cache. If it is, the response will be served from the cache instead of making a new request to the upstream server.
 
-If the response is not in the cache, Proksi will make a new request to the upstream server and cache the response. The cache will be updated with the new response if the response is valid for the configured expiration time.
+If the response is not in the cache, Super will make a new request to the upstream server and cache the response. The cache will be updated with the new response if the response is valid for the configured expiration time.

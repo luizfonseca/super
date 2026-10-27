@@ -72,6 +72,6 @@ A rule of a location copying requests (`mirror = true`) needs a mirror in that l
 
 ### Good to know
 
-- Only proxied requests are copied: the location needs upstreams of its own, and requests answered by Proksi (a `401`, a redirect, a cached response) aren't copied.
+- Only proxied requests are copied: the location needs upstreams of its own, and requests answered by Super (a `401`, a redirect, a cached response) aren't copied.
 - The mirror's upstreams are health checked as the location's; copies go to its healthy ones, and fail while none is.
 - Copies to `:443` upstreams use HTTPS, as the location's.
