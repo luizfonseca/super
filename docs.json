@@ -3,7 +3,7 @@
   "name": "Proksi",
   "logo": {
     "light": "/assets/logo.svg",
-    "dark": "/assets/logo.svg"
+    "dark": "/assets/logo-dark.svg"
   },
   "favicon": "/assets/favicon.svg",
   "description": "Batteries-included reverse proxy and load balancer for Docker, Kubernetes or a single binary, built on Cloudflare Pingora.",
