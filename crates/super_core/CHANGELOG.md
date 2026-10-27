@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/luizfonseca/super/compare/super_core-v0.3.2...super_core-v0.4.0) (2026-10-27)
+
+
+### Bug Fixes
+
+* an upstream's Host reaches HTTP/2 upstreams ([c43413a](https://github.com/luizfonseca/super/commit/c43413a72342aa8603b389dd8df77b6397f73ff5))
+
 ## [0.3.2](https://github.com/luizfonseca/super/compare/super_core-v0.3.1...super_core-v0.3.2) (2026-10-26)
 
 
