@@ -87,7 +87,7 @@ Of the many features Super offers is the ability to load balance to your infrast
 - Powerful plugin system for adding new middlewares and other features using **WebAssembly (WASM)**
 - Many others.
 
-See the [admin UI documentation](https://superproxy.dev/admin-ui) for a tour of its pages.
+See the [admin UI documentation](https://docs.superproxy.dev/admin-ui) for a tour of its pages.
 
 # Quick start
 
@@ -161,7 +161,7 @@ Super supports flexible configuration file loading:
 
 # Configuration
 
-Super is configured through **HCL** (recommended), **YAML** or **environment variables**. Below is everything you need to get going; the [documentation](https://superproxy.dev) goes into more detail.
+Super is configured through **HCL** (recommended), **YAML** or **environment variables**. Below is everything you need to get going; the [documentation](https://docs.superproxy.dev) goes into more detail.
 
 ## Server
 
@@ -281,7 +281,7 @@ host "db.example.com" {
 }
 ```
 
-`tcp` blocks can also share the HTTPS port: with `listen = "0.0.0.0:443"`, connections asking for the host's name are forwarded while every other name is still HTTPS. If the host also has locations, `alpn = ["..."]` tells them apart by the protocol the client asks for. See the [TCP documentation](https://superproxy.dev/routing/tcp) for more.
+`tcp` blocks can also share the HTTPS port: with `listen = "0.0.0.0:443"`, connections asking for the host's name are forwarded while every other name is still HTTPS. If the host also has locations, `alpn = ["..."]` tells them apart by the protocol the client asks for. See the [TCP documentation](https://docs.superproxy.dev/routing/tcp) for more.
 
 ## Upstreams
 
@@ -375,7 +375,7 @@ host "example.com" {
 
 ## Plugins
 
-Built-in plugins are enabled per location, and run in order of their `priority` (see the [HCL documentation](https://superproxy.dev/configuration/hcl)):
+Built-in plugins are enabled per location, and run in order of their `priority` (see the [HCL documentation](https://docs.superproxy.dev/configuration/hcl)):
 
 ```hcl
 host "example.com" {
@@ -451,7 +451,7 @@ host "example.com" {
 }
 ```
 
-Locations can also answer without an upstream, with a [`redirect`](https://superproxy.dev/plugins/redirect) (`to = "https://example.com{uri}"`) or a fixed response ([`respond`](https://superproxy.dev/plugins/respond), such as `status = 503` and `body = "Back soon"`).
+Locations can also answer without an upstream, with a [`redirect`](https://docs.superproxy.dev/plugins/redirect) (`to = "https://example.com{uri}"`) or a fixed response ([`respond`](https://docs.superproxy.dev/plugins/respond), such as `status = 503` and `body = "Back soon"`).
 
 ## Rules
 
@@ -480,7 +480,7 @@ host "shop.example.com" {
 }
 ```
 
-Conditions combine with `and`, `or` and `not`, on the method, host, path, query, headers, cookies or client; `then` takes the blocks a location takes, and can change the request's method and headers. See the [rules documentation](https://superproxy.dev/rules) for more examples on how powerful the rule system can be and its performance.
+Conditions combine with `and`, `or` and `not`, on the method, host, path, query, headers, cookies or client; `then` takes the blocks a location takes, and can change the request's method and headers. See the [rules documentation](https://docs.superproxy.dev/rules) for more examples on how powerful the rule system can be and its performance.
 
 ## Caching
 
@@ -545,7 +545,7 @@ kubectl apply -f https://raw.githubusercontent.com/luizfonseca/proksi/main/deplo
 kubectl -n proksi set image deployment/proksi proksi=luizfonseca/super:latest
 ```
 
-See the [Kubernetes documentation](https://superproxy.dev/installation/kubernetes) for paths, TLS and running more than one replica.
+See the [Kubernetes documentation](https://docs.superproxy.dev/installation/kubernetes) for paths, TLS and running more than one replica.
 
 ## Running many servers
 
@@ -577,7 +577,7 @@ admin {
 }
 ```
 
-Without a `token` block, `listen` must be a loopback address. The same address serves a UI, which signs in with a token. Live numbers (requests per second, p50/p90/p99 latency, errors and upstream health over the last minutes) are at `/api/v1/stats`, or streamed every second from `/api/v1/stats/stream`. See the [admin documentation](https://superproxy.dev/configuration/admin) for the metrics and a Prometheus configuration.
+Without a `token` block, `listen` must be a loopback address. The same address serves a UI, which signs in with a token. Live numbers (requests per second, p50/p90/p99 latency, errors and upstream health over the last minutes) are at `/api/v1/stats`, or streamed every second from `/api/v1/stats/stream`. See the [admin documentation](https://docs.superproxy.dev/configuration/admin) for the metrics and a Prometheus configuration.
 
 ## Auto reload
 
@@ -640,11 +640,11 @@ host:
 
 ## What's next
 
-See the [features](https://superproxy.dev/general/features) page for what's available today.
+See the [features](https://docs.superproxy.dev/general/features) page for what's available today.
 
 
 # Documentation
-Documentation for Super can be found at [https://superproxy.dev](https://superproxy.dev), which is also available in the [docs](./docs/) folder of this repository (served by [docs.page](https://docs.page)). What differs from Proksi is in [PROKSI.md](./PROKSI.md).
+Documentation for Super can be found at [https://superproxy.dev](https://docs.superproxy.dev), which is also available in the [docs](./docs/) folder of this repository (served by [docs.page](https://docs.page)). What differs from Proksi is in [PROKSI.md](./PROKSI.md).
 
 
 # Contributing
