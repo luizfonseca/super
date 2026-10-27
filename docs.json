@@ -6,17 +6,22 @@
     "dark": "/assets/logo-dark.svg"
   },
   "favicon": "/assets/favicon.svg",
-  "description": "Batteries-included reverse proxy and load balancer for Docker, Kubernetes or a single binary, built on Cloudflare Pingora.",
+  "description": "Batteries-included reverse proxy and load balancer for Docker, Kubernetes or a single binary, built on hyper.",
   "anchors": [
     {
       "icon": "github",
       "title": "GitHub",
-      "href": "https://github.com/luizfonseca/proksi"
+      "href": "https://github.com/luizfonseca/super"
     },
     {
       "icon": "box",
-      "title": "Crates.io",
-      "href": "https://crates.io/crates/proksi"
+      "title": "Docker Hub",
+      "href": "https://hub.docker.com/r/luizfonseca/super"
+    },
+    {
+      "icon": "globe",
+      "title": "superproxy.dev",
+      "href": "https://superproxy.dev"
     }
   ],
   "sidebar": [
