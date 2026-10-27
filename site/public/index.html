@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Super: the reverse proxy for the modern era</title>
+  <title>Super: the reverse proxy, without the overhead</title>
   <meta name="description" content="Super is a fast reverse proxy and load balancer with automatic HTTPS, HTTP/3, plugins and a live admin UI. Proksi's configuration, rebuilt on hyper: 3.7× the requests per CPU.">
   <link rel="canonical" href="https://superproxy.dev/">
   <meta name="theme-color" content="#08090b">
@@ -12,14 +12,14 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Super">
   <meta property="og:url" content="https://superproxy.dev/">
-  <meta property="og:title" content="Super: the reverse proxy for the modern era">
+  <meta property="og:title" content="Super: the reverse proxy, without the overhead">
   <meta property="og:description" content="Automatic HTTPS, load balancing, HTTP/3, plugins and a live admin UI in one small config file. 3.7× the requests per CPU of Proksi.">
   <meta property="og:image" content="https://superproxy.dev/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="Super proxy: requests streaming through the Super wing">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Super: the reverse proxy for the modern era">
+  <meta name="twitter:title" content="Super: the reverse proxy, without the overhead">
   <meta name="twitter:description" content="Automatic HTTPS, load balancing, HTTP/3, plugins and a live admin UI. 3.7× the requests per CPU of Proksi.">
   <meta name="twitter:image" content="https://superproxy.dev/og.png">
 
@@ -201,6 +201,11 @@
     .checks li { display: flex; gap: 12px; color: var(--muted); }
     .checks li::before { content: ""; flex: none; width: 20px; height: 20px; margin-top: 3px; border-radius: 6px; background: var(--accent-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.5l3.2 3L15 6.5' fill='none' stroke='%23ff5a1f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat; }
     @media (max-width: 860px) { .config { grid-template-columns: 1fr; } }
+    .costs { display: flex; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
+    .costs div { flex: 1 1 140px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 14px 16px; }
+    .costs strong { display: block; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+    .costs div:last-child strong { color: var(--dim); }
+    .costs span { color: var(--muted); font-size: 13.5px; }
 
     /* Features */
     .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 38px; }
@@ -251,6 +256,7 @@
       <ul>
         <li class="hide-small"><a href="#why">Why</a></li>
         <li class="hide-small"><a href="#speed">Benchmarks</a></li>
+        <li class="hide-small"><a href="#rules">Rules</a></li>
         <li class="hide-small"><a href="#conformance">Conformance</a></li>
         <li><a href="https://docs.superproxy.dev">Docs</a></li>
         <li><a href="https://github.com/luizfonseca/super">GitHub</a></li>
@@ -261,7 +267,7 @@
   <header class="hero">
     <canvas id="streams" aria-hidden="true"></canvas>
     <div class="wrap">
-      <h1>The reverse proxy for the <em>modern era</em></h1>
+      <h1>The reverse proxy, <em>without the overhead</em></h1>
       <p class="lede">Automatic HTTPS, load balancing, plugins, HTTP/3 and a live admin UI, configured in one small file. Super runs Proksi's configuration as it is, on a core that serves 3.7× the requests per CPU.</p>
       <div class="actions">
         <a class="button primary" href="https://docs.superproxy.dev">Get started</a>
@@ -342,7 +348,7 @@
         <pre class="reveal" aria-label="An example config.hcl"><code><span class="c"># config.hcl</span>
 <span class="k">lets_encrypt</span> {
   enabled = <span class="n">true</span>
-  email   = <span class="s">"you@example.com"</span>
+  email   = <span class="s">"you@acme.dev"</span>
 }
 
 <span class="k">host</span> <span class="s">"example.com"</span> {
@@ -370,6 +376,54 @@
       </div>
     </section>
 
+    <section id="rules">
+      <div class="wrap config">
+        <div class="reveal">
+          <div class="kicker">Rules</div>
+          <h2>Ask anything of a request. Pay almost nothing.</h2>
+          <p class="intro">A rule is a question about a request, and what to do when the answer is yes. Ask about its method, host, path, query, headers, cookies or client; then redirect it, answer it, limit it, protect it, or send it elsewhere.</p>
+          <div class="costs">
+            <div><strong>~170 ns</strong><span>for 100 rules</span></div>
+            <div><strong>~1.2 µs</strong><span>for 1,000 rules</span></div>
+            <div><strong>~14 µs</strong><span>for a whole request</span></div>
+          </div>
+          <ul class="checks">
+            <li>Compiled when the configuration loads, indexed by method, host and path</li>
+            <li>Each part of a request read once, however many rules ask about it</li>
+            <li>For the whole server, a host, or one location</li>
+          </ul>
+        </div>
+        <pre class="reveal" aria-label="Two rules in a config.hcl"><code><span class="k">host</span> <span class="s">"shop.example.com"</span> {
+  <span class="c"># Scanners never reach the app</span>
+  <span class="k">rule</span> <span class="s">"scanners"</span> {
+    <span class="k">and</span> {
+      <span class="k">path</span> { contains = [<span class="s">"/.env"</span>, <span class="s">"/.git"</span>, <span class="s">"/wp-login"</span>] }
+    }
+    <span class="k">then</span> {
+      <span class="k">respond</span> { status = <span class="n">404</span> }
+    }
+  }
+
+  <span class="k">location</span> <span class="s">"/api"</span> {
+    <span class="k">upstream</span> <span class="s">"api:4000"</span> {}
+
+    <span class="c"># Reads stay free, writes get a limit</span>
+    <span class="k">rule</span> <span class="s">"limit writes"</span> {
+      <span class="k">and</span> {
+        <span class="k">method</span> { not_in = [<span class="s">"GET"</span>, <span class="s">"HEAD"</span>] }
+      }
+      <span class="k">then</span> {
+        <span class="k">rate_limit</span> {
+          requests = <span class="n">60</span>
+          per      = <span class="s">"1m"</span>
+        }
+      }
+    }
+  }
+}</code></pre>
+      </div>
+    </section>
+
     <section id="features">
       <div class="wrap">
         <div class="reveal">
@@ -381,7 +435,7 @@
           <div class="feature reveal"><div class="glyph">⚡</div><h3>HTTP/3 and HTTP/2</h3><p>QUIC for browsers that speak it, websockets over HTTP/2, and HTTP/2 or TLS to your upstreams.</p></div>
           <div class="feature reveal"><div class="glyph">🐳</div><h3>Docker and Kubernetes</h3><p>Containers found by their labels, and an ingress controller that sends requests straight to pods.</p></div>
           <div class="feature reveal"><div class="glyph">🧩</div><h3>Plugins</h3><p>Basic auth, JWT, OAuth2, forward auth, CORS, rate limits, waiting rooms, static files, compression.</p></div>
-          <div class="feature reveal"><div class="glyph">🧭</div><h3>Rules and traffic</h3><p>Rules on any part of a request, canary splits, mirrors, retries and least-connections balancing.</p></div>
+          <div class="feature reveal"><div class="glyph">🧭</div><h3>Traffic</h3><p>Canary splits, mirrors, retries, health checks and least-connections balancing across your upstreams.</p></div>
           <div class="feature reveal"><div class="glyph">📈</div><h3>A live admin UI</h3><p>Traffic as it happens, the latest requests, hosts and their rules to change, and Prometheus metrics.</p></div>
         </div>
       </div>
