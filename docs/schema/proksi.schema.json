@@ -4476,7 +4476,7 @@
       "description": "Cache configuration (shared by all routes)"
     },
     "config_path": {
-      "description": "The PATH to the configuration file to be used.\n\nThe configuration file should be named either `proksi.hcl` or `proksi.yaml`\n\nand be present in that path. If no path is provided, a minimal default\nconfiguration will be used.",
+      "description": "The PATH to the configuration file to be used.\n\nThe configuration file, or a directory with `config.hcl` or `config.yaml` (or Proksi's\n`proksi.hcl` or `proksi.yaml`). If no path is provided, a minimal default\nconfiguration will be used.",
       "type": [
         "string",
         "null"

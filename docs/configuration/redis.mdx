@@ -7,9 +7,9 @@ Most use cases require a distributed configuration setup. This can be achieved b
 
 ## Redis Configuration
 
-To configure Proksi to use Redis as a distributed cache, you can set the following in your `proksi.hcl` file:
+To configure Proksi to use Redis as a distributed cache, you can set the following in your `config.hcl` file:
 
-**proksi.hcl**
+**config.hcl**
 ```hcl
 store {
   store_type = "redis"
@@ -23,7 +23,7 @@ This will then use Redis as backend storage for certificates, challenges and rou
 
 Routes can be stored in Redis, in addition to the configuration file and docker labels. Every instance syncs them in the background (they're never read from Redis while handling a request):
 
-**proksi.hcl**
+**config.hcl**
 ```hcl
 store {
   store_type = "redis"

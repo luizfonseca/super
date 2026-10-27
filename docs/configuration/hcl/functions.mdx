@@ -9,7 +9,7 @@ HCL supports functions that can be used to generate values in the configuration 
 
 Returns the number of CPUs (logical cores) available on the system.
 
-**proksi.hcl**
+**config.hcl**
 ```hcl
 # You can use the num_cpus function to set the number of worker threads
 # You can also use math expressions like num_cpus() - 2
@@ -68,7 +68,7 @@ The `import` function is a way to help improve your configuration organization i
 
 This matters because `import`s can be nested: Proksi includes them all together, so it looks for each of them relative to the main configuration file.
 
-**proksi.hcl**
+**config.hcl**
 ```hcl
 worker_threads = 2
 

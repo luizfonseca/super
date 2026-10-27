@@ -734,7 +734,8 @@ impl Default for ClientTimeouts {
 pub(crate) enum Command {
     /// Loads and checks the configuration, as when starting, without starting anything
     Check {
-        /// The configuration file, or a directory with `proksi.hcl` or `proksi.yaml`
+        /// The configuration file, or a directory with `config.hcl` or `config.yaml` (or Proksi's
+        /// `proksi.hcl` or `proksi.yaml`)
         #[arg(short, long)]
         config_path: Option<String>,
     },
@@ -826,9 +827,8 @@ pub(crate) struct Config {
 
     /// The PATH to the configuration file to be used.
     ///
-    /// The configuration file should be named either `proksi.hcl` or `proksi.yaml`
-    ///
-    /// and be present in that path. If no path is provided, a minimal default
+    /// The configuration file, or a directory with `config.hcl` or `config.yaml` (or Proksi's
+    /// `proksi.hcl` or `proksi.yaml`). If no path is provided, a minimal default
     /// configuration will be used.
     #[clap(short, required = false, long)]
     #[allow(clippy::struct_field_names)]
@@ -1036,6 +1036,59 @@ fn merge_file(figment: Figment, path: &str) -> Figment {
     }
 }
 
+/// What a directory's configuration files are named, by preference: Super's `config`, then Proksi's
+/// `proksi`
+pub(crate) const CONFIG_NAMES: [&str; 2] = ["config", "proksi"];
+
+/// The extensions of configuration files, in the order they're merged (the last one wins)
+pub(crate) const CONFIG_EXTENSIONS: [&str; 3] = ["yml", "yaml", "hcl"];
+
+/// The configuration files `name` names in `dir`, whether they exist or not
+pub(crate) fn named_files(dir: &str, name: &str) -> [String; 3] {
+    CONFIG_EXTENSIONS.map(|extension| format!("{dir}/{name}.{extension}"))
+}
+
+/// The configuration files of the directory `dir`: its `config.*`, or Proksi's `proksi.*` when it
+/// has none. `None` when it has neither.
+fn directory_files(dir: &str) -> Option<[String; 3]> {
+    CONFIG_NAMES
+        .iter()
+        .map(|name| named_files(dir, name))
+        .find(|files| files.iter().any(|file| std::path::Path::new(file).exists()))
+}
+
+/// The configuration of the directory `dir` merged into `figment` (missing files are skipped)
+fn merge_directory(figment: Figment, dir: &str, use_minimal_default: bool) -> Figment {
+    match directory_files(dir) {
+        Some(files) => {
+            warn_of_ignored(dir, &files);
+            files
+                .iter()
+                .fold(figment, |figment, file| merge_file(figment, file))
+        }
+        None if use_minimal_default => {
+            // No config files found and user didn't explicitly provide a path
+            eprintln!(
+                "Warning: No configuration files found. Using minimal default configuration with Let's Encrypt disabled."
+            );
+            figment.merge(Serialized::defaults(create_minimal_default_config()))
+        }
+        None => figment,
+    }
+}
+
+/// Warns when `dir` also has Proksi's `proksi.*` files, which its `config.*` files replace
+fn warn_of_ignored(dir: &str, used: &[String; 3]) {
+    let ignored = named_files(dir, "proksi");
+    if *used != ignored
+        && ignored
+            .iter()
+            .any(|file| std::path::Path::new(file).exists())
+    {
+        eprintln!("Warning: {dir} has `config.*` and `proksi.*` files: only `config.*` are read.");
+    }
+}
+
 /// Load configuration from a specific path, used for testing and internal logic
 #[allow(clippy::result_large_err)]
 pub(crate) fn load_from_path(
@@ -1051,36 +1104,7 @@ pub(crate) fn load_from_path(
     if std::path::Path::new(config_path).is_file() {
         figment = merge_file(figment, config_path);
     } else {
-        // If it's a directory, check if any config files exist
-        let config_files = [
-            format!("{config_path}/proksi.yml"),
-            format!("{config_path}/proksi.yaml"),
-            format!("{config_path}/proksi.hcl"),
-        ];
-
-        let config_files_found = config_files
-            .iter()
-            .any(|config_file| std::path::Path::new(config_file).exists());
-
-        if config_files_found {
-            // If at least one config file exists, use the original behavior
-            figment = figment
-                .merge(Yaml::file(format!("{config_path}/proksi.yml")))
-                .merge(Yaml::file(format!("{config_path}/proksi.yaml")))
-                .merge(Hcl::file(format!("{config_path}/proksi.hcl")));
-        } else if use_minimal_default {
-            // No config files found and user didn't explicitly provide a path
-            eprintln!(
-                "Warning: No configuration files found. Using minimal default configuration with Let's Encrypt disabled."
-            );
-            figment = figment.merge(Serialized::defaults(create_minimal_default_config()));
-        } else {
-            // Use original behavior - try to load the files anyway (figment will handle missing files)
-            figment = figment
-                .merge(Yaml::file(format!("{config_path}/proksi.yml")))
-                .merge(Yaml::file(format!("{config_path}/proksi.yaml")))
-                .merge(Hcl::file(format!("{config_path}/proksi.hcl")));
-        }
+        figment = merge_directory(figment, config_path, use_minimal_default);
     }
 
     let config: Config = figment
@@ -1525,6 +1549,28 @@ mod tests {
 
             Ok(())
         })
+    }
+
+    #[test]
+    fn test_a_directory_with_config_hcl() {
+        figment::Jail::expect_with(|jail| {
+            let dir = jail.directory().to_str().unwrap().to_string();
+            jail.create_file(format!("{dir}/config.hcl"), r#"service_name = "super""#)?;
+            assert_eq!(load_for_test(&dir).unwrap().service_name, "super");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_config_hcl_is_read_instead_of_proksi_hcl() {
+        figment::Jail::expect_with(|jail| {
+            let dir = jail.directory().to_str().unwrap().to_string();
+            jail.create_file(format!("{dir}/proksi.hcl"), r#"service_name = "proksi""#)?;
+            assert_eq!(load_for_test(&dir).unwrap().service_name, "proksi");
+            jail.create_file(format!("{dir}/config.yaml"), "service_name: super")?;
+            assert_eq!(load_for_test(&dir).unwrap().service_name, "super");
+            Ok(())
+        });
     }
 
     #[test]

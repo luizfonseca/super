@@ -23,7 +23,7 @@ The cache configuration includes the following options:
 Here's an example of a route with a cache configuration:
 
 ```hcl
-# proksi.hcl file
+# config.hcl file
 # You might need to edit your /etc/hosts file here.
 host "example.com" {
   location "/" {
@@ -46,7 +46,7 @@ host "example.com" {
 Responses served from the `disk` cache are also kept in memory, so that frequently requested responses don't need to be read from disk. The memory used for this is limited by `cache.memory_limit_mb` (shared by all routes, defaults to `256`). When the limit is reached, the least popular responses are only served from disk. Responses larger than 64MB are always served from disk.
 
 ```hcl
-# proksi.hcl file
+# config.hcl file
 cache {
   memory_limit_mb = 256 # 0 disables keeping responses in memory
 }

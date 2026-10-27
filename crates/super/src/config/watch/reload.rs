@@ -6,7 +6,10 @@ use std::{
 };
 
 use crate::{
-    config::{listeners::listeners, notify::NotifyBlock, validate::check_config, Config},
+    config::{
+        listeners::listeners, named_files, notify::NotifyBlock, validate::check_config, Config,
+        CONFIG_EXTENSIONS, CONFIG_NAMES,
+    },
     routing::{file_source::file_snapshot, RouteSnapshot},
 };
 
@@ -56,9 +59,11 @@ pub fn config_files(config_path: &Path) -> Vec<PathBuf> {
         return vec![config_path.to_path_buf()];
     }
 
-    CONFIG_FILE_NAMES
+    let dir = config_path.to_string_lossy();
+    CONFIG_NAMES
         .iter()
-        .map(|name| config_path.join(name))
+        .flat_map(|name| named_files(&dir, name))
+        .map(PathBuf::from)
         .collect()
 }
 
@@ -68,9 +73,6 @@ pub fn is_config_file(path: &Path) -> bool {
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| CONFIG_EXTENSIONS.contains(&ext))
 }
-
-const CONFIG_FILE_NAMES: [&str; 3] = ["proksi.hcl", "proksi.yml", "proksi.yaml"];
-const CONFIG_EXTENSIONS: [&str; 3] = ["hcl", "yml", "yaml"];
 
 #[cfg(test)]
 mod tests {
@@ -152,11 +154,15 @@ mod tests {
 
         assert_eq!(
             config_files(dir.path()),
-            vec![
-                dir.path().join("proksi.hcl"),
-                dir.path().join("proksi.yml"),
-                dir.path().join("proksi.yaml"),
+            [
+                "config.yml",
+                "config.yaml",
+                "config.hcl",
+                "proksi.yml",
+                "proksi.yaml",
+                "proksi.hcl"
             ]
+            .map(|name| dir.path().join(name))
         );
     }
 
