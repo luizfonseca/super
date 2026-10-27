@@ -1,5 +1,7 @@
 lint:
 	cargo clippy --all-features -- -D clippy::pedantic -D clippy::perf -D clippy::complexity -D clippy::style -D clippy::correctness -D clippy::suspicious -D clippy::unwrap_used -D clippy::expect_used -D clippy::indexing_slicing
+audit:
+	cargo audit
 lint.fix:
 	cargo clippy --fix --allow-dirty --allow-staged
 test:
