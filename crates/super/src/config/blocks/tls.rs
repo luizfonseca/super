@@ -91,7 +91,9 @@ impl<'de> Deserialize<'de> for TlsSetting {
 
 #[cfg(test)]
 mod tests {
-    use figment::providers::{Format, Yaml};
+    use figment::providers::Format;
+
+    use crate::config::yaml::Yaml;
     use serde::Deserialize;
 
     use crate::config::hcl::HclFormat;

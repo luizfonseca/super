@@ -166,7 +166,7 @@ mod tests {
         let hcl_example = hcl(&std::fs::read_to_string(root.join("example.hcl")).unwrap()).unwrap();
         assert_eq!(errors(&hcl_example), Vec::<String>::new(), "example.hcl");
         let yaml: Value =
-            figment::Figment::from(figment::providers::Yaml::file(root.join("example.yaml")))
+            figment::Figment::from(crate::config::yaml::Yaml::file(root.join("example.yaml")))
                 .extract()
                 .unwrap();
         assert_eq!(errors(&yaml), Vec::<String>::new(), "example.yaml");

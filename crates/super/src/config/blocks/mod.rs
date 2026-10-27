@@ -75,7 +75,9 @@ impl HostBlock {
 mod tests {
     use std::{borrow::Cow, collections::BTreeMap};
 
-    use figment::providers::{Format, Yaml};
+    use figment::providers::Format;
+
+    use crate::config::yaml::Yaml;
     use serde::Deserialize;
 
     use crate::config::{

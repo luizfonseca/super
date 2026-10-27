@@ -52,7 +52,9 @@ bollard = "0.21.1"
 bytes = "1.12.1"
 clap = { version = "4.6.7", features = ["derive", "cargo"] }
 dashmap = "6.2.1"
-figment = { version = "0.10.19", features = ["yaml", "env"] }
+figment = { version = "0.10.19", features = ["env"] }
+# YAML configurations (figment's own YAML uses the deprecated `serde_yaml`)
+serde-saphyr = "2.0.0"
 hcl-rs = "0.19.9"
 http = "1.5.0"
 ipnet = "2.12.2"
@@ -116,7 +118,7 @@ super_plugins = { path = "../super_plugins", version = "0.5.0", features = ["tes
 sqlx = { version = "0.9.0", default-features = false, features = ["sqlite", "runtime-tokio"] }
 super_store = { path = "../super_store", version = "0.5.0", features = ["test-util"] }
 criterion = { version = "0.8.2", features = ["html_reports"] }
-figment = { version = "0.10.19", features = ["toml", "yaml", "env", "test"] }
+figment = { version = "0.10.19", features = ["toml", "env", "test"] }
 futures-util = "0.3.34"
 # Websockets over HTTP/2 (extended CONNECT), as browsers open them
 # And the HTTPS service of the tests (HTTP/2 or HTTP/1.1)

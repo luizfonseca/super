@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::BTreeMap, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use figment::{
-    providers::{Env, Format, Serialized, Yaml},
+    providers::{Env, Format, Serialized},
     Figment, Provider,
 };
 use hcl::Hcl;
@@ -24,6 +24,9 @@ pub mod server_tls;
 pub mod tcp;
 pub mod validate;
 pub mod watch;
+pub(crate) mod yaml;
+
+use yaml::Yaml;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, ValueEnum, schemars::JsonSchema)]
 pub enum StoreType {

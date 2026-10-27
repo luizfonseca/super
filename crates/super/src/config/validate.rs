@@ -318,7 +318,8 @@ mod tests {
         let value: Result<serde_json::Value, String> = if file.ends_with(".hcl") {
             crate::config::hcl::HclFormat::from_str(example).map_err(|e| e.to_string())
         } else {
-            figment::providers::Yaml::from_str(example).map_err(|e| e.to_string())
+            <crate::config::yaml::Yaml as figment::providers::Format>::from_str(example)
+                .map_err(|e| e.to_string())
         };
         let value = value.unwrap_or_else(|err| panic!("{err}\n{example}"));
         for key in value.as_object().into_iter().flat_map(|map| map.keys()) {
