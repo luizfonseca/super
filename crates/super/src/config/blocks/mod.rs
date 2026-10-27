@@ -195,6 +195,8 @@ host:
                         network: None,
                         weight: Some(2),
                         sni: Some("app.internal".to_string()),
+                        tls: None,
+                        verify: None,
                         headers: Some(RouteHeader {
                             add: Some(vec![header("x-forwarded-by", "proksi")]),
                             remove: None,
@@ -226,6 +228,8 @@ host:
                         network: None,
                         weight: None,
                         sni: None,
+                        tls: None,
+                        verify: None,
                         headers: None,
                         name: None,
                     }],

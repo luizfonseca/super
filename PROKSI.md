@@ -26,6 +26,9 @@ Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What 
 - **Configuration files**: in a directory, Super reads `config.hcl` (or `config.yml`,
   `config.yaml`), and Proksi's `proksi.hcl` (or `proksi.yml`, `proksi.yaml`) when there's no
   `config.*` file. Proksi only reads `proksi.*`: keep that name for a directory both read.
+- **Upstreams over TLS**: `tls = true` reaches an upstream over TLS on any port (Proksi only
+  does on port 443), and `verify = true` checks its certificate (Proksi never does). Super
+  also trusts the system's certificate authorities. Proksi refuses both settings.
 - **Header names** of HTTP/1.1 responses: those of upstreams keep their case, as Proksi; those
   Super adds are Title-Case (`X-Request-Id`), where Proksi keeps them as written. HTTP/2 is
   lowercase in both.

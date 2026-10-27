@@ -92,3 +92,16 @@ attempt, or all of it without an upstream) and `upstream_ms` (until the response
 attempts and connecting included), with microsecond precision. The same two fields in the
 requests stream (`/api/v1/requests/stream`), and in the admin UI's request log (a `Proxy`
 column, both times in a request's details). The UI's `ms()` shows times under 1 ms in µs.
+
+### Upstreams' certificates are never checked, and TLS is only for port 443 — security
+
+`crates/proksi/src/proxy_server/mod.rs` (`default_peer_opts`): `verify_cert = false` for every
+upstream, so whoever can intercept the connection to an HTTPS upstream (an external service, over
+the internet) can pose as it. And `https_proxy.rs` (`upstream_peer`) and `routing/mirror.rs` reach
+an upstream over TLS only on port 443: an HTTPS upstream on `8443` can't be reached at all.
+
+Fix (as Super does): upstream settings `tls` (TLS on any port; port 443 by default) and `verify`
+(check the certificate for `sni`; off by default, so existing configurations keep working, and
+refused without `sni` or TLS). Pingora's connector looks for certificate authorities where the
+vendored OpenSSL was built, not where the system has them: load the system's (`openssl-probe`)
+or `verify` fails for every certificate.

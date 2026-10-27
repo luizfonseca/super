@@ -15,6 +15,11 @@ pub struct UpstreamBlock {
     pub network: Option<String>,
     /// SNI sent to the upstream (for HTTPS upstreams)
     pub sni: Option<String>,
+    /// Requests reach the upstream over TLS (default: on port 443 only)
+    pub tls: Option<bool>,
+    /// The upstream's certificate is checked: signed by an authority the system trusts, for
+    /// `sni` (default: not checked)
+    pub verify: Option<bool>,
     pub headers: Option<UpstreamHeadersBlock>,
 }
 
@@ -36,6 +41,8 @@ impl UpstreamBlock {
             network: self.network.clone(),
             weight: self.weight,
             sni: self.sni.clone(),
+            tls: self.tls,
+            verify: self.verify,
             headers: self.headers.as_ref().map(|headers| RouteHeader {
                 add: Some(
                     headers

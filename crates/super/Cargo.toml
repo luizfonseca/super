@@ -119,8 +119,10 @@ criterion = { version = "0.8.2", features = ["html_reports"] }
 figment = { version = "0.10.19", features = ["toml", "yaml", "env", "test"] }
 futures-util = "0.3.34"
 # Websockets over HTTP/2 (extended CONNECT), as browsers open them
-hyper = { version = "1.12", features = ["client", "http2"] }
+# And the HTTPS service of the tests (HTTP/2 or HTTP/1.1)
+hyper = { version = "1.12", features = ["client", "server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
 tokio-openssl = "0.6.5"
 # HTTP/3 clients
 h3 = "0.0.8"
