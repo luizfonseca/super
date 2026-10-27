@@ -1,0 +1,2 @@
+# Cases h2spec knows Super to fail, and why: one a line, the case, then ` # ` and the reason.
+# None: every case passes.

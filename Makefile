@@ -1,5 +1,11 @@
 lint:
 	cargo clippy --all-features -- -D clippy::pedantic -D clippy::perf -D clippy::complexity -D clippy::style -D clippy::correctness -D clippy::suspicious -D clippy::unwrap_used -D clippy::expect_used -D clippy::indexing_slicing
+conformance:
+	conformance/run.sh
+	python3 conformance/report.py readme
+conformance.check:
+	conformance/run.sh
+	python3 conformance/report.py readme --check
 hooks:
 	git config core.hooksPath .githooks
 audit:

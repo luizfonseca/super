@@ -1,0 +1,16 @@
+# Cases h3spec knows Super to fail, and why: one a line, the case, then ` # ` and the reason.
+# Each is in the layers below Super, which never sees them: HTTP/3's frames, streams and QPACK
+# are hyperium's h3 (0.0.8, with h3-quinn 0.0.10), the QUIC handshake quinn's (with rustls).
+HTTP/3 servers MUST NOT buffer a frame longer than SETTINGS_MAX_FIELD_SECTION_SIZE [HTTP/3 7.1] # h3: no error is sent
+HTTP/3 servers MUST send H3_CLOSED_CRITICAL_STREAM if a decoder stream is closed [QPACK 4.2] # h3: no error is sent
+HTTP/3 servers MUST send H3_CLOSED_CRITICAL_STREAM if an encoder stream ends inside an instruction [QPACK 4.2] # h3: no error is sent
+HTTP/3 servers MUST send H3_CLOSED_CRITICAL_STREAM if an encoder stream is closed [QPACK 4.2] # h3: no error is sent
+HTTP/3 servers MUST send H3_FRAME_ERROR if a SETTINGS frame stops mid-parameter [HTTP/3 7.1] # h3: sends H3_SETTINGS_ERROR (0x109) instead
+HTTP/3 servers MUST send H3_FRAME_UNEXPECTED if CANCEL_PUSH is received in a request stream [HTTP/3 7.2.5] # h3: sends H3_FRAME_ERROR (0x106) instead
+HTTP/3 servers MUST send H3_MESSAGE_ERROR if a pseudo-header is duplicated [HTTP/3 4.1.1] # h3: no error is sent (the request Super gets has one of them)
+HTTP/3 servers MUST send H3_MESSAGE_ERROR if pseudo-header fields exist after fields [HTTP/3 4.1.3] # h3: no error is sent (the request Super gets has them in order)
+HTTP/3 servers MUST send H3_STREAM_CREATION_ERROR if a client opens a push stream [HTTP/3 6.2.2] # h3: no error is sent
+HTTP/3 servers MUST send QPACK_DECODER_STREAM_ERROR if Insert Count Increment is 0 [QPACK 4.4.3] # h3: no error is sent
+HTTP/3 servers MUST send QPACK_ENCODER_STREAM_ERROR if a new dynamic table capacity value exceeds the limit [QPACK 4.1.3] # h3: no error is sent
+HTTP/3 servers treats a repeated setting identifier as an error whatever its value [HTTP/3 7.2.4.1] # h3: no error is sent
+QUIC servers MUST send missing_extension TLS alert if the quic_transport_parameters extension does not included [TLS 8.2] # quinn: the expected alert isn't sent

@@ -16,6 +16,18 @@
 Super is a simple, lightweight, and easy-to-use proxy server that automatically handles SSL, HTTP, **TCP** and DNS traffic. It is designed to be used as a standalone proxy server or as a component in a larger system. Super is [Proksi](https://github.com/luizfonseca/proksi) rebuilt on [hyper](https://hyper.rs) instead of [Pingora](https://github.com/cloudflare/pingora), written in [Rust](https://www.rust-lang.org/), and takes the same configuration: see [PROKSI.md](./PROKSI.md) for what differs, and the benchmarks.
 
 
+## Conformance
+
+Super is tested against the protocols' conformance suites on every change (`make conformance`,
+see [conformance](./conformance)):
+
+<!-- conformance:start -->
+| Specification | Suite | Passing |
+| --- | --- | --- |
+| HTTP/2: [RFC 9113](https://www.rfc-editor.org/rfc/rfc9113), HPACK [RFC 7541](https://www.rfc-editor.org/rfc/rfc7541) | [h2spec](https://github.com/summerwind/h2spec) 2.6.0, strict | 146/146 (1 skipped) |
+| HTTP/3: [RFC 9114](https://www.rfc-editor.org/rfc/rfc9114), QPACK [RFC 9204](https://www.rfc-editor.org/rfc/rfc9204), QUIC [RFC 9000](https://www.rfc-editor.org/rfc/rfc9000) and [RFC 9001](https://www.rfc-editor.org/rfc/rfc9001) | [h3spec](https://github.com/kazu-yamamoto/h3spec) 0.1.14 | 64/77 (13 known to fail, [listed](conformance/expected/h3spec.txt)) |
+<!-- conformance:end -->
+
 <p>
     <a href="https://discord.gg/b22TRMew2m">
         <img src="https://github.com/luizfonseca/proksi/blob/main/assets/discord.png?raw=true" alt="discord-logo" width="100"/>
@@ -25,6 +37,7 @@ Super is a simple, lightweight, and easy-to-use proxy server that automatically 
 ## Contents
 
 - [About](#about)
+- [Conformance](#conformance)
 - [Features](#features)
 - [Quick start](#quick-start)
   - [Configuration File Handling](#configuration-file-handling)
