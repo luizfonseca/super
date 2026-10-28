@@ -2,7 +2,7 @@
 name = "super_admin_ui"
 description = "The admin UI of Super, built and embedded (ADR 0008)"
 # Published with each release of Super, with its version (release-please-config.json)
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["The Super Contributors"]
