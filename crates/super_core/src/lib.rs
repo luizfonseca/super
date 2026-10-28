@@ -15,6 +15,7 @@
 pub mod allocations;
 pub mod apps;
 pub mod cache;
+pub mod clock;
 pub mod error;
 pub mod hash;
 pub mod http;

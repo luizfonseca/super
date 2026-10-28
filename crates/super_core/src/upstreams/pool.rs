@@ -21,10 +21,11 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex, PoisonError,
     },
-    time::Instant,
 };
 
 use hyper::client::conn::{http1, http2};
+
+use crate::clock::Coarse;
 
 use super::{
     body::UpstreamBody,
@@ -63,12 +64,12 @@ const MAX_IDLE: usize = 128;
 struct Idle {
     sender: http1::SendRequest<UpstreamBody>,
     fd: RawFd,
-    expires: Option<Instant>,
+    expires: Option<Coarse>,
 }
 
 impl Idle {
     /// Expired, or closed by the upstream
-    fn gone(&self, now: Instant) -> bool {
+    fn gone(&self, now: Coarse) -> bool {
         self.expires.is_some_and(|expires| expires <= now) || self.sender.is_closed()
     }
 }
@@ -84,7 +85,7 @@ struct Upstream {
     idle: VecDeque<Idle>,
     shared: Vec<Shared>,
     /// When this thread last borrowed another thread's connection to it
-    borrowed_at: Option<Instant>,
+    borrowed_at: Option<Coarse>,
 }
 
 /// A request on an HTTP/2 connection, counted until dropped
@@ -126,11 +127,11 @@ impl Pool {
             if let Some(session) = take(&mut shard, own, key, max_h2_streams) {
                 return Some(session);
             }
-            let now = Instant::now();
+            let now = Coarse::now();
             let upstream = shard.entry(key).or_default();
             let busy = upstream
                 .borrowed_at
-                .is_some_and(|at| now.duration_since(at) < BORROWING);
+                .is_some_and(|at| now.since(at) < BORROWING);
             if busy {
                 return None;
             }
@@ -156,8 +157,8 @@ impl Pool {
         fd: RawFd,
         idle_timeout: Option<std::time::Duration>,
     ) {
-        let now = Instant::now();
-        let expires = idle_timeout.map(|timeout| now + timeout);
+        let now = Coarse::now();
+        let expires = idle_timeout.map(|timeout| now.after(timeout));
         // Each thread's share of the connections kept per upstream
         let threads = NEXT_SHARD.load(Ordering::Relaxed).clamp(1, SHARDS);
         let most = MAX_IDLE.div_ceil(threads);
@@ -208,7 +209,7 @@ fn take(shard: &mut Shard, home: usize, key: u64, max_h2_streams: usize) -> Opti
             fd: shared.fd,
         });
     }
-    let now = Instant::now();
+    let now = Coarse::now();
     while let Some(idle) = upstream.idle.pop_back() {
         if idle.gone(now) {
             continue;
