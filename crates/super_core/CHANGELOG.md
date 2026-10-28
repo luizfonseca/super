@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.1](https://github.com/luizfonseca/super/compare/super_core-v0.6.0...super_core-v0.6.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* the coarse clock's lint on Linux ([7e03a80](https://github.com/luizfonseca/super/commit/7e03a8036c451f95b34bc05ffaaf3357cbe2edb9))
+
+
+### Performance Improvements
+
+* an upstream's request has room for the headers the phases add ([5ef34c2](https://github.com/luizfonseca/super/commit/5ef34c25927a106e3503cdef4c9bd9e8645239ff))
+* forwarded headers shared from the connection and the request, and no names built for Connection: keep-alive ([4076771](https://github.com/luizfonseca/super/commit/407677141e32efb7fe1638492c4576bdc83033ae))
+* header names in Title-Case, unless server.preserve_header_case keeps them as written ([9017540](https://github.com/luizfonseca/super/commit/90175404010cf651cb8fc4fb29db5f7213c4df32))
+* only the connection headers there are removed, after one look at the names ([5cef22e](https://github.com/luizfonseca/super/commit/5cef22e0286896de5c81a5b366360fd64b0aeb2b))
+* the upstream pool reads a coarse clock for idle connections ([15ab5ee](https://github.com/luizfonseca/super/commit/15ab5ee3473d7b3a800ff28e15820eab8bbf7adc))
+
 ## [0.6.0](https://github.com/luizfonseca/super/compare/super_core-v0.5.0...super_core-v0.6.0) (2026-10-28)
 
 

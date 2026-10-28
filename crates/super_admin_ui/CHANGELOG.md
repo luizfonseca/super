@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.6.0...super_admin_ui-v0.6.1) (2026-10-28)
+
+
+### Miscellaneous Chores
+
+* **super_admin_ui:** Synchronize super versions
+
 ## [0.6.0](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.5.0...super_admin_ui-v0.6.0) (2026-10-28)
 
 
