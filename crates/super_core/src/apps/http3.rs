@@ -46,6 +46,7 @@ pub async fn serve_quic<A: HttpServerApp>(
         digest,
         http2: false,
         http3: true,
+        client_ip: std::sync::OnceLock::new(),
     });
     let mut shutdown = shutdown.clone();
     let mut stopping = *shutdown.borrow();

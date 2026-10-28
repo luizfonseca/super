@@ -1,7 +1,11 @@
 //! A request of a client, and its response: hyper's request, read and answered as Pingora's
 //! server sessions are (`read_request_body`, `write_response_header`, `write_response_body`...)
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    net::IpAddr,
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
 
 use bytes::Bytes;
 use http::{header, HeaderMap, HeaderValue, StatusCode, Version};
@@ -22,6 +26,23 @@ pub struct Connection {
     pub http2: bool,
     /// Over QUIC
     pub http3: bool,
+    /// The client's address as a header value, once a request asked for it
+    pub client_ip: OnceLock<HeaderValue>,
+}
+
+/// An address as a header value, formatted without an intermediate string
+pub fn ip_value(ip: IpAddr) -> HeaderValue {
+    use std::io::Write;
+
+    // The longest IPv6 address is 45 characters
+    let mut buffer = [0u8; 64];
+    let mut cursor = std::io::Cursor::new(&mut buffer[..]);
+    let _ = write!(cursor, "{ip}");
+    let length = usize::try_from(cursor.position()).unwrap_or_default();
+    buffer
+        .get(..length)
+        .and_then(|text| HeaderValue::from_bytes(text).ok())
+        .unwrap_or_else(|| HeaderValue::from_static(""))
 }
 
 /// What was written of the response
@@ -356,6 +377,18 @@ impl ServerSession {
 
     pub fn client_addr(&self) -> Option<&SocketAddr> {
         self.connection.digest.socket_digest.as_ref()?.peer_addr()
+    }
+
+    /// The client's address (without its port) as a header value: built for the connection's
+    /// first request, then shared by the next ones without allocating
+    pub fn client_ip_value(&self) -> Option<HeaderValue> {
+        let ip = self.client_addr()?.as_inet()?.ip();
+        Some(
+            self.connection
+                .client_ip
+                .get_or_init(|| ip_value(ip))
+                .clone(),
+        )
     }
 
     pub fn server_addr(&self) -> Option<&SocketAddr> {

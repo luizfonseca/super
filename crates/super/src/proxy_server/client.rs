@@ -4,6 +4,7 @@
 use std::{net::IpAddr, sync::OnceLock};
 
 use http::{HeaderName, HeaderValue};
+use super_core::protocols::http::server::ip_value;
 
 use crate::ip_set::{network, IpSet};
 
@@ -90,25 +91,25 @@ pub struct Forwarded {
 }
 
 impl TrustedProxies {
-    /// The headers for a request from `peer`, received over `proto` (`http`, `https`) for
-    /// `host`. What a trusted proxy sent (`incoming`) is kept, and `peer` appended to
-    /// `X-Forwarded-For`; what anyone else sent is replaced, so clients can't forge them (and
-    /// isn't read).
+    /// The headers for a request from `peer` (`peer_value` as a header value, the connection's),
+    /// received over `proto` (`http`, `https`) for `host` (the request's own value). What a
+    /// trusted proxy sent (`incoming`) is kept, and `peer` appended to `X-Forwarded-For`; what
+    /// anyone else sent is replaced, so clients can't forge them (and isn't read). Values are
+    /// shared, not copied: a client's request costs no allocation.
     pub fn forwarded<'a>(
         &self,
         peer: IpAddr,
+        peer_value: HeaderValue,
         incoming: impl FnOnce() -> Incoming<'a>,
         proto: &'static str,
-        host: Option<&str>,
+        host: Option<HeaderValue>,
     ) -> Forwarded {
-        let host = host.and_then(|host| HeaderValue::from_str(host).ok());
         if !self.trusts(&peer) {
-            let peer = ip_value(peer);
             return Forwarded {
-                forwarded_for: peer.clone(),
+                forwarded_for: peer_value.clone(),
                 proto: HeaderValue::from_static(proto),
                 host,
-                real_ip: peer,
+                real_ip: peer_value,
             };
         }
 
@@ -125,40 +126,29 @@ impl TrustedProxies {
                 .map(str::trim)
                 .filter(|chain| !chain.is_empty())
                 .and_then(|chain| HeaderValue::from_str(&format!("{chain}, {peer}")).ok())
-                .unwrap_or_else(|| ip_value(peer)),
+                .unwrap_or_else(|| peer_value.clone()),
             proto: kept(incoming.proto).unwrap_or_else(|| HeaderValue::from_static(proto)),
             host: kept(incoming.host).or(host),
-            real_ip: ip_value(self.client(peer, incoming.forwarded_for)),
+            real_ip: match self.client(peer, incoming.forwarded_for) {
+                client if client == peer => peer_value,
+                client => ip_value(client),
+            },
         }
     }
-}
-
-/// An address as a header value, formatted without an intermediate string
-fn ip_value(ip: IpAddr) -> HeaderValue {
-    use std::io::Write;
-
-    // The longest IPv6 address is 45 characters
-    let mut buffer = [0u8; 64];
-    let mut cursor = std::io::Cursor::new(&mut buffer[..]);
-    let _ = write!(cursor, "{ip}");
-    let length = usize::try_from(cursor.position()).unwrap_or_default();
-    buffer
-        .get(..length)
-        .and_then(|text| HeaderValue::from_bytes(text).ok())
-        .unwrap_or_else(|| HeaderValue::from_static(""))
 }
 
 /// See [`TrustedProxies::forwarded`]
 pub fn forwarded<'a>(
     peer: IpAddr,
+    peer_value: HeaderValue,
     incoming: impl FnOnce() -> Incoming<'a>,
     proto: &'static str,
-    host: Option<&str>,
+    host: Option<HeaderValue>,
 ) -> Forwarded {
     TRUSTED
         .get()
         .unwrap_or(&TrustedProxies(IpSet::default()))
-        .forwarded(peer, incoming, proto, host)
+        .forwarded(peer, peer_value, incoming, proto, host)
 }
 
 /// Sets the trusted proxies (once, when proksi starts)
@@ -194,6 +184,9 @@ pub fn client_ip(peer: IpAddr, forwarded_for: Option<&str>) -> IpAddr {
 #[cfg(test)]
 mod tests {
     use std::net::IpAddr;
+
+    use http::HeaderValue;
+    use super_core::protocols::http::server::ip_value;
 
     use super::TrustedProxies;
 
@@ -306,16 +299,19 @@ mod tests {
         // What they sent isn't even read
         let forwarded = proxies.forwarded(
             ip("203.0.113.9"),
+            ip_value(ip("203.0.113.9")),
             || unreachable!("headers read for a client that isn't a trusted proxy"),
             "http",
-            Some("a.test"),
+            Some(HeaderValue::from_static("a.test")),
         );
         assert_eq!(
             headers(&forwarded),
             ("203.0.113.9", "http", Some("a.test"), "203.0.113.9")
         );
         let forwarded =
-            proxies.forwarded(ip("2001:db8::1"), super::Incoming::default, "https", None);
+            proxies.forwarded(
+            ip("2001:db8::1"),
+            ip_value(ip("2001:db8::1")), super::Incoming::default, "https", None);
         assert_eq!(
             headers(&forwarded),
             ("2001:db8::1", "https", None, "2001:db8::1")
@@ -332,7 +328,9 @@ mod tests {
         };
 
         assert_eq!(
-            headers(&proxies.forwarded(ip("10.0.0.1"), incoming, "http", Some("a.test"))),
+            headers(&proxies.forwarded(
+            ip("10.0.0.1"),
+            ip_value(ip("10.0.0.1")), incoming, "http", Some(HeaderValue::from_static("a.test")))),
             (
                 "203.0.113.9, 10.0.0.2, 10.0.0.1",
                 "https",
@@ -341,7 +339,9 @@ mod tests {
             )
         );
         // Without headers: as for any client
-        let forwarded = proxies.forwarded(ip("10.0.0.1"), super::Incoming::default, "https", None);
+        let forwarded = proxies.forwarded(
+            ip("10.0.0.1"),
+            ip_value(ip("10.0.0.1")), super::Incoming::default, "https", None);
         assert_eq!(headers(&forwarded), ("10.0.0.1", "https", None, "10.0.0.1"));
     }
 }

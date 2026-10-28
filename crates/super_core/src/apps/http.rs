@@ -55,6 +55,7 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
         digest: stream.digest(),
         http2,
         http3: false,
+        client_ip: std::sync::OnceLock::new(),
     });
     let options = app.server_options().cloned().unwrap_or_default();
     let activity = Arc::new(Activity::new());

@@ -463,10 +463,11 @@ impl ProxyHttp for Router {
         ctx: &mut Self::CTX,
     ) -> super_core::Result<()> {
         // Who the client is, set first so the location's headers can still change them
-        if let Some(peer) = session
+        if let Some((peer, peer_value)) = session
             .client_addr()
             .and_then(|addr| addr.as_inet())
             .map(std::net::SocketAddr::ip)
+            .zip(session.client_ip_value())
         {
             let header = |name: &http::HeaderName| {
                 session
@@ -479,15 +480,25 @@ impl ProxyHttp for Router {
                 Listener::Https => "https",
                 Listener::Http => "http",
             };
+            // The request's own `Host` value, shared rather than copied (the URI's host for
+            // requests without one)
+            let host = session.req_header().headers.get(http::header::HOST).cloned().or_else(|| {
+                session
+                    .req_header()
+                    .uri
+                    .host()
+                    .and_then(|host| http::HeaderValue::from_str(host).ok())
+            });
             let forwarded = crate::proxy_server::client::forwarded(
                 peer,
+                peer_value,
                 || crate::proxy_server::client::Incoming {
                     forwarded_for: header(&crate::proxy_server::client::X_FORWARDED_FOR),
                     proto: header(&crate::proxy_server::client::X_FORWARDED_PROTO),
                     host: header(&crate::proxy_server::client::X_FORWARDED_HOST),
                 },
                 proto,
-                header(&http::header::HOST).or_else(|| session.req_header().uri.host()),
+                host,
             );
             // Names built at compile time: setting them allocates nothing
             upstream_request.insert_header(X_FORWARDED_FOR, forwarded.forwarded_for)?;

@@ -26,8 +26,11 @@ fn remove_hop_by_hop(headers: &mut HeaderMap, upgrade: bool) {
             .iter()
             .filter_map(|value| value.to_str().ok())
             .flat_map(|value| value.split(','))
-            .filter_map(|name| HeaderName::from_bytes(name.trim().as_bytes()).ok())
-            .filter(|name| name != header::CONNECTION && !is_hop_by_hop(name))
+            .map(str::trim)
+            // Removed anyway, or not a header (`close`): no name is built for them, so the usual
+            // `Connection: keep-alive` costs nothing
+            .filter(|name| !name.is_empty() && !removed_anyway(name))
+            .filter_map(|name| HeaderName::from_bytes(name.as_bytes()).ok())
             .collect::<Vec<_>>();
         for name in named {
             headers.remove(name);
@@ -50,6 +53,17 @@ fn remove_hop_by_hop(headers: &mut HeaderMap, upgrade: bool) {
 
 fn is_hop_by_hop(name: &HeaderName) -> bool {
     HOP_BY_HOP.contains(name)
+}
+
+/// A token of `Connection` that names no other header to remove: the connection's own headers
+/// (removed with them), or an option (`close`)
+fn removed_anyway(token: &str) -> bool {
+    token.eq_ignore_ascii_case("close")
+        || token.eq_ignore_ascii_case(KEEP_ALIVE)
+        || token.eq_ignore_ascii_case(PROXY_CONNECTION)
+        || HOP_BY_HOP
+            .iter()
+            .any(|name| token.eq_ignore_ascii_case(name.as_str()))
 }
 
 /// The request sent to an upstream: `request`, without its connection's headers, for
@@ -188,6 +202,21 @@ mod tests {
         assert!(!upstream.headers.contains_key("keep-alive"));
         assert_eq!(upstream.headers["x-kept"], "1");
         assert_eq!(upstream.uri, "/a?b");
+    }
+
+    #[test]
+    fn test_usual_connection_headers_cost_nothing() {
+        let mut response = ResponseHeader::build(200, None).unwrap();
+        response
+            .insert_header(header::CONNECTION, "Keep-Alive, close")
+            .unwrap();
+        response.insert_header("keep-alive", "timeout=5").unwrap();
+
+        crate::allocations::assert_no_allocations("an upstream's Connection: keep-alive", || {
+            super::remove_hop_by_hop(&mut response.headers, false);
+        });
+        assert!(!response.headers.contains_key(header::CONNECTION));
+        assert!(!response.headers.contains_key("keep-alive"));
     }
 
     #[test]
