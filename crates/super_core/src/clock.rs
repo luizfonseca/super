@@ -31,13 +31,14 @@ impl Coarse {
 fn millis() -> u64 {
     use nix::time::{clock_gettime, ClockId};
 
-    clock_gettime(ClockId::CLOCK_MONOTONIC_COARSE)
-        .map(|now| {
+    clock_gettime(ClockId::CLOCK_MONOTONIC_COARSE).map_or_else(
+        |_| precise_millis(),
+        |now| {
             let seconds = u64::try_from(now.tv_sec()).unwrap_or_default();
             let nanos = u64::try_from(now.tv_nsec()).unwrap_or_default();
             seconds.saturating_mul(1000).saturating_add(nanos / 1_000_000)
-        })
-        .unwrap_or_else(|_| precise_millis())
+        },
+    )
 }
 
 #[cfg(not(target_os = "linux"))]
