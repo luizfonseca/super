@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.1](https://github.com/luizfonseca/super/compare/super-v0.6.0...super-v0.6.1) (2026-10-28)
+
+
+### Performance Improvements
+
+* forwarded headers shared from the connection and the request, and no names built for Connection: keep-alive ([4076771](https://github.com/luizfonseca/super/commit/407677141e32efb7fe1638492c4576bdc83033ae))
+* header names in Title-Case, unless server.preserve_header_case keeps them as written ([9017540](https://github.com/luizfonseca/super/commit/90175404010cf651cb8fc4fb29db5f7213c4df32))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.6.0 to 0.6.1
+    * super_plugins bumped from 0.6.0 to 0.6.1
+    * super_core bumped from 0.6.0 to 0.6.1
+    * super_store bumped from 0.6.0 to 0.6.1
+  * dev-dependencies
+    * super_plugins bumped from 0.6.0 to 0.6.1
+    * super_store bumped from 0.6.0 to 0.6.1
+
 ## [0.6.0](https://github.com/luizfonseca/super/compare/super-v0.5.0...super-v0.6.0) (2026-10-28)
 
 
