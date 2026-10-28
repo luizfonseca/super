@@ -7,6 +7,9 @@ use crate::http::{RequestHeader, ResponseHeader};
 
 const KNOWN: usize = 7;
 
+/// Headers the phases add to an upstream's request, usually
+const ROOM: usize = 8;
+
 /// Headers of a connection, never passed on (RFC 9110, 7.6.1), with `Keep-Alive` and
 /// `Proxy-Connection` (HTTP/1.0's)
 const CONNECTION_HEADERS: [HeaderName; KNOWN] = [
@@ -90,9 +93,10 @@ pub(crate) fn upstream_request(
 ) -> RequestHeader {
     // What hyper parsed with the request (the case of its header names) goes to the upstream's:
     // moved, not copied
-    let extensions = std::mem::take(&mut request.extensions);
-    let mut upstream = request.clone();
-    upstream.extensions = extensions;
+    // With room for what the phases add (`X-Forwarded-*`, `X-Real-IP`, `Via`, the location's
+    // headers), so adding them doesn't grow its map
+    let mut upstream = request.clone_with_room(ROOM);
+    upstream.extensions = std::mem::take(&mut request.extensions);
     remove_hop_by_hop(&mut upstream.headers, upgrade);
     join_cookies(&mut upstream.headers);
     // The phases see one form, whatever the client sent and the upstream speaks: the host in
@@ -183,7 +187,7 @@ fn join_cookies(headers: &mut HeaderMap) {
 
 #[cfg(test)]
 mod tests {
-    use http::header;
+    use http::{header, HeaderName, HeaderValue};
 
     use super::{downstream_response, set_target, upstream_request};
     use crate::http::{RequestHeader, ResponseHeader};
@@ -205,6 +209,30 @@ mod tests {
         assert!(!upstream.headers.contains_key("keep-alive"));
         assert_eq!(upstream.headers["x-kept"], "1");
         assert_eq!(upstream.uri, "/a?b");
+    }
+
+    #[test]
+    fn test_upstream_requests_have_room_for_what_phases_add() {
+        let mut request = RequestHeader::build("GET", b"/", None).unwrap();
+        for name in ["host", "user-agent", "accept", "accept-encoding", "cookie"] {
+            request.insert_header(name, "1").unwrap();
+        }
+        let mut upstream = upstream_request(&mut request, false, false);
+
+        crate::allocations::assert_no_allocations("the forwarded headers and Via", || {
+            for name in [
+                "x-forwarded-for",
+                "x-forwarded-proto",
+                "x-forwarded-host",
+                "x-real-ip",
+                "via",
+            ] {
+                upstream
+                    .headers
+                    .insert(HeaderName::from_static(name), HeaderValue::from_static("1"));
+            }
+        });
+        assert_eq!(upstream.headers.len(), 10);
     }
 
     #[test]

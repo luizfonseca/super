@@ -161,6 +161,22 @@ impl RequestHeader {
         self.parts.version = version;
     }
 
+    /// A copy (without extensions), with room for `more` headers: adding them later doesn't
+    /// grow its map. Names and values are shared, not copied.
+    #[must_use]
+    pub fn clone_with_room(&self, more: usize) -> Self {
+        let mut headers = http::HeaderMap::with_capacity(self.parts.headers.len() + more);
+        for (name, value) in &self.parts.headers {
+            headers.append(name, value.clone());
+        }
+        let (mut parts, ()) = http::Request::new(()).into_parts();
+        parts.method = self.parts.method.clone();
+        parts.uri = self.parts.uri.clone();
+        parts.version = self.parts.version;
+        parts.headers = headers;
+        Self { parts }
+    }
+
     /// The path and query the request is for
     pub fn raw_path(&self) -> &[u8] {
         self.parts
