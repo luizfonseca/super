@@ -1,5 +1,5 @@
 # Builds Super from the sources (the release image, Dockerfile, takes the binary built by the
-# release workflow): a static (musl) binary, so the image runs regardless of its glibc
+# release workflow), against the image's glibc: musl's allocator serves one thread at a time
 FROM node:24-alpine AS ui
 WORKDIR /ui
 COPY crates/super_admin_ui/package.json crates/super_admin_ui/package-lock.json ./
@@ -7,15 +7,14 @@ RUN npm ci
 COPY crates/super_admin_ui/ ./
 RUN npm run build
 
-FROM rust:1.99-alpine AS build
-# OpenSSL is built from source (vendored)
-RUN apk add --no-cache musl-dev perl make
+# OpenSSL is built from source (vendored), with the image's perl and make
+FROM rust:1.99-trixie AS build
 WORKDIR /src
 COPY . .
 COPY --from=ui /ui/dist crates/super_admin_ui/dist
 RUN cargo build --release --locked -p super_proxy && cp target/release/super /super
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y ca-certificates && apt-get clean
 
 COPY --from=build /super /app/super

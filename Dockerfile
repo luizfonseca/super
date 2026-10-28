@@ -1,8 +1,9 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y ca-certificates && apt-get clean
 
-# A static (musl) binary, so it runs regardless of the image's glibc (built by the release
-# workflow; Dockerfile.source builds it from the sources instead)
+# The glibc binary (built by the release workflow, against an older glibc than the image's;
+# Dockerfile.source builds it from the sources instead): musl's allocator serves one thread at a
+# time, which costs most of the throughput of a server with several
 COPY super /app/super
 
 WORKDIR /app

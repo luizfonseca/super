@@ -185,20 +185,21 @@ jobs:
         run: |
           ls -R ./data
 
-      # The static (musl) binaries don't depend on the image's glibc.
-      # Each image is checked to start before it's pushed.
+      # The glibc binaries: musl's allocator serves one thread at a time. They're built against
+      # an older glibc than the image's (cross's images), and the base is pulled again so each
+      # release has its security updates. Each image is checked to start before it's pushed.
       - name: x86_64 Build Linux image
         run: |
-          tar -xzvf ./data/super-linux-musl-x86_64/super-linux-musl-x86_64.tar.gz super
-          docker buildx build --platform linux/amd64 -t luizfonseca/super:${{needs.release.outputs.tag_name}}-amd64 -f Dockerfile . --load
+          tar -xzvf ./data/super-linux-gnu-x86_64/super-linux-gnu-x86_64.tar.gz super
+          docker buildx build --pull --platform linux/amd64 -t luizfonseca/super:${{needs.release.outputs.tag_name}}-amd64 -f Dockerfile . --load
           docker run --rm --platform linux/amd64 luizfonseca/super:${{needs.release.outputs.tag_name}}-amd64 --version
           docker push luizfonseca/super:${{needs.release.outputs.tag_name}}-amd64
 
       - name: aarch64 Build Linux image
         run: |
           rm super
-          tar -xzvf ./data/super-linux-musl-aarch64/super-linux-musl-aarch64.tar.gz super
-          docker buildx build --platform linux/arm64 -t luizfonseca/super:${{needs.release.outputs.tag_name}}-arm64 -f Dockerfile . --load
+          tar -xzvf ./data/super-linux-gnu-aarch64/super-linux-gnu-aarch64.tar.gz super
+          docker buildx build --pull --platform linux/arm64 -t luizfonseca/super:${{needs.release.outputs.tag_name}}-arm64 -f Dockerfile . --load
           docker run --rm --platform linux/arm64 luizfonseca/super:${{needs.release.outputs.tag_name}}-arm64 --version
           docker push luizfonseca/super:${{needs.release.outputs.tag_name}}-arm64
 

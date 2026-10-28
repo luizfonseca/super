@@ -44,13 +44,13 @@ super -c ./
 
 ## Downloading the binary
 
-Download the archive for your system from the [Releases page on GitHub](https://github.com/luizfonseca/super/releases): `super-linux-musl-x86_64`, `super-linux-musl-aarch64` (static, any Linux), `super-linux-gnu-*`, `super-macos-aarch64` or `super-macos-x86_64`. For example:
+Download the archive for your system from the [Releases page on GitHub](https://github.com/luizfonseca/super/releases): `super-linux-gnu-x86_64` or `super-linux-gnu-aarch64` (Linux with glibc: most distributions), `super-linux-musl-*` (static, for systems without glibc, such as Alpine), `super-macos-aarch64` or `super-macos-x86_64`. Prefer the `gnu` build on Linux: the `musl` one's allocator serves one thread at a time, so it serves far fewer requests with several threads busy. For example:
 
 ```bash
 # Replace the version and platform with the ones you want
-curl -L -O https://github.com/luizfonseca/super/releases/download/super-v0.4.0/super-linux-musl-x86_64.tar.gz
-tar -xzf super-linux-musl-x86_64.tar.gz
-chmod +x ./proksi
+curl -L -O https://github.com/luizfonseca/super/releases/download/super-v0.6.1/super-linux-gnu-x86_64.tar.gz
+tar -xzf super-linux-gnu-x86_64.tar.gz
+chmod +x ./super
 ```
 
 Once that is done you can check if the binary is functional:
