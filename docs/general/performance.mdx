@@ -61,6 +61,16 @@ server {
 }
 ```
 
+### Header names
+
+HTTP/1.1 header names go to upstreams and clients in Title-Case (`Content-Type`, `X-Request-Id`): HTTP compares them without case. To keep each name as the client or upstream wrote it, for a peer that compares them by case, turn on `preserve_header_case`. It costs every request a map of the names' case (about six memory allocations):
+
+```hcl
+server {
+  preserve_header_case = true
+}
+```
+
 ### Every pull request
 
 Every pull request is benchmarked against `main` on the same GitHub runner (requests per second, latency, CPU per request and peak memory, for plain HTTP and HTTPS). The results are posted as a comment on the pull request, so changes in performance are visible before they are merged. See [repository](/contributing/repository#performance-checks) to run it locally.

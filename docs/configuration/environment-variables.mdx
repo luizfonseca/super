@@ -30,6 +30,7 @@ Below you can find a full list of the configuration keys and their corresponding
 | `worker_threads` | `PROKSI_WORKER_THREADS` | The number of worker threads |
 | `daemon` | `PROKSI_DAEMON` | Whether the service should run as a daemon |
 | `server.https_address` | `PROKSI_SERVER__HTTPS_ADDRESS` | The default HTTPS address (hosts without `listen`) |
+| `server.preserve_header_case` | `PROKSI_SERVER__PRESERVE_HEADER_CASE` | Whether HTTP/1.1 header names keep the case they were written in (`true`), instead of Title-Case |
 | `server.work_stealing` | `PROKSI_SERVER__WORK_STEALING` | Whether worker threads take over each other's connections (`true`, see [performance](/general/performance#worker-threads)) |
 | `server.http3` | `PROKSI_SERVER__HTTP3` | Whether HTTP/3 (QUIC, UDP) is answered on the HTTPS addresses (`false`; Super only) |
 | `server.http_address` | `PROKSI_SERVER__HTTP_ADDRESS` | The default HTTP address (redirects, ACME challenges, hosts without TLS) |

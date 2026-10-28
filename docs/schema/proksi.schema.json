@@ -3691,6 +3691,13 @@
             "null"
           ]
         },
+        "preserve_header_case": {
+          "description": "Whether HTTP/1.1 header names keep the case clients and upstreams wrote them in (default:\n`false`: Title-Case, as `Content-Type`). HTTP says names are compared without case; turn it\non for peers that don't. It costs every request a map of the names' case. Super only\n(Proksi keeps them).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "rule": {
           "$ref": "#/$defs/RuleList",
           "description": "`rule \"<name>\" { ... }`, in order: every request, before its host is chosen (ADR 0007)"

@@ -31,6 +31,7 @@ pub struct Listening {
     pub trusted_proxies: Vec<String>,
     pub shutdown_timeout_secs: u64,
     pub work_stealing: bool,
+    pub preserve_header_case: bool,
     pub timeouts: ClientTimeouts,
     /// The lowest TLS version accepted
     pub tls_min_version: TlsVersion,
@@ -146,6 +147,7 @@ impl Settings {
                 trusted_proxies: server.trusted_proxies.clone(),
                 shutdown_timeout_secs: server.shutdown_timeout().as_secs(),
                 work_stealing: server.work_stealing(),
+                preserve_header_case: server.preserve_header_case(),
                 timeouts: server.timeouts,
                 tls_min_version: server.tls.min_version,
                 tls_ciphers: server.tls.ciphers.clone(),

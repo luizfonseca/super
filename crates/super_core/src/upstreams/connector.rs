@@ -313,7 +313,9 @@ fn set_up(stream: &TcpStream, options: &super::peer::PeerOptions) {
 
 async fn handshake_h1(stream: Stream) -> Result<http1::SendRequest<UpstreamBody>> {
     let (sender, connection) = http1::Builder::new()
-        .preserve_header_case(true)
+        // As the client's side: Title-Case, or as written
+        .preserve_header_case(crate::apps::header_case_preserved())
+        .title_case_headers(true)
         // Responses with as many headers as Pingora takes
         .max_headers(crate::apps::MAX_HEADERS)
         .max_buf_size(crate::apps::MAX_HEADER_SIZE)

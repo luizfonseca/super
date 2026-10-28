@@ -93,11 +93,12 @@ pub async fn serve<A: HttpServerApp>(app: &Arc<A>, stream: Stream, shutdown: &Sh
         return;
     }
     let mut builder = hyper::server::conn::http1::Builder::new();
-    // Header names go on as clients and upstreams wrote them; Super's own are Title-Case
+    // Header names in Title-Case, or as clients and upstreams wrote them (Super's own in
+    // Title-Case then too)
     builder
         .timer(TokioTimer::new())
         .keep_alive(true)
-        .preserve_header_case(true)
+        .preserve_header_case(super::header_case_preserved())
         .title_case_headers(true)
         .max_headers(MAX_HEADERS)
         .max_buf_size(MAX_HEADER_SIZE);

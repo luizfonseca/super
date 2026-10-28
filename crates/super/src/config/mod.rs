@@ -693,6 +693,14 @@ pub struct ServerCfg {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_stealing: Option<bool>,
 
+    /// Whether HTTP/1.1 header names keep the case clients and upstreams wrote them in (default:
+    /// `false`: Title-Case, as `Content-Type`). HTTP says names are compared without case; turn it
+    /// on for peers that don't. It costs every request a map of the names' case. Super only
+    /// (Proksi keeps them).
+    #[arg(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserve_header_case: Option<bool>,
+
     /// Whether HTTP/3 (QUIC, over UDP) is answered on the HTTPS addresses (default: `false`).
     /// HTTPS responses tell clients it's there (`Alt-Svc`); their UDP port must be reachable.
     /// Super only (Proksi ignores it).
@@ -721,6 +729,12 @@ impl ServerCfg {
     /// unless set, unlike Proksi, as connections kept on their thread cost far less with the core
     pub fn work_stealing(&self) -> bool {
         self.work_stealing.unwrap_or(false)
+    }
+
+    /// Whether HTTP/1.1 header names keep their case (`server.preserve_header_case`): off unless
+    /// set, unlike Proksi, as keeping it costs every request
+    pub fn preserve_header_case(&self) -> bool {
+        self.preserve_header_case.unwrap_or(false)
     }
 
     /// Whether HTTP/3 is answered on the HTTPS addresses (`server.http3`): off unless set
@@ -931,6 +945,7 @@ impl Default for Config {
                 tls: server_tls::ServerTls::default(),
                 shutdown_timeout_secs: None,
                 work_stealing: None,
+                preserve_header_case: None,
                 rule: vec![],
             },
             worker_threads: Some(default_worker_threads()),
@@ -1287,6 +1302,14 @@ mod tests {
 
         assert!(!server(json!({})).work_stealing());
         assert!(server(json!({ "work_stealing": true })).work_stealing());
+    }
+
+    #[test]
+    fn test_header_case_is_title_case_unless_preserved() {
+        let server = |value| serde_json::from_value::<ServerCfg>(value).unwrap();
+
+        assert!(!server(json!({})).preserve_header_case());
+        assert!(server(json!({ "preserve_header_case": true })).preserve_header_case());
     }
 
     #[test]

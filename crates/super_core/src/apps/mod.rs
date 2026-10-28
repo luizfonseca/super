@@ -1,7 +1,14 @@
 //! What listening services serve: connections ([`ServerApp`]), or the HTTP requests of each
 //! one ([`HttpServerApp`], served by hyper)
 
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use crate::{
     protocols::{http::ServerSession, Stream},
@@ -15,6 +22,21 @@ mod linger;
 pub use http::serve;
 pub(crate) use http::{MAX_HEADERS, MAX_HEADER_SIZE};
 pub use http3::serve_quic;
+
+/// Whether HTTP/1.1 header names go on as clients and upstreams wrote them (see
+/// [`preserve_header_case`])
+static PRESERVE_HEADER_CASE: AtomicBool = AtomicBool::new(false);
+
+/// Keeps the case of HTTP/1.1 header names as clients and upstreams wrote them, instead of
+/// Title-Case: for peers that compare names by case, which HTTP says they mustn't. Off unless
+/// set, as it costs every request a map of the names' case. Set once, before serving.
+pub fn preserve_header_case(on: bool) {
+    PRESERVE_HEADER_CASE.store(on, Ordering::Relaxed);
+}
+
+pub(crate) fn header_case_preserved() -> bool {
+    PRESERVE_HEADER_CASE.load(Ordering::Relaxed)
+}
 
 /// Serves the connections of a listening service
 pub trait ServerApp: Send + Sync + 'static {

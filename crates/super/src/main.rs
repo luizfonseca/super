@@ -218,9 +218,10 @@ fn main() -> Result<(), anyhow::Error> {
     server.run_forever();
 }
 
-/// The `server` settings requests read: timeouts, TLS, and the rules of every request (validated
-/// with the configuration)
+/// The `server` settings requests read: timeouts, TLS, the case of header names, and the rules of
+/// every request (validated with the configuration)
 fn set_server_settings(server: &config::ServerCfg) -> Result<(), anyhow::Error> {
+    super_core::apps::preserve_header_case(server.preserve_header_case());
     proxy_server::timeouts::set_client_timeouts(server.timeouts);
     proxy_server::services::set_server_tls(server.tls.clone());
     rules::set_server_rules(&server.rule).map_err(anyhow::Error::msg)
