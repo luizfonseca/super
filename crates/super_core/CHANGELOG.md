@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/luizfonseca/super/compare/super_core-v0.5.0...super_core-v0.6.0) (2026-10-28)
+
+
+### Bug Fixes
+
+* Host, absolute-form targets, cookie crumbs and 204s as HTTP's RFCs say ([04d233a](https://github.com/luizfonseca/super/commit/04d233ad6bdd5c62d252e5b19c7bc5de5d25a9fd))
+* HTTP/3 requests answered before their body ends aren't failed for their client ([89c94c4](https://github.com/luizfonseca/super/commit/89c94c44a85985acf8aea0349f52941b0f6f2f47))
+* HTTP/3 requests with HTTP/1.1's connection headers are refused as malformed ([b3e591a](https://github.com/luizfonseca/super/commit/b3e591ae3930b12f26020e7f01f4982de3209491))
+
 ## [0.5.0](https://github.com/luizfonseca/super/compare/super_core-v0.4.0...super_core-v0.5.0) (2026-10-27)
 
 
