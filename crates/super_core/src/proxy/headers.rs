@@ -5,22 +5,44 @@ use http::{header, HeaderMap, HeaderName, Uri, Version};
 
 use crate::http::{RequestHeader, ResponseHeader};
 
-/// Headers of a connection, never passed on (RFC 9110, 7.6.1)
-const HOP_BY_HOP: [HeaderName; 5] = [
+const KNOWN: usize = 7;
+
+/// Headers of a connection, never passed on (RFC 9110, 7.6.1), with `Keep-Alive` and
+/// `Proxy-Connection` (HTTP/1.0's)
+const CONNECTION_HEADERS: [HeaderName; KNOWN] = [
     header::CONNECTION,
     header::TE,
     header::TRAILER,
     header::TRANSFER_ENCODING,
     header::UPGRADE,
+    HeaderName::from_static("keep-alive"),
+    HeaderName::from_static("proxy-connection"),
 ];
 
-const KEEP_ALIVE: &str = "keep-alive";
-const PROXY_CONNECTION: &str = "proxy-connection";
+/// Which of [`CONNECTION_HEADERS`] are there: one look at each header (comparisons, no hashing),
+/// rather than a lookup of each name (most are rarely there)
+fn connection_headers(headers: &HeaderMap) -> [bool; KNOWN] {
+    let mut there = [false; KNOWN];
+    let found = headers
+        .keys()
+        .filter_map(|name| CONNECTION_HEADERS.iter().position(|known| known == name));
+    for index in found {
+        if let Some(seen) = there.get_mut(index) {
+            *seen = true;
+        }
+    }
+    there
+}
 
-/// Removes the headers of the connection; those of an upgrade are kept when `upgrade`
+/// Removes the headers of the connection; those of an upgrade are kept when `upgrade`. Only
+/// those there are removed (each removal is a lookup).
 fn remove_hop_by_hop(headers: &mut HeaderMap, upgrade: bool) {
+    let there = connection_headers(headers);
+    if !there.contains(&true) {
+        return;
+    }
     // Headers the `Connection` header names are the connection's too
-    if !upgrade {
+    if !upgrade && there[0] {
         let named = headers
             .get_all(header::CONNECTION)
             .iter()
@@ -37,31 +59,24 @@ fn remove_hop_by_hop(headers: &mut HeaderMap, upgrade: bool) {
         }
     }
     // `TE: trailers` goes on (gRPC servers need it), as with Pingora
-    let trailers = headers
-        .get(header::TE)
-        .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"trailers"));
-    for name in &HOP_BY_HOP {
+    let trailers = there[1]
+        && headers
+            .get(header::TE)
+            .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"trailers"));
+    for (name, there) in CONNECTION_HEADERS.iter().zip(there) {
         let kept = (upgrade && (name == header::CONNECTION || name == header::UPGRADE))
             || (trailers && name == header::TE);
-        if !kept {
+        if there && !kept {
             headers.remove(name);
         }
     }
-    headers.remove(KEEP_ALIVE);
-    headers.remove(PROXY_CONNECTION);
-}
-
-fn is_hop_by_hop(name: &HeaderName) -> bool {
-    HOP_BY_HOP.contains(name)
 }
 
 /// A token of `Connection` that names no other header to remove: the connection's own headers
 /// (removed with them), or an option (`close`)
 fn removed_anyway(token: &str) -> bool {
     token.eq_ignore_ascii_case("close")
-        || token.eq_ignore_ascii_case(KEEP_ALIVE)
-        || token.eq_ignore_ascii_case(PROXY_CONNECTION)
-        || HOP_BY_HOP
+        || CONNECTION_HEADERS
             .iter()
             .any(|name| token.eq_ignore_ascii_case(name.as_str()))
 }
@@ -78,9 +93,7 @@ pub(crate) fn upstream_request(
     let extensions = std::mem::take(&mut request.extensions);
     let mut upstream = request.clone();
     upstream.extensions = extensions;
-    if upgrade || has_hop_by_hop(&upstream.headers) {
-        remove_hop_by_hop(&mut upstream.headers, upgrade);
-    }
+    remove_hop_by_hop(&mut upstream.headers, upgrade);
     join_cookies(&mut upstream.headers);
     // The phases see one form, whatever the client sent and the upstream speaks: the host in
     // `Host`, and a path (`set_target` gives HTTP/2 upstreams theirs once they ran)
@@ -89,14 +102,6 @@ pub(crate) fn upstream_request(
         upstream.set_version(Version::HTTP_2);
     }
     upstream
-}
-
-/// Whether a header of the connection is there: one look at each header, rather than a lookup
-/// of each name (they're rarely there)
-fn has_hop_by_hop(headers: &HeaderMap) -> bool {
-    headers.keys().any(|name| {
-        is_hop_by_hop(name) || name.as_str() == KEEP_ALIVE || name.as_str() == PROXY_CONNECTION
-    })
 }
 
 /// The request's target, as its version wants it: a path (HTTP/1.1, with the host in `Host`),
@@ -151,9 +156,7 @@ fn http2_target(request: &mut RequestHeader) {
 
 /// The upstream's response, without its connection's headers (`upgrade`: a `101`)
 pub(crate) fn downstream_response(response: &mut ResponseHeader, upgrade: bool) {
-    if upgrade || has_hop_by_hop(&response.headers) {
-        remove_hop_by_hop(&mut response.headers, upgrade);
-    }
+    remove_hop_by_hop(&mut response.headers, upgrade);
     // They have no content, nor its length (RFC 9110 §8.6), whatever the upstream sent
     if response.status.is_informational() || response.status == http::StatusCode::NO_CONTENT {
         response.headers.remove(header::CONTENT_LENGTH);
