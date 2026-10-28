@@ -81,9 +81,7 @@ Proksi's tests (unit and end-to-end, on Linux and macOS) pass as they are. What 
 
 ## Benchmarks
 
-`.github/workflows/versus-proksi.yml` runs Proksi's benchmark with Proksi and Super side by side
-(same configuration, same machine, alternating rounds); pull requests are benchmarked against
-`main` as in Proksi.
+Pull requests are benchmarked against `main`, as in Proksi.
 
 As on Proksi's performance page: nginx, Proksi and Super proxying to the same nginx upstream,
 with the same certificate (RSA 2048), access logs off, keep-alive to the upstream, and `oha`
