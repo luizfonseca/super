@@ -2,9 +2,9 @@ import type { ButtonHTMLAttributes, ComponentChildren } from 'preact';
 import { onLink } from '../../router';
 
 const VARIANTS = {
-  /** The page's main action: the logo's wing, with a light edge on top and a glow of its color */
+  /** The page's main action: dark, with an orange edge and a glow of it, as on superproxy.dev */
   primary:
-    'btn btn-primary border-0 bg-(image:--wing) font-semibold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18),0_6px_18px_-8px_rgb(225_29_72/0.75)] transition hover:-translate-y-px hover:brightness-110 active:translate-y-0',
+    'btn border-primary/70 bg-base-100 font-semibold text-base-content shadow-[0_0_0_1px_rgb(255_90_31/0.12),0_8px_24px_-10px_rgb(255_90_31/0.7)] transition hover:-translate-y-px hover:border-primary hover:bg-base-100 hover:shadow-[0_0_0_1px_rgb(255_90_31/0.25),0_10px_30px_-8px_rgb(255_90_31/0.85)] active:translate-y-0',
   /** Other actions, next to it */
   secondary: 'btn border-base-300 bg-base-100 font-medium shadow-none hover:bg-base-200',
   /** Removes something */

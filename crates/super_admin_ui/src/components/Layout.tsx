@@ -19,8 +19,8 @@ const NAV = [
   { href: '/server', label: 'Server', icon: Server },
 ];
 
-/** The width of the bars and the page, centered */
-const WIDTH = 'mx-auto w-full max-w-7xl px-4 md:px-6';
+/** The space at the sides of the bars and the page, inside the frame */
+const WIDTH = 'w-full px-4 md:px-6';
 
 function uptime(seconds: number) {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
@@ -28,13 +28,11 @@ function uptime(seconds: number) {
   return `${Math.floor(seconds / 86400)}d`;
 }
 
-/** The logo, and the version once known */
-function Brand({ version }: { version?: string }) {
+/** The logo (the version is in the footer, and a newer one shows as a badge beside it) */
+function Brand() {
   return (
-    <a class="flex shrink-0 items-center gap-2.5 text-lg font-semibold" href="/overview" onClick={onLink}>
-      <img class="w-7" src="/logo.svg" alt="" />
-      Super
-      {version && <small class="font-mono text-xs font-medium text-base-content/45">v{version}</small>}
+    <a class="flex shrink-0 items-center gap-3" href="/overview" onClick={onLink}>
+      <img class="h-7 w-auto" src="/logo-wordmark.svg" alt="Super" width="74" height="28" />
     </a>
   );
 }
@@ -144,7 +142,7 @@ function Footer({ version }: { version?: string }) {
 /** The UI's pages, the current one underlined: stays at the top as the page scrolls */
 function Nav({ path }: { path: string }) {
   return (
-    <nav class="sticky top-0 z-10 border-b border-base-300 bg-base-100">
+    <nav class="sticky top-0 z-10 border-b border-base-300 bg-base-200/80 backdrop-blur-md">
       {/* Sideways on phones, without a scrollbar */}
       <ul class={`${WIDTH} flex gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]`}>
         {NAV.map(({ href, label, icon: Icon }) => {
@@ -178,12 +176,13 @@ export function Layout({ path, session, onSignOut, children }: Props) {
   const ready = status.state === 'ready' ? status.value : null;
   const signOut = () => api.signOut().finally(onSignOut);
   return (
-    <div class="flex min-h-screen flex-col">
+    // A frame down both sides, as on superproxy.dev
+    <div class="mx-auto flex min-h-screen w-full max-w-7xl flex-col md:border-x md:border-base-300">
       <Palette onSignOut={signOut} />
       <Toaster />
-      <header class="border-b border-base-300 bg-base-100">
-        <div class={`${WIDTH} flex h-14 items-center gap-3`}>
-          <Brand version={ready?.version} />
+      <header class="border-b border-base-300">
+        <div class={`${WIDTH} flex h-16 items-center gap-3`}>
+          <Brand />
           <NewRelease version={ready?.version} />
           <div class="ml-auto flex items-center gap-2">
             {ready && <Instance status={ready} />}

@@ -101,7 +101,7 @@ export function Section({ label, hint, children }: { label: ComponentChildren; h
 
 /** A small heading in capitals, above a part of a panel */
 export function Label({ children }: { children: ComponentChildren }) {
-  return <h4 class="mb-2 text-xs font-semibold uppercase tracking-wider text-base-content/45">{children}</h4>;
+  return <h4 class="mb-2 font-mono text-[11px] font-normal tracking-wider text-base-content/45 uppercase">{children}</h4>;
 }
 
 /** Nothing to show, and why */

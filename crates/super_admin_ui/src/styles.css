@@ -17,35 +17,43 @@
 @plugin 'daisyui/theme' {
   name: 'black';
   default: true;
-  --color-primary: #fb7185;
-  --color-primary-content: #18181b;
-  /* A near-black page, cards a step lighter with a faint border, softer status colors */
-  --color-base-100: #141416;
-  --color-base-200: #0a0a0b;
-  --color-base-300: #26262b;
-  --color-base-content: #ececef;
+  /* superproxy.dev's: an orange accent on a near-black page, cells split by thin lines */
+  --color-primary: #ff5a1f;
+  --color-primary-content: #08090b;
+  --color-base-100: #0d0f12;
+  --color-base-200: #08090b;
+  --color-base-300: #1c1f26;
+  --color-base-content: #f4f4f5;
   --color-success: #4ade80;
-  --color-success-content: #0a0a0b;
+  --color-success-content: #08090b;
   --color-warning: #fbbf24;
-  --color-warning-content: #0a0a0b;
+  --color-warning-content: #08090b;
   --color-error: #f87171;
-  --color-error-content: #0a0a0b;
+  --color-error-content: #08090b;
   --color-info: #60a5fa;
-  --color-info-content: #0a0a0b;
+  --color-info-content: #08090b;
   /* Black's own are grey: badges and chart lines need a color */
   --color-secondary: #a78bfa;
-  --color-secondary-content: #18181b;
+  --color-secondary-content: #08090b;
   --color-accent: #22d3ee;
-  --color-accent-content: #18181b;
-  /* Rounder than daisyUI's own */
-  --radius-selector: 0.5rem;
+  --color-accent-content: #08090b;
+  /* Boxes nearly square, like the site's cells; fields and buttons a little rounder */
+  --radius-selector: 0.375rem;
   --radius-field: 0.5rem;
-  --radius-box: 0.75rem;
+  --radius-box: 0.375rem;
 }
 
-/* Series colors of charts, the lines between things, and the logo's wing (main buttons wear it) */
+/* The site's typeface, for titles and numbers */
+@font-face {
+  font-family: 'Outfit';
+  src: url('./fonts/outfit.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* Series colors of charts, and the lines between things */
 :root {
-  --wing: linear-gradient(135deg, #fb7185 0%, #e11d48 45%, #9f1239 100%);
+  --font-display: 'Outfit', ui-sans-serif, system-ui, sans-serif;
   --chart-1: var(--color-primary);
   --chart-2: var(--color-secondary);
   --chart-3: var(--color-accent);
@@ -60,6 +68,25 @@
   code {
     @apply font-mono text-xs;
   }
+  /* Titles and big numbers in the site's typeface */
+  h1,
+  h2,
+  h3,
+  .stat-value {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+  h1 {
+    letter-spacing: -0.025em;
+  }
+  /* What a number or a column is: small capitals in mono, as on the site */
+  .stat-title,
+  .table thead th {
+    @apply font-mono text-[11px] font-normal tracking-wider uppercase text-base-content/45;
+  }
+  .stat-value {
+    @apply font-semibold;
+  }
 }
 
 /* What daisyUI has no part for: charts, a host's traffic, nested rules */
@@ -71,12 +98,19 @@
   .plot path,
   .sparkline path {
     fill: none;
-    stroke-width: 1.6;
+    stroke-width: 1.75;
     vector-effect: non-scaling-stroke;
     stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  /* The fill under a line: its gradient is set on it */
+  .plot path.area,
+  .sparkline path.area {
+    stroke: none;
   }
   .plot .grid {
     stroke: var(--line);
+    stroke-dasharray: 2 4;
     stroke-width: 1;
     vector-effect: non-scaling-stroke;
   }
@@ -231,6 +265,13 @@
   }
   to {
     box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+/* Something faded in */
+@keyframes fade-in {
+  from {
+    opacity: 0;
   }
 }
 
