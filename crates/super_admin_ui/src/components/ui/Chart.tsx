@@ -8,7 +8,7 @@ export type Series = { name: string; color: string; values: (number | null)[] };
 const WIDTH = 1000;
 
 /** A value on the chart's left, over its grid line */
-const TICK = 'pointer-events-none absolute left-0 bg-base-100 pr-1 font-mono text-[11px] leading-none text-base-content/45';
+const TICK = 'pointer-events-none absolute left-0 rounded-sm bg-base-100/85 py-px pr-1.5 font-mono text-[11px] leading-none text-base-content/45';
 
 type Point = [x: number, y: number];
 
