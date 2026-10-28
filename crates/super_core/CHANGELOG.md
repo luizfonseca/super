@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/luizfonseca/super/compare/super_core-v0.6.1...super_core-v0.6.2) (2026-10-28)
+
+
+### Performance Improvements
+
+* response headers by value, and each backend's peer built once and shared by its requests ([5ddea19](https://github.com/luizfonseca/super/commit/5ddea19a38b91105f56dc24c16399391c341507a))
+
 ## [0.6.1](https://github.com/luizfonseca/super/compare/super_core-v0.6.0...super_core-v0.6.1) (2026-10-28)
 
 

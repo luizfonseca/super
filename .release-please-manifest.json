@@ -1,8 +1,8 @@
 {
   "crates/plugins_api": "0.1.0",
-  "crates/super": "0.6.1",
-  "crates/super_admin_ui": "0.6.1",
-  "crates/super_core": "0.6.1",
-  "crates/super_plugins": "0.6.1",
-  "crates/super_store": "0.6.1"
+  "crates/super": "0.6.2",
+  "crates/super_admin_ui": "0.6.2",
+  "crates/super_core": "0.6.2",
+  "crates/super_plugins": "0.6.2",
+  "crates/super_store": "0.6.2"
 }

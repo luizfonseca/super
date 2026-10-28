@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.2](https://github.com/luizfonseca/super/compare/super_plugins-v0.6.1...super_plugins-v0.6.2) (2026-10-28)
+
+
+### Performance Improvements
+
+* response headers by value, and each backend's peer built once and shared by its requests ([5ddea19](https://github.com/luizfonseca/super/commit/5ddea19a38b91105f56dc24c16399391c341507a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_core bumped from 0.6.1 to 0.6.2
+    * super_store bumped from 0.6.1 to 0.6.2
+  * dev-dependencies
+    * super_core bumped from 0.6.1 to 0.6.2
+
 ## [0.6.1](https://github.com/luizfonseca/super/compare/super_plugins-v0.6.0...super_plugins-v0.6.1) (2026-10-28)
 
 
