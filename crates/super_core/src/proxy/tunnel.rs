@@ -32,7 +32,7 @@ pub(super) async fn run<SV: ProxyHttp>(
         ));
     };
     session
-        .write_response_header(Box::new(header), true)
+        .write_response_header(header, true)
         .await?;
 
     let upstream = upstream

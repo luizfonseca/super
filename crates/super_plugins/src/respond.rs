@@ -19,7 +19,7 @@ pub async fn respond(
 ) -> super_core::Result<()> {
     response_blocks(session, &mut response, ctx).await;
     session
-        .write_response_header(Box::new(response), true)
+        .write_response_header(response, true)
         .await?;
     Ok(())
 }
@@ -45,7 +45,7 @@ pub async fn respond_streaming(
     }
     response_blocks(session, &mut response, ctx).await;
     session
-        .write_response_header(Box::new(response), false)
+        .write_response_header(response, false)
         .await?;
     let mut left = len;
     while left > 0 {
@@ -132,7 +132,7 @@ pub async fn respond_with_body(
     response.insert_header(header::CONTENT_LENGTH, body.len())?;
     let end = body.is_empty();
     session
-        .write_response_header(Box::new(response), end)
+        .write_response_header(response, end)
         .await?;
     if !end {
         session.write_response_body(Some(body), true).await?;

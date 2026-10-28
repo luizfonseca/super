@@ -105,7 +105,7 @@ pub async fn write(
         return false;
     };
     if session
-        .write_response_header(Box::new(header))
+        .write_response_header(header)
         .await
         .is_err()
     {

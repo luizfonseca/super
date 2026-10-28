@@ -87,7 +87,7 @@ impl ProxyHttp for Matrix {
 
     fn new_ctx(&self) {}
 
-    async fn upstream_peer(&self, session: &mut Session, (): &mut ()) -> Result<Box<HttpPeer>> {
+    async fn upstream_peer(&self, session: &mut Session, (): &mut ()) -> Result<Arc<HttpPeer>> {
         let path = session.req_header().uri.path();
         let sni = if path.starts_with("/host") {
             SERVICE
@@ -102,7 +102,7 @@ impl ProxyHttp for Matrix {
             Upstream::Http2Tls => ALPN::H2,
             Upstream::Http1 | Upstream::Http1Tls => ALPN::H1,
         };
-        Ok(Box::new(peer))
+        Ok(Arc::new(peer))
     }
 
     async fn upstream_request_filter(

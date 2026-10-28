@@ -60,7 +60,7 @@ pub trait ProxyHttp: Send + Sync + 'static {
         &self,
         session: &mut Session,
         ctx: &mut Self::CTX,
-    ) -> impl Future<Output = Result<Box<HttpPeer>>> + Send;
+    ) -> impl Future<Output = Result<Arc<HttpPeer>>> + Send;
 
     /// The request, before anything. `true` when it was answered here.
     fn request_filter(
@@ -183,7 +183,7 @@ pub trait ProxyHttp: Send + Sync + 'static {
             let code = default_error_status(e);
             if code > 0 && session.response_written().is_none() {
                 if let Ok(header) = ResponseHeader::build(code, None) {
-                    let _ = session.write_response_header(Box::new(header), true).await;
+                    let _ = session.write_response_header(header, true).await;
                 }
             }
             FailToProxy {

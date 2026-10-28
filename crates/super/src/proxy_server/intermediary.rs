@@ -41,7 +41,7 @@ pub async fn answer_last_hop(session: &mut Session) -> super_core::Result<bool> 
     let mut response = ResponseHeader::build(status, Some(1))?;
     response.insert_header(header::CONTENT_LENGTH, HeaderValue::from_static("0"))?;
     session
-        .write_response_header(Box::new(response), true)
+        .write_response_header(response, true)
         .await?;
     Ok(true)
 }

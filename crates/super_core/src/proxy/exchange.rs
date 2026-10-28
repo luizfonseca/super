@@ -68,7 +68,7 @@ pub(super) async fn proxy<SV: ProxyHttp>(
     let head = session.req_header().method == http::Method::HEAD;
     let empty = head || body.is_end_stream();
     session
-        .write_response_header(Box::new(header), false)
+        .write_response_header(header, false)
         .await?;
 
     if empty {

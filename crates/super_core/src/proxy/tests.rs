@@ -170,7 +170,7 @@ impl ProxyHttp for Phases {
         if path == "/too-large" {
             let header = ResponseHeader::build(413, None)?;
             session
-                .write_response_header(Box::new(header), true)
+                .write_response_header(header, true)
                 .await?;
             return Ok(true);
         }
@@ -178,7 +178,7 @@ impl ProxyHttp for Phases {
             let mut header = ResponseHeader::build(204, None)?;
             header.insert_header("x-answered", "yes")?;
             session
-                .write_response_header(Box::new(header), true)
+                .write_response_header(header, true)
                 .await?;
             return Ok(true);
         }
@@ -193,13 +193,13 @@ impl ProxyHttp for Phases {
         Ok(false)
     }
 
-    async fn upstream_peer(&self, _session: &mut Session, ctx: &mut Ctx) -> Result<Box<HttpPeer>> {
+    async fn upstream_peer(&self, _session: &mut Session, ctx: &mut Ctx) -> Result<Arc<HttpPeer>> {
         let addr = self.upstreams[ctx.peers % self.upstreams.len()];
         ctx.peers += 1;
         let mut peer = HttpPeer::new(addr, false, String::new());
         peer.options.connection_timeout = Some(Duration::from_secs(1));
         peer.options.read_timeout = Some(Duration::from_secs(5));
-        Ok(Box::new(peer))
+        Ok(Arc::new(peer))
     }
 
     async fn upstream_request_filter(
@@ -876,10 +876,10 @@ impl ProxyHttp for Impatient {
 
     fn new_ctx(&self) {}
 
-    async fn upstream_peer(&self, _: &mut Session, (): &mut ()) -> Result<Box<HttpPeer>> {
+    async fn upstream_peer(&self, _: &mut Session, (): &mut ()) -> Result<Arc<HttpPeer>> {
         let mut peer = HttpPeer::new(self.0, false, String::new());
         peer.options.read_timeout = Some(Duration::from_millis(50));
-        Ok(Box::new(peer))
+        Ok(Arc::new(peer))
     }
 }
 

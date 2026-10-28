@@ -150,7 +150,7 @@ async fn serve<SV: ProxyHttp>(
     let request = session.req_header();
     if conditional::not_modified(request, &header) {
         conditional::to_not_modified(&mut header);
-        return session.write_response_header(Box::new(header), true).await;
+        return session.write_response_header(header, true).await;
     }
     let range = conditional::range(request, &header);
     if let Some(range) = &range {
@@ -159,7 +159,7 @@ async fn serve<SV: ProxyHttp>(
     let head = session.req_header().method == http::Method::HEAD;
     let empty = head || matches!(range, Some(Range::Unsatisfiable { .. }));
     session
-        .write_response_header(Box::new(header), empty)
+        .write_response_header(header, empty)
         .await?;
     if empty {
         return Ok(());

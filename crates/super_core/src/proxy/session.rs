@@ -66,7 +66,7 @@ impl Session {
     /// When the client is gone, or a response was already written.
     pub async fn write_response_header(
         &mut self,
-        mut header: Box<ResponseHeader>,
+        mut header: ResponseHeader,
         end_of_stream: bool,
     ) -> Result<()> {
         self.downstream_modules_ctx
@@ -89,7 +89,7 @@ impl Session {
         header: &ResponseHeader,
         end_of_stream: bool,
     ) -> Result<()> {
-        self.write_response_header(Box::new(header.clone()), end_of_stream)
+        self.write_response_header(header.clone(), end_of_stream)
             .await
     }
 

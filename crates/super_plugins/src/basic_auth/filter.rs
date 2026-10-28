@@ -11,12 +11,12 @@ pub struct BasicAuth;
 impl BasicAuth {
     /// Returns a WWW-Authenticate header response indicating to downstream that
     /// This request requires basic auth
-    fn respond_with_authenticate(host: &str) -> anyhow::Result<Box<ResponseHeader>> {
+    fn respond_with_authenticate(host: &str) -> anyhow::Result<ResponseHeader> {
         let mut res_headers = ResponseHeader::build_no_case(StatusCode::UNAUTHORIZED, Some(1))?;
         let realm = format!("Basic realm=\"{host}\", charset=\"UTF-8\"");
         res_headers.insert_header(header::WWW_AUTHENTICATE, &realm)?;
 
-        Ok(Box::new(res_headers))
+        Ok(res_headers)
     }
 
     /// Extracts the 'user' and 'pass' from the plugin configuration
@@ -51,7 +51,7 @@ impl BasicAuth {
         };
 
         let Some((user, pass)) = Self::get_auth_config(config) else {
-            let response = *Self::respond_with_authenticate(ctx.host())?;
+            let response = Self::respond_with_authenticate(ctx.host())?;
             respond(session, ctx, response).await?;
             return Ok(true);
         };
@@ -61,7 +61,7 @@ impl BasicAuth {
             if let Some(header) = session.req_header().headers.get(header::AUTHORIZATION) {
                 header.to_str()?
             } else {
-                let response = *Self::respond_with_authenticate(ctx.host())?;
+                let response = Self::respond_with_authenticate(ctx.host())?;
                 respond(session, ctx, response).await?;
                 return Ok(true);
             };
@@ -69,7 +69,7 @@ impl BasicAuth {
         if !auth_header.starts_with("Basic ")
             || !Self::validate_auth_header(auth_header, &user, &pass)?
         {
-            let response = *Self::respond_with_authenticate(ctx.host())?;
+            let response = Self::respond_with_authenticate(ctx.host())?;
             respond(session, ctx, response).await?;
             return Ok(true);
         }

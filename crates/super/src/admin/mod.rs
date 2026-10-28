@@ -573,7 +573,7 @@ async fn write_reply(session: &mut ServerSession, reply: Reply) -> bool {
         }
     }
     if session
-        .write_response_header(Box::new(header))
+        .write_response_header(header)
         .await
         .is_err()
     {

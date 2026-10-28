@@ -322,7 +322,7 @@ impl ProxyHttp for Router {
         &self,
         session: &mut Session,
         ctx: &mut Self::CTX,
-    ) -> super_core::Result<Box<HttpPeer>> {
+    ) -> super_core::Result<Arc<HttpPeer>> {
         // If there's no host matching, returns a 404
         let Some(route_container) = ctx.route_container.clone() else {
             return Err(super_core::Error::new(HTTPStatus(404)));
@@ -360,19 +360,12 @@ impl ProxyHttp for Router {
         ctx.upstream_start = Some(now);
         ctx.timings.upstream_start.get_or_insert(now);
 
-        let mut peer = HttpPeer::new(
+        Ok(peer_of(
             picked.addr,
-            upstream.uses_tls(),
-            upstream.sni.clone().unwrap_or_default(),
-        );
-        let timeouts = route_container
-            .timeouts
-            .and_then(|timeouts| timeouts.upstream)
-            .unwrap_or_default()
-            .or(Some(super::timeouts::upstream_timeouts()));
-        peer.options = default_peer_opts(timeouts);
-        peer.options.verify_cert = upstream.verify.unwrap_or(false);
-        Ok(Box::new(peer))
+            picked.peer.as_ref(),
+            upstream,
+            &route_container,
+        ))
     }
 
     /// Modify the response header before it is send to the downstream
@@ -1000,12 +993,152 @@ fn get_host(session: &mut Session) -> &str {
     ""
 }
 
+/// The peer of a backend (`addr`, its `slot`) of `location`'s `upstream`: built from its address,
+/// the upstream's settings and the location's timeouts, once per backend, then shared by its
+/// requests
+fn peer_of(
+    addr: std::net::SocketAddr,
+    slot: Option<&crate::routing::build::PeerSlot>,
+    upstream: &crate::config::RouteUpstream,
+    location: &RouteStoreContainer,
+) -> Arc<HttpPeer> {
+    let build = || {
+        let mut peer = HttpPeer::new(
+            addr,
+            upstream.uses_tls(),
+            upstream.sni.clone().unwrap_or_default(),
+        );
+        let timeouts = location
+            .timeouts
+            .and_then(|timeouts| timeouts.upstream)
+            .unwrap_or_default()
+            .or(Some(super::timeouts::upstream_timeouts()));
+        peer.options = default_peer_opts(timeouts);
+        peer.options.verify_cert = upstream.verify.unwrap_or(false);
+        Arc::new(peer)
+    };
+    match slot {
+        Some(slot) => slot.0.get_or_init(build).clone(),
+        None => build(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super_core::cache::key::CacheHashKey;
-    use super_core::proxy::ProxyHttp;
+    use std::{sync::Arc, time::Duration};
 
-    use super::{cache_key_for, Listener, Router, RouterTimings};
+    use super_core::cache::key::CacheHashKey;
+    use super_core::protocols::ALPN;
+    use super_core::proxy::ProxyHttp;
+    use super_core::upstreams::peer::{HttpPeer, Peer};
+
+    use super::{cache_key_for, peer_of, Listener, Router, RouterTimings};
+    use crate::{
+        config::RouteUpstream,
+        routing::build::{load_balancer, peer_slot, upstream_index},
+        stores::routes::RouteStoreContainer,
+    };
+
+    /// A location with `upstreams`, and its upstreams' read timeout
+    fn location(upstreams: &serde_json::Value, read_secs: u64) -> RouteStoreContainer {
+        let upstreams: Vec<RouteUpstream> = serde_json::from_value(upstreams.clone()).unwrap();
+        let mut location = RouteStoreContainer::new(load_balancer(&upstreams));
+        location.set_upstreams(upstreams);
+        location.timeouts = Some(
+            serde_json::from_value(serde_json::json!({ "upstream": { "read_secs": read_secs } }))
+                .unwrap(),
+        );
+        location
+    }
+
+    /// The peer of each backend of `location`, by address, as the requests picking it get it
+    fn peers(location: &RouteStoreContainer) -> Vec<(String, Arc<HttpPeer>)> {
+        let backends = location.load_balancer.backends().get_backend();
+        backends
+            .iter()
+            .map(|backend| {
+                let upstream = &location.upstreams[upstream_index(backend).unwrap()];
+                let addr = *backend.addr.as_inet().unwrap();
+                let peer = peer_of(addr, peer_slot(backend), upstream, location);
+                (addr.to_string(), peer)
+            })
+            .collect()
+    }
+
+    fn peer(location: &RouteStoreContainer, addr: &str) -> Arc<HttpPeer> {
+        peers(location)
+            .into_iter()
+            .find(|(at, _)| at == addr)
+            .unwrap()
+            .1
+    }
+
+    #[test]
+    fn test_each_upstream_keeps_its_own_peer() {
+        let location = location(
+            &serde_json::json!([
+                { "ip": "10.0.0.1", "port": 443, "sni": "a.test", "verify": true },
+                { "ip": "10.0.0.2", "port": 8080 },
+            ]),
+            30,
+        );
+
+        let secure = peer(&location, "10.0.0.1:443");
+        let plain = peer(&location, "10.0.0.2:8080");
+        assert!(secure.is_tls() && secure.sni == "a.test" && secure.options.verify_cert);
+        assert!(!plain.is_tls() && plain.sni.is_empty() && !plain.options.verify_cert);
+        assert_ne!(secure.reuse_hash(), plain.reuse_hash());
+
+        // Built once: the next requests share them
+        assert!(Arc::ptr_eq(&secure, &peer(&location, "10.0.0.1:443")));
+        assert!(Arc::ptr_eq(&plain, &peer(&location, "10.0.0.2:8080")));
+        assert!(!Arc::ptr_eq(&secure, &plain));
+    }
+
+    #[test]
+    fn test_locations_keep_their_own_settings_for_the_same_upstream() {
+        let upstreams = serde_json::json!([{ "ip": "10.0.0.1", "port": 8080 }]);
+        let fast = peer(&location(&upstreams, 1), "10.0.0.1:8080");
+        let slow = peer(&location(&upstreams, 90), "10.0.0.1:8080");
+
+        assert_eq!(fast.options.read_timeout, Some(Duration::from_secs(1)));
+        assert_eq!(slow.options.read_timeout, Some(Duration::from_secs(90)));
+        assert!(!Arc::ptr_eq(&fast, &slow));
+        // Their connections are set up the same: the pool keeps sharing them
+        assert_eq!(fast.reuse_hash(), slow.reuse_hash());
+    }
+
+    #[test]
+    fn test_a_shared_peer_is_the_one_a_request_would_build() {
+        let location = location(
+            &serde_json::json!([{ "ip": "10.0.0.1", "port": 443, "sni": "a.test" }]),
+            30,
+        );
+        let shared = peer(&location, "10.0.0.1:443");
+        let upstream = &location.upstreams[0];
+        let addr = *shared.address.as_inet().unwrap();
+        let built = peer_of(addr, None, upstream, &location);
+
+        // The same connections are reused, with the same settings
+        assert!(!Arc::ptr_eq(&shared, &built));
+        assert_eq!(shared.reuse_hash(), built.reuse_hash());
+        assert_eq!(format!("{:?}", shared.options), format!("{:?}", built.options));
+    }
+
+    #[test]
+    fn test_an_upgrade_changes_its_own_copy_of_a_peer() {
+        let location = location(&serde_json::json!([{ "ip": "10.0.0.1", "port": 8080 }]), 30);
+        let shared = peer(&location, "10.0.0.1:8080");
+
+        // As the engine does for websockets
+        let mut upgrade = shared.clone();
+        Arc::make_mut(&mut upgrade).options.alpn = ALPN::H1;
+
+        assert_eq!(upgrade.options.alpn, ALPN::H1);
+        assert_eq!(shared.options.alpn, ALPN::H2H1);
+        assert_eq!(peer(&location, "10.0.0.1:8080").options.alpn, ALPN::H2H1);
+        assert_ne!(upgrade.reuse_hash(), shared.reuse_hash());
+    }
 
     #[test]
     fn test_timings_split_between_proxy_and_upstream() {

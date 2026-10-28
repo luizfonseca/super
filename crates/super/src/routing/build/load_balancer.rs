@@ -7,7 +7,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, Mutex, PoisonError,
+        Arc, Mutex, OnceLock, PoisonError,
     },
     task::{Context, Waker},
     time::{Duration, Instant},
@@ -23,6 +23,7 @@ use super_core::{
         Backend, Backends, LoadBalancer,
     },
     protocols::l4::socket::SocketAddr as BackendAddr,
+    upstreams::peer::HttpPeer,
 };
 
 use crate::config::{host::HealthCheck, notify::Kind, RouteUpstream};
@@ -58,6 +59,18 @@ pub struct InFlight(pub Arc<AtomicUsize>);
 /// The requests in progress to `backend`
 pub fn in_flight(backend: &Backend) -> Option<&Arc<AtomicUsize>> {
     backend.ext.get::<InFlight>().map(|in_flight| &in_flight.0)
+}
+
+/// Where a backend's peer is kept, once the first request to it built it: its requests share
+/// it rather than each building its own. A backend is its location's (each location has its own
+/// load balancer), so its peer has that location's settings; a new configuration builds new
+/// load balancers, and new backends, with empty slots.
+#[derive(Debug, Clone, Default)]
+pub struct PeerSlot(pub Arc<OnceLock<Arc<HttpPeer>>>);
+
+/// The peer slot of `backend`
+pub fn peer_slot(backend: &Backend) -> Option<&PeerSlot> {
+    backend.ext.get::<PeerSlot>()
 }
 
 /// The addresses each of `upstreams` upstreams resolved to in `load_balancer`, and whether
@@ -348,6 +361,7 @@ impl Resolver {
                 let mut ext = Extensions::new();
                 ext.insert(UpstreamIndex(self.first + index));
                 ext.insert(InFlight::default());
+                ext.insert(PeerSlot::default());
                 // The first upstream with an address keeps it
                 backends.insert(Backend {
                     addr: BackendAddr::Inet(*addr),

@@ -60,10 +60,7 @@ enum Responder {
     /// Nothing written yet
     Waiting(oneshot::Sender<http::Response<ResponseBody>>),
     /// Its header, sent with the first part of its body (whole bodies are sent at once)
-    Pending(
-        oneshot::Sender<http::Response<ResponseBody>>,
-        Box<ResponseHeader>,
-    ),
+    Pending(oneshot::Sender<http::Response<ResponseBody>>, ResponseHeader),
     /// Its body, written part by part
     Streaming(mpsc::Sender<Part>),
     Done,
@@ -199,7 +196,7 @@ impl ServerSession {
     /// When a response was already written.
     // Async as Pingora's, which writes it then (here, it's sent with the body)
     #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
-    pub async fn write_response_header(&mut self, header: Box<ResponseHeader>) -> Result<()> {
+    pub async fn write_response_header(&mut self, header: ResponseHeader) -> Result<()> {
         if header.status.is_informational() && header.status != StatusCode::SWITCHING_PROTOCOLS {
             return Ok(());
         }
@@ -223,7 +220,7 @@ impl ServerSession {
     ///
     /// When a response was already written.
     pub async fn write_response_header_ref(&mut self, header: &ResponseHeader) -> Result<()> {
-        self.write_response_header(Box::new(header.clone())).await
+        self.write_response_header(header.clone()).await
     }
 
     /// Sends the response's header now, before any part of its body (e.g. while the upstream's
@@ -243,7 +240,7 @@ impl ServerSession {
         };
         let (parts, receiver) = mpsc::channel(PARTS);
         self.responder = Responder::Streaming(parts);
-        self.send(sender, *header, ResponseBody::stream(receiver))
+        self.send(sender, header, ResponseBody::stream(receiver))
     }
 
     /// Writes a part of the response's body (the last one with `end`)
@@ -315,7 +312,7 @@ impl ServerSession {
         else {
             return Ok(());
         };
-        self.send(sender, *header, body)
+        self.send(sender, header, body)
     }
 
     fn send(

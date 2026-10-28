@@ -17,7 +17,7 @@ use super_core::lb::{selection::RoundRobin, Backend, LoadBalancer};
 
 use crate::{
     config::host::LoadBalancing,
-    routing::build::{in_flight, upstream_index},
+    routing::build::{in_flight, peer_slot, upstream_index, PeerSlot},
 };
 
 /// The upstreams a request was sent to, by index among its location's (the first 64)
@@ -56,6 +56,8 @@ pub struct Picked {
     pub addr: SocketAddr,
     pub index: Option<usize>,
     pub in_flight: Option<Arc<AtomicUsize>>,
+    /// Where its backend's peer is kept
+    pub peer: Option<PeerSlot>,
 }
 
 impl Picked {
@@ -64,6 +66,7 @@ impl Picked {
             addr: *backend.addr.as_inet()?,
             index: upstream_index(backend),
             in_flight: in_flight(backend).cloned(),
+            peer: peer_slot(backend).cloned(),
         })
     }
 }

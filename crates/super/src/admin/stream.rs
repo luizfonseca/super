@@ -18,7 +18,7 @@ async fn start(session: &mut ServerSession) -> bool {
         .insert_header(header::TRANSFER_ENCODING, "chunked")
         .is_ok()
         && session
-            .write_response_header(Box::new(header))
+            .write_response_header(header)
             .await
             .is_ok()
 }

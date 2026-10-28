@@ -81,7 +81,7 @@ pub async fn redirect_to_https(
     res_headers.append_header(CONTENT_LENGTH, 0)?;
 
     session
-        .write_response_header(Box::new(res_headers), false)
+        .write_response_header(res_headers, false)
         .await?;
     session
         .write_response_body(Some(bytes::Bytes::from_static(b"")), true)
@@ -101,7 +101,7 @@ async fn respond_text(
     res_headers.append_header(CONTENT_LENGTH, body.len())?;
 
     session
-        .write_response_header(Box::new(res_headers), false)
+        .write_response_header(res_headers, false)
         .await?;
     session.write_response_body(Some(body), true).await
 }

@@ -76,9 +76,10 @@ async fn proxy_upstream<SV: ProxyHttp>(
     loop {
         progress.tries = retries + 1;
         let mut peer = proxy.inner.upstream_peer(session, ctx).await?;
-        // Switching protocols is HTTP/1.1's: an HTTP/2 upstream would take it as a plain request
+        // Switching protocols is HTTP/1.1's: an HTTP/2 upstream would take it as a plain request.
+        // A copy then: the peer is shared with the upstream's other requests.
         if session.is_upgrade_req() {
-            peer.options.alpn = ALPN::H1;
+            std::sync::Arc::make_mut(&mut peer).options.alpn = ALPN::H1;
         }
         let Some((connection, reused)) = connect(proxy, session, ctx, &peer, &mut retries).await?
         else {

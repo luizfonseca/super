@@ -355,7 +355,7 @@ mod tests {
     impl HttpServerApp for App {
         async fn process_new_http(self: &Arc<Self>, mut session: ServerSession, _: &ShutdownWatch) {
             let path = session.req_header().uri.path().to_string();
-            let header = Box::new(ResponseHeader::build(200, None).unwrap());
+            let header = ResponseHeader::build(200, None).unwrap();
             session.write_response_header(header).await.unwrap();
             match path.as_str() {
                 "/full" => session
