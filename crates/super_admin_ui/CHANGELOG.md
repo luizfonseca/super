@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.5.0...super_admin_ui-v0.6.0) (2026-10-28)
+
+
+### Features
+
+* **admin:** superproxy.dev's look: orange, Outfit, a frame, softer charts ([3ada295](https://github.com/luizfonseca/super/commit/3ada29513e3a125ec0879cdaa08ea790a5958b6b))
+
+
+### Bug Fixes
+
+* **admin:** chart labels readable over their fills ([2b9f494](https://github.com/luizfonseca/super/commit/2b9f49472276e6241b1d44975db445ba637d78a2))
+
 ## [0.5.0](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.4.0...super_admin_ui-v0.5.0) (2026-10-27)
 
 

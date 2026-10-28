@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.6.0](https://github.com/luizfonseca/super/compare/super-v0.5.0...super-v0.6.0) (2026-10-28)
+
+
+### Features
+
+* Super's own directory, /etc/superconfig, with Proksi's still read ([3dde9bd](https://github.com/luizfonseca/super/commit/3dde9bd3f30a279ff42210911dd1dcc9081d18a4))
+
+
+### Bug Fixes
+
+* HTTP/3 requests answered before their body ends aren't failed for their client ([89c94c4](https://github.com/luizfonseca/super/commit/89c94c44a85985acf8aea0349f52941b0f6f2f47))
+* Via and Max-Forwards, as RFC 9110 requires of intermediaries ([4c88820](https://github.com/luizfonseca/super/commit/4c88820fb1b2972c2ccaa7a4dfe223d85f53f9ff))
+* YAML configurations read without the unmaintained unsafe-libyaml ([b4af9bc](https://github.com/luizfonseca/super/commit/b4af9bccd1d229dfacc5fbb63629dd817d701243))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.5.0 to 0.6.0
+    * super_plugins bumped from 0.5.0 to 0.6.0
+    * super_core bumped from 0.5.0 to 0.6.0
+    * super_store bumped from 0.5.0 to 0.6.0
+  * dev-dependencies
+    * super_plugins bumped from 0.5.0 to 0.6.0
+    * super_store bumped from 0.5.0 to 0.6.0
+
 ## [0.5.0](https://github.com/luizfonseca/super/compare/super-v0.4.0...super-v0.5.0) (2026-10-27)
 
 

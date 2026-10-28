@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0](https://github.com/luizfonseca/super/compare/super_plugins-v0.5.0...super_plugins-v0.6.0) (2026-10-28)
+
+
+### Features
+
+* Super's own directory, /etc/superconfig, with Proksi's still read ([3dde9bd](https://github.com/luizfonseca/super/commit/3dde9bd3f30a279ff42210911dd1dcc9081d18a4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_core bumped from 0.5.0 to 0.6.0
+    * super_store bumped from 0.5.0 to 0.6.0
+  * dev-dependencies
+    * super_core bumped from 0.5.0 to 0.6.0
+
 ## [0.5.0](https://github.com/luizfonseca/super/compare/super_plugins-v0.4.0...super_plugins-v0.5.0) (2026-10-27)
 
 
