@@ -1,20 +1,9 @@
 name: Security audit
 
+# Daily only: advisories are reported as issues instead of blocking PRs
 on:
   schedule:
     - cron: "0 6 * * *"
-  push:
-    branches:
-      - main
-    paths:
-      - "**/Cargo.toml"
-      - "**/Cargo.lock"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "**/Cargo.toml"
-      - "**/Cargo.lock"
   workflow_dispatch:
 
 permissions:
