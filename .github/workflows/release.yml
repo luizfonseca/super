@@ -224,6 +224,56 @@ jobs:
           short-description: "Reverse proxy and load balancer with automatic HTTPS, HTTP/3 and a rule system, without the overhead"
           readme-filepath: docker.README.md
 
+  publish-cargo:
+    continue-on-error: true
+    name: Publish to crates.io
+    needs:
+      - release
+      - build
+    if: ${{ needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag_name }}
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build the admin UI
+        working-directory: crates/super_admin_ui
+        run: npm ci && npm run build
+
+      # Each crate after those it depends on: the core before the store, the store before the
+      # plugins, all of them before Super
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          # A crate already published (a rerun after a failure) is skipped
+          publish() {
+            if ! out=$(cargo publish "$@" 2>&1); then
+              echo "$out"
+              echo "$out" | grep -q 'already exists' || return 1
+            fi
+            echo "$out"
+          }
+          # The UI's built files are ignored by git, and published with the crate
+          publish -p super_admin_ui --allow-dirty
+          publish -p super_core
+          publish -p super_store
+          publish -p super_plugins
+          publish -p super_proxy
+
   upload-artifacts:
     continue-on-error: true
     name: Upload artifacts to Release
