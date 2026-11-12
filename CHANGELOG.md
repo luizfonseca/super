@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.3](https://github.com/luizfonseca/super/compare/super-v0.6.2...super-v0.6.3) (2026-11-12)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate hcl-rs to 0.20.0 ([#24](https://github.com/luizfonseca/super/issues/24)) ([6d95cd3](https://github.com/luizfonseca/super/commit/6d95cd302dc3e45b444ea975df855cfe6c91ae22))
+* **deps:** update rust crate k8s-openapi to 0.29.0 ([#26](https://github.com/luizfonseca/super/issues/26)) ([09137ad](https://github.com/luizfonseca/super/commit/09137ade13fb46829f33805ae788f4713160dea9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.6.2 to 0.6.3
+    * super_plugins bumped from 0.6.2 to 0.6.3
+    * super_core bumped from 0.6.2 to 0.6.3
+    * super_store bumped from 0.6.2 to 0.6.3
+  * dev-dependencies
+    * super_plugins bumped from 0.6.2 to 0.6.3
+    * super_store bumped from 0.6.2 to 0.6.3
+
 ## [0.6.2](https://github.com/luizfonseca/super/compare/super-v0.6.1...super-v0.6.2) (2026-10-28)
 
 
