@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.3](https://github.com/luizfonseca/super/compare/super_plugins-v0.6.2...super_plugins-v0.6.3) (2026-11-12)
+
+
+### Miscellaneous Chores
+
+* **super_plugins:** Synchronize super versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_core bumped from 0.6.2 to 0.6.3
+    * super_store bumped from 0.6.2 to 0.6.3
+  * dev-dependencies
+    * super_core bumped from 0.6.2 to 0.6.3
+
 ## [0.6.2](https://github.com/luizfonseca/super/compare/super_plugins-v0.6.1...super_plugins-v0.6.2) (2026-10-28)
 
 
