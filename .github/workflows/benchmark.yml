@@ -58,7 +58,7 @@ jobs:
           key: super-benchmark-${{ env.BASE_SHA }}
 
       # Only needed when something is built (it also caches the compiled dependencies)
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         if: steps.base-cache.outputs.cache-hit != 'true' || steps.changes.outputs.code == 'true'
 
       - name: Build the base
