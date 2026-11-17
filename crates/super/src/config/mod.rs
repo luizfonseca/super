@@ -711,7 +711,8 @@ pub struct ServerCfg {
     /// Whether HTTPS requests may be for another host than their TLS handshake was (SNI)
     /// (default: `false`: they're answered `421 Misdirected Request`, and clients retry them on
     /// a connection of their own). That host's certificate and TLS settings were never applied
-    /// to them. Names of the same host (a wildcard host's) always share connections.
+    /// to them. Names of the same host (a wildcard host's) always share connections, and so do
+    /// `trusted_proxies`.
     #[arg(skip)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_misdirected_requests: Option<bool>,

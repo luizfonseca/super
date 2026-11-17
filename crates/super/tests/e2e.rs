@@ -130,6 +130,15 @@ async fn test_requests_for_another_host_than_the_handshake_are_misdirected() {
         .await;
     assert_eq!(status(res), "200");
     harness.assert_healthy();
+
+    // Or they come from a trusted proxy, whose connections carry requests for any host
+    let mut harness =
+        Harness::start_with_server(routes(), "trusted_proxies = [\"127.0.0.1\"]", "").await;
+    let res = harness
+        .tls_request(harness.https_port, "app.test", &get("other.test"))
+        .await;
+    assert_eq!(status(res), "200");
+    harness.assert_healthy();
 }
 
 #[tokio::test(flavor = "multi_thread")]

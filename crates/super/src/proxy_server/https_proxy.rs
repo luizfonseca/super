@@ -46,11 +46,10 @@ pub struct Router {
 
 /// Whether the request is for another host than its TLS handshake was (SNI): that host's
 /// certificate and TLS settings were never applied to it. Names of the same host (a wildcard
-/// host's) share connections, as clients reuse them for every name a certificate has.
+/// host's) share connections, as clients reuse them for every name a certificate has. So do
+/// trusted proxies (`server.trusted_proxies`), whose connections carry requests for any host
+/// (RFC 9110 §7.4).
 fn misdirected(session: &Session, host: &str) -> bool {
-    if host.is_empty() {
-        return false;
-    }
     let server_name = session
         .digest()
         .and_then(|digest| digest.ssl_digest.as_deref())
@@ -58,7 +57,14 @@ fn misdirected(session: &Session, host: &str) -> bool {
     let Some(server_name) = server_name else {
         return false;
     };
-    stores::lookup::certificate_name(server_name) != stores::lookup::certificate_name(host)
+    if host.is_empty() || stores::lookup::same_host_certificate(server_name, host) {
+        return false;
+    }
+    let from_trusted_proxy = session
+        .client_addr()
+        .and_then(|addr| addr.as_inet())
+        .is_some_and(|addr| super::client::is_trusted(addr.ip()));
+    !from_trusted_proxy
 }
 
 pub struct RouterContext {
