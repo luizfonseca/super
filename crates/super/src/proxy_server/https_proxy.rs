@@ -28,10 +28,14 @@ static CACHEABLE_METHODS: Lazy<Vec<http::Method>> =
     Lazy::new(|| vec![http::Method::GET, http::Method::HEAD]);
 
 /// Proxies requests to the location of their host, on the HTTPS or the HTTP port
+#[derive(Debug, Clone, Copy)]
 pub struct Router {
     pub listener: Listener,
     /// Where hosts without `listen` addresses are served for this protocol
     pub default_address: std::net::SocketAddr,
+    /// Whether HTTPS requests may be for another host than their handshake was
+    /// (`server.allow_misdirected_requests`)
+    pub allow_misdirected_requests: bool,
 }
 
 // type Container = mapref::one::Ref<'static, String, RouteStoreContainer>;
@@ -40,20 +44,11 @@ pub struct Router {
 //     ctx.route_container.clone()
 // }
 
-/// Whether HTTPS requests may be for another host than their handshake was
-/// (`server.allow_misdirected_requests`)
-static ALLOW_MISDIRECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// Sets `server.allow_misdirected_requests`, once the configuration is loaded
-pub fn allow_misdirected_requests(allow: bool) {
-    ALLOW_MISDIRECTED.store(allow, std::sync::atomic::Ordering::Relaxed);
-}
-
 /// Whether the request is for another host than its TLS handshake was (SNI): that host's
 /// certificate and TLS settings were never applied to it. Names of the same host (a wildcard
 /// host's) share connections, as clients reuse them for every name a certificate has.
 fn misdirected(session: &Session, host: &str) -> bool {
-    if host.is_empty() || ALLOW_MISDIRECTED.load(std::sync::atomic::Ordering::Relaxed) {
+    if host.is_empty() {
         return false;
     }
     let server_name = session
@@ -192,7 +187,9 @@ impl ProxyHttp for Router {
             .unwrap_or_default()
             .clone_into(&mut ctx.host);
 
-        if self.listener == Listener::Https && misdirected(session, &ctx.host) {
+        let refuses_misdirected =
+            self.listener == Listener::Https && !self.allow_misdirected_requests;
+        if refuses_misdirected && misdirected(session, &ctx.host) {
             ctx.unserved = Unserved::Misdirected;
             respond_error(session, ctx, 421).await?;
             return Ok(true);
@@ -1209,6 +1206,7 @@ mod tests {
         let router = Router {
             listener: Listener::Http,
             default_address: "0.0.0.0:80".parse().unwrap(),
+            allow_misdirected_requests: false,
         };
 
         // Created for every request: the location is only shared once it's found

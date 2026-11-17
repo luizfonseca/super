@@ -65,6 +65,8 @@ pub fn http_service(
     let router = Router {
         listener: Listener::Http,
         default_address,
+        // Only HTTPS requests have a handshake to be misdirected from
+        allow_misdirected_requests: false,
     };
     let mut service = Service::new(
         "http proxy".to_string(),
@@ -81,11 +83,11 @@ pub fn http_service(
 pub fn https_service(
     configuration: &Arc<ServerConf>,
     addresses: &BTreeSet<String>,
-    default_address: SocketAddr,
+    router: Router,
     tcp_targets: &Arc<Vec<TcpTarget>>,
     worker_threads: Option<usize>,
 ) -> Result<Service<Counted<HttpsApp>>, anyhow::Error> {
-    let app = https_app(configuration, addresses, default_address, tcp_targets);
+    let app = https_app(configuration, addresses, router, tcp_targets);
     let mut service = Service::new("http proxy".to_string(), Counted::new(app));
     service.threads = worker_threads;
     for address in addresses {
@@ -101,13 +103,9 @@ pub fn https_service(
 pub fn http3_service(
     configuration: &Arc<ServerConf>,
     addresses: &BTreeSet<String>,
-    default_address: SocketAddr,
+    router: Router,
     worker_threads: Option<usize>,
 ) -> Result<super_core::services::quic::Service<WithTimeouts<HttpProxy<Router>>>, anyhow::Error> {
-    let router = Router {
-        listener: Listener::Https,
-        default_address,
-    };
     let app = Arc::new(WithTimeouts::new(http_proxy(configuration, router)));
     let certificates = super::http3::CERTIFICATES.clone();
     let mut service =
@@ -128,7 +126,7 @@ pub fn http3_service(
 pub fn https_app(
     configuration: &Arc<ServerConf>,
     addresses: &BTreeSet<String>,
-    default_address: SocketAddr,
+    router: Router,
     tcp_targets: &Arc<Vec<TcpTarget>>,
 ) -> HttpsApp {
     // `tcp` blocks of hosts sharing these addresses (chosen by SNI, and ALPN)
@@ -137,10 +135,6 @@ pub fn https_app(
         .any(|address| on_address(tcp_targets, address).next().is_some())
         .then(|| TcpProxy::new(tcp_targets.clone()));
 
-    let router = Router {
-        listener: Listener::Https,
-        default_address,
-    };
     HttpsApp {
         http: Arc::new(WithTimeouts::new(http_proxy(configuration, router))),
         tcp,

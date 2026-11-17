@@ -15,6 +15,7 @@ use crate::{
     proxy_server::cert_store::CertStore,
     proxy_server::{
         connections::Counted,
+        https_proxy::Router,
         services::{https_app, tls_acceptor},
     },
     routing::build::{load_balancer, set_health_check},
@@ -76,7 +77,7 @@ pub fn tcp_services(
     routes: &[TcpRoute],
     targets: &Arc<Vec<TcpTarget>>,
     https: &BTreeSet<String>,
-    (configuration, default_https): (&Arc<ServerConf>, SocketAddr),
+    (configuration, https_router): (&Arc<ServerConf>, Router),
     worker_threads: Option<usize>,
 ) -> Result<Vec<BoxedService>, anyhow::Error> {
     let mut services: Vec<BoxedService> = vec![];
@@ -96,7 +97,7 @@ pub fn tcp_services(
     for address in &passthrough {
         let shared = https.contains(address).then(|| {
             let addresses = BTreeSet::from([address.clone()]);
-            let app = https_app(configuration, &addresses, default_https, targets);
+            let app = https_app(configuration, &addresses, https_router, targets);
             let protocols = AlpnProtocols::new(on_address(targets, address));
             tls_acceptor(protocols).map(|acceptor| (acceptor, Arc::new(app)))
         });

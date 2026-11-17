@@ -218,11 +218,10 @@ fn main() -> Result<(), anyhow::Error> {
     server.run_forever();
 }
 
-/// The `server` settings requests read: timeouts, TLS, the case of header names, misdirected
-/// requests, and the rules of every request (validated with the configuration)
+/// The `server` settings requests read: timeouts, TLS, the case of header names, and the rules of
+/// every request (validated with the configuration)
 fn set_server_settings(server: &config::ServerCfg) -> Result<(), anyhow::Error> {
     super_core::apps::preserve_header_case(server.preserve_header_case());
-    proxy_server::https_proxy::allow_misdirected_requests(server.allow_misdirected_requests());
     proxy_server::timeouts::set_client_timeouts(server.timeouts);
     proxy_server::services::set_server_tls(server.tls.clone());
     rules::set_server_rules(&server.rule).map_err(anyhow::Error::msg)
@@ -238,6 +237,11 @@ fn add_listeners(
     let mut handles = vec![];
     // TCP: `tcp` blocks (validated when loading the configuration)
     let tcp_targets = tcp::services::tcp_targets(&listeners.tcp)?;
+    let https_router = proxy_server::https_proxy::Router {
+        listener: proxy_server::listener::Listener::Https,
+        default_address: default_https,
+        allow_misdirected_requests: proxy_config.server.allow_misdirected_requests(),
+    };
 
     // Listen on the HTTP and HTTPS addresses the hosts need
     if !listeners.http.is_empty() {
@@ -258,7 +262,7 @@ fn add_listeners(
         handles.push(server.add_service(proxy_server::services::https_service(
             &server.configuration,
             &https,
-            default_https,
+            https_router,
             &tcp_targets,
             proxy_config.worker_threads,
         )?));
@@ -266,7 +270,7 @@ fn add_listeners(
             handles.push(server.add_service(proxy_server::services::http3_service(
                 &server.configuration,
                 &https,
-                default_https,
+                https_router,
                 proxy_config.worker_threads,
             )?));
         }
@@ -309,7 +313,7 @@ fn add_listeners(
         &listeners.tcp,
         &tcp_targets,
         &listeners.https,
-        (&server.configuration, default_https),
+        (&server.configuration, https_router),
         proxy_config.worker_threads,
     )?));
 
