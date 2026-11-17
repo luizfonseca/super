@@ -4206,12 +4206,12 @@ async fn test_jwt() {
     let claims = serde_json::json!({
         "sub": "alice", "roles": ["admin", "ops"], "iss": "https://auth.test/", "aud": "api", "exp": now + 600,
     });
-    let secret = EncodingKey::from_secret(b"e2e-secret");
+    let secret = EncodingKey::from_secret(b"e2e-secret").unwrap();
     let valid = encode(&Header::default(), &claims, &secret).unwrap();
     let wrong_key = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(b"other"),
+        &EncodingKey::from_secret(b"other").unwrap(),
     )
     .unwrap();
 
