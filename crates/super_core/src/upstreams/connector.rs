@@ -199,8 +199,7 @@ impl Connector {
             (None, true) => peer
                 .address()
                 .as_inet()
-                .map(|addr| addr.ip().to_string())
-                .unwrap_or_default(),
+                .map_or_default(|addr| addr.ip().to_string()),
         };
         let ssl = config
             .into_ssl(&name)

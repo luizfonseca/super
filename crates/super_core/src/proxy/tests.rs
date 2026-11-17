@@ -97,8 +97,7 @@ async fn answer(
     let seen = request
         .headers()
         .get("x-seen")
-        .map(|value| value.to_str().unwrap().to_string())
-        .unwrap_or_default();
+        .map_or_default(|value| value.to_str().unwrap().to_string());
     let line = format!("{} {} {seen} ", request.method(), request.uri());
     let body = request.into_body().collect().await.unwrap().to_bytes();
     let mut text = line.into_bytes();

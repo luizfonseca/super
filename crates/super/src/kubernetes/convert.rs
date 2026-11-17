@@ -438,8 +438,7 @@ fn upstreams(
         .spec
         .as_ref()
         .and_then(|spec| spec.ports.as_ref())
-        .map(Vec::as_slice)
-        .unwrap_or_default();
+        .map_or_default(Vec::as_slice);
     let wanted = backend.port.as_ref();
     let Some(port) = ports.iter().find(|port| match wanted {
         Some(wanted) if wanted.number.is_some() => wanted.number == Some(port.port),

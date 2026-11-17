@@ -104,8 +104,7 @@ impl HostState {
 fn unix_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs())
-        .unwrap_or_default()
+        .map_or_default(|elapsed| elapsed.as_secs())
 }
 
 impl Default for MemoryStore {
@@ -225,9 +224,7 @@ impl Store for MemoryStore {
     async fn route_history(&self, host: &str) -> Result<Vec<HistoryEntry>, StoreError> {
         let routes = self.routes();
         let state = routes.hosts.get(&host.to_lowercase());
-        Ok(state
-            .map(|state| state.history.iter().cloned().collect())
-            .unwrap_or_default())
+        Ok(state.map_or_default(|state| state.history.iter().cloned().collect()))
     }
 
     async fn route_version(

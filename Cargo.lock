@@ -3086,7 +3086,6 @@ dependencies = [
 name = "plugins_api"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "wit-bindgen 0.63.0",
 ]
 

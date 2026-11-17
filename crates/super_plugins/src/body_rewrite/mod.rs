@@ -120,8 +120,7 @@ fn media_type(request: &RequestHeader) -> String {
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
-        .map(|media_type| media_type.trim().to_ascii_lowercase())
-        .unwrap_or_default()
+        .map_or_default(|media_type| media_type.trim().to_ascii_lowercase())
 }
 
 /// `application/json`, or a type ending with `+json` (`application/merge-patch+json`)

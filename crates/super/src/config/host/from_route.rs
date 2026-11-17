@@ -15,13 +15,12 @@ impl Host {
             .match_with
             .as_ref()
             .and_then(|matcher| matcher.path.as_ref())
-            .map(|path| {
+            .map_or_default(|path| {
                 path.patterns
                     .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+            });
         paths.retain(|path| seen.insert(path.clone()));
         if paths.is_empty() {
             paths.push("/*".to_string());

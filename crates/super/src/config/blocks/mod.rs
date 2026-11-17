@@ -63,8 +63,7 @@ impl HostBlock {
             tls: self
                 .tls
                 .as_ref()
-                .map(TlsSetting::to_host_tls)
-                .unwrap_or_default(),
+                .map_or_default(TlsSetting::to_host_tls),
             locations,
             rules: self.rule.clone(),
         })
