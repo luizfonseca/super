@@ -40,6 +40,32 @@ pub struct Router {
 //     ctx.route_container.clone()
 // }
 
+/// Whether HTTPS requests may be for another host than their handshake was
+/// (`server.allow_misdirected_requests`)
+static ALLOW_MISDIRECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Sets `server.allow_misdirected_requests`, once the configuration is loaded
+pub fn allow_misdirected_requests(allow: bool) {
+    ALLOW_MISDIRECTED.store(allow, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the request is for another host than its TLS handshake was (SNI): that host's
+/// certificate and TLS settings were never applied to it. Names of the same host (a wildcard
+/// host's) share connections, as clients reuse them for every name a certificate has.
+fn misdirected(session: &Session, host: &str) -> bool {
+    if host.is_empty() || ALLOW_MISDIRECTED.load(std::sync::atomic::Ordering::Relaxed) {
+        return false;
+    }
+    let server_name = session
+        .digest()
+        .and_then(|digest| digest.ssl_digest.as_deref())
+        .and_then(|ssl| ssl.server_name.as_deref());
+    let Some(server_name) = server_name else {
+        return false;
+    };
+    stores::lookup::certificate_name(server_name) != stores::lookup::certificate_name(host)
+}
+
 pub struct RouterContext {
     pub host: String,
     /// The location serving the request, once found
@@ -165,6 +191,12 @@ impl ProxyHttp for Router {
             .next()
             .unwrap_or_default()
             .clone_into(&mut ctx.host);
+
+        if self.listener == Listener::Https && misdirected(session, &ctx.host) {
+            ctx.unserved = Unserved::Misdirected;
+            respond_error(session, ctx, 421).await?;
+            return Ok(true);
+        }
 
         // The server's rules, before the host is chosen (ADR 0007)
         if let Some(rules) = crate::rules::server() {

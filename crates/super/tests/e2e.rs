@@ -89,6 +89,50 @@ async fn test_unknown_names_are_refused_in_the_tls_handshake() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_requests_for_another_host_than_the_handshake_are_misdirected() {
+    let routes = || {
+        vec![
+            Route::new("app.test", Upstream::Http),
+            Route::new("other.test", Upstream::Http),
+        ]
+    };
+    let get = |host: &str| format!("GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+    let status = |res: std::io::Result<String>| {
+        res.unwrap()
+            .split(' ')
+            .nth(1)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let mut harness = Harness::start(routes()).await;
+    let port = harness.https_port;
+
+    // The host the handshake was for, whatever its case and port
+    let res = harness.tls_request(port, "app.test", &get("app.test")).await;
+    assert_eq!(status(res), "200");
+    let res = harness
+        .tls_request(port, "app.test", &get(&format!("APP.test:{port}")))
+        .await;
+    assert_eq!(status(res), "200");
+
+    // Another host, or one no host has: its TLS settings were never applied (421)
+    let res = harness.tls_request(port, "app.test", &get("other.test")).await;
+    assert_eq!(status(res), "421", "{}", harness.logs());
+    let res = harness.tls_request(port, "app.test", &get("unknown.test")).await;
+    assert_eq!(status(res), "421");
+    harness.assert_healthy();
+
+    // Unless the server allows them
+    let mut harness =
+        Harness::start_with_server(routes(), "allow_misdirected_requests = true", "").await;
+    let res = harness
+        .tls_request(harness.https_port, "app.test", &get("other.test"))
+        .await;
+    assert_eq!(status(res), "200");
+    harness.assert_healthy();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_unmatched_path_returns_404_and_unknown_host_is_rejected() {
     let mut proksi = Harness::start(vec![
         Route::new("app.test", Upstream::Http).paths(&["/api/*"])
@@ -1967,8 +2011,11 @@ host "game.test" {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_tls_passthrough_on_the_https_port() {
-    let mut proksi = Harness::start_with(
+    // backend.test is Super itself here: the handshakes it terminates are for pass.test, the
+    // name the passthrough is chosen by, and its requests for backend.test
+    let mut proksi = Harness::start_with_server(
         vec![Route::new("app.test", Upstream::Http)],
+        "allow_misdirected_requests = true",
         PASSTHROUGH_ON_THE_HTTPS_PORT,
     )
     .await;
@@ -2200,7 +2247,7 @@ async fn test_admin_metrics() {
     proksi.resolve("app.test");
     assert_eq!(proksi.get("app.test", "/hello").await.unwrap().status, 200);
     assert_eq!(proksi.get("app.test", "/hello").await.unwrap().status, 200);
-    // A host proksi doesn't serve (over a connection for one it does)
+    // A host Super doesn't serve (over a connection for one it does): misdirected
     let res = proksi
         .tls_request(
             proksi.https_port,
@@ -2209,7 +2256,7 @@ async fn test_admin_metrics() {
         )
         .await
         .unwrap();
-    assert!(res.starts_with("HTTP/1.1 404"), "{res}");
+    assert!(res.starts_with("HTTP/1.1 421"), "{res}");
     // Plain HTTP for a host with TLS: redirected
     let res = proksi
         .raw_http_on(
@@ -2280,7 +2327,7 @@ async fn test_admin_metrics() {
     );
     assert_eq!(
         line(
-            "proksi_requests_total{host=\"_unknown_host\"",
+            "proksi_requests_total{host=\"_misdirected\"",
             "status=\"4xx\""
         )
         .as_deref(),
@@ -3826,7 +3873,7 @@ host "plain.test" {{
         "502",
     );
 
-    // A host proksi doesn't serve: no headers to add, nor a `Server`
+    // A host Super doesn't serve (misdirected): no headers to add, nor a `Server`
     let res = proksi
         .tls_request(
             proksi.https_port,
@@ -3835,7 +3882,7 @@ host "plain.test" {{
         )
         .await
         .unwrap();
-    assert!(res.starts_with("HTTP/1.1 404"), "{res}");
+    assert!(res.starts_with("HTTP/1.1 421"), "{res}");
     assert!(!res.to_lowercase().contains("\r\nserver:"), "{res}");
 }
 
@@ -4134,6 +4181,17 @@ host "*.wild.test" {{
     // Not the parent itself, nor two more labels: unknown names, without a certificate
     assert!(proksi.get("wild.test", "/").await.is_err());
     assert!(proksi.get("a.b.wild.test", "/").await.is_err());
+
+    // Names of the same host share a connection (HTTP/2 coalescing): not misdirected
+    let res = proksi
+        .tls_request(
+            proksi.https_port,
+            "a.wild.test",
+            "GET / HTTP/1.1\r\nHost: b.wild.test\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+    assert!(res.starts_with("HTTP/1.1 200"), "{res}");
 }
 
 const HOST_WITH_JWT: &str = r#"

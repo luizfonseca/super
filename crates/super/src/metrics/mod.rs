@@ -42,15 +42,18 @@ pub enum Unserved {
     Acme,
     /// Answered by the server's or a host's rules, before a location was chosen
     Rules,
+    /// For another host than its TLS handshake was (`421`)
+    Misdirected,
 }
 
 impl Unserved {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::UnknownHost,
         Self::NoLocation,
         Self::HttpsRedirect,
         Self::Acme,
         Self::Rules,
+        Self::Misdirected,
     ];
 
     pub fn label(self) -> &'static str {
@@ -60,6 +63,7 @@ impl Unserved {
             Self::HttpsRedirect => "_https_redirect",
             Self::Acme => "_acme",
             Self::Rules => "_rules",
+            Self::Misdirected => "_misdirected",
         }
     }
 }
@@ -281,15 +285,16 @@ impl LocationMetrics {
 
     /// Requests no location served, by why
     pub fn unserved(why: Unserved) -> &'static Self {
-        static UNSERVED: Lazy<[LocationMetrics; 5]> =
+        static UNSERVED: Lazy<[LocationMetrics; 6]> =
             Lazy::new(|| Unserved::ALL.map(|why| LocationMetrics::new(why.label(), "", &[])));
-        let [unknown_host, no_location, https_redirect, acme, rules] = &*UNSERVED;
+        let [unknown_host, no_location, https_redirect, acme, rules, misdirected] = &*UNSERVED;
         match why {
             Unserved::UnknownHost => unknown_host,
             Unserved::NoLocation => no_location,
             Unserved::HttpsRedirect => https_redirect,
             Unserved::Acme => acme,
             Unserved::Rules => rules,
+            Unserved::Misdirected => misdirected,
         }
     }
 
