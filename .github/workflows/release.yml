@@ -98,7 +98,7 @@ jobs:
           cache-provider: github
 
       - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           components: rustfmt,clippy
@@ -239,7 +239,7 @@ jobs:
           ref: ${{ needs.release.outputs.tag_name }}
 
       - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           components: rustfmt,clippy
