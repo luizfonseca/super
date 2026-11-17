@@ -708,6 +708,15 @@ pub struct ServerCfg {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub http3: Option<bool>,
 
+    /// Whether HTTPS requests may be for another host than their TLS handshake was (SNI)
+    /// (default: `false`: they're answered `421 Misdirected Request`, and clients retry them on
+    /// a connection of their own). That host's certificate and TLS settings were never applied
+    /// to them. Names of the same host (a wildcard host's) always share connections, and so do
+    /// `trusted_proxies`.
+    #[arg(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_misdirected_requests: Option<bool>,
+
     /// `rule "<name>" { ... }`, in order: every request, before its host is chosen (ADR 0007)
     #[arg(skip)]
     #[serde(
@@ -740,6 +749,12 @@ impl ServerCfg {
     /// Whether HTTP/3 is answered on the HTTPS addresses (`server.http3`): off unless set
     pub fn http3(&self) -> bool {
         self.http3.unwrap_or(false)
+    }
+
+    /// Whether HTTPS requests may be for another host than their handshake was
+    /// (`server.allow_misdirected_requests`): refused unless set
+    pub fn allow_misdirected_requests(&self) -> bool {
+        self.allow_misdirected_requests.unwrap_or(false)
     }
 }
 
@@ -938,6 +953,7 @@ impl Default for Config {
             service_name: Cow::Borrowed("proksi"),
             server: ServerCfg {
                 http3: None,
+                allow_misdirected_requests: None,
                 https_address: Some(Cow::Borrowed("0.0.0.0:443")),
                 http_address: Some(Cow::Borrowed("0.0.0.0:80")),
                 trusted_proxies: vec![],
@@ -1310,6 +1326,14 @@ mod tests {
 
         assert!(!server(json!({})).preserve_header_case());
         assert!(server(json!({ "preserve_header_case": true })).preserve_header_case());
+    }
+
+    #[test]
+    fn test_misdirected_requests_are_refused_unless_allowed() {
+        let server = |value| serde_json::from_value::<ServerCfg>(value).unwrap();
+
+        assert!(!server(json!({})).allow_misdirected_requests());
+        assert!(server(json!({ "allow_misdirected_requests": true })).allow_misdirected_requests());
     }
 
     #[test]

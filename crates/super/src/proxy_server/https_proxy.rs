@@ -28,10 +28,14 @@ static CACHEABLE_METHODS: Lazy<Vec<http::Method>> =
     Lazy::new(|| vec![http::Method::GET, http::Method::HEAD]);
 
 /// Proxies requests to the location of their host, on the HTTPS or the HTTP port
+#[derive(Debug, Clone, Copy)]
 pub struct Router {
     pub listener: Listener,
     /// Where hosts without `listen` addresses are served for this protocol
     pub default_address: std::net::SocketAddr,
+    /// Whether HTTPS requests may be for another host than their handshake was
+    /// (`server.allow_misdirected_requests`)
+    pub allow_misdirected_requests: bool,
 }
 
 // type Container = mapref::one::Ref<'static, String, RouteStoreContainer>;
@@ -39,6 +43,29 @@ pub struct Router {
 // fn process_route(ctx: &RouterContext) -> RouteStoreContainer {
 //     ctx.route_container.clone()
 // }
+
+/// Whether the request is for another host than its TLS handshake was (SNI): that host's
+/// certificate and TLS settings were never applied to it. Names of the same host (a wildcard
+/// host's) share connections, as clients reuse them for every name a certificate has. So do
+/// trusted proxies (`server.trusted_proxies`), whose connections carry requests for any host
+/// (RFC 9110 §7.4).
+fn misdirected(session: &Session, host: &str) -> bool {
+    let server_name = session
+        .digest()
+        .and_then(|digest| digest.ssl_digest.as_deref())
+        .and_then(|ssl| ssl.server_name.as_deref());
+    let Some(server_name) = server_name else {
+        return false;
+    };
+    if host.is_empty() || stores::lookup::same_host_certificate(server_name, host) {
+        return false;
+    }
+    let from_trusted_proxy = session
+        .client_addr()
+        .and_then(|addr| addr.as_inet())
+        .is_some_and(|addr| super::client::is_trusted(addr.ip()));
+    !from_trusted_proxy
+}
 
 pub struct RouterContext {
     pub host: String,
@@ -165,6 +192,14 @@ impl ProxyHttp for Router {
             .next()
             .unwrap_or_default()
             .clone_into(&mut ctx.host);
+
+        let refuses_misdirected =
+            self.listener == Listener::Https && !self.allow_misdirected_requests;
+        if refuses_misdirected && misdirected(session, &ctx.host) {
+            ctx.unserved = Unserved::Misdirected;
+            respond_error(session, ctx, 421).await?;
+            return Ok(true);
+        }
 
         // The server's rules, before the host is chosen (ADR 0007)
         if let Some(rules) = crate::rules::server() {
@@ -1177,6 +1212,7 @@ mod tests {
         let router = Router {
             listener: Listener::Http,
             default_address: "0.0.0.0:80".parse().unwrap(),
+            allow_misdirected_requests: false,
         };
 
         // Created for every request: the location is only shared once it's found

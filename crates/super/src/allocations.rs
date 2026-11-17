@@ -64,6 +64,37 @@ mod tests {
     }
 
     #[test]
+    fn test_the_misdirected_request_check_allocates_nothing() {
+        for name in ["a.misdirected.test", "b.misdirected.test", "*.w.misdirected.test"] {
+            let container = build_host_container(&host(name, "10.0.0.1")).unwrap();
+            stores::insert_route(name.to_string(), Arc::new(container));
+        }
+
+        // The handshake's name against the request's host, as each request compares them
+        for (server_name, host, same) in [
+            ("a.misdirected.test", "a.misdirected.test", true),
+            ("a.misdirected.test", "b.misdirected.test", false),
+            ("x.w.misdirected.test", "y.w.misdirected.test", true),
+            ("a.misdirected.test", "unknown.misdirected.test", false),
+        ] {
+            assert_no_allocations(&format!("{server_name} for {host}"), || {
+                assert_eq!(
+                    stores::lookup::same_host_certificate(server_name, host),
+                    same
+                );
+            });
+        }
+        let client = "10.3.4.5".parse().unwrap();
+        assert_no_allocations("the trusted proxy check", || {
+            crate::proxy_server::client::is_trusted(client)
+        });
+
+        for name in ["a.misdirected.test", "b.misdirected.test", "*.w.misdirected.test"] {
+            stores::remove_route(name);
+        }
+    }
+
+    #[test]
     fn test_matching_regex_locations_allocates_nothing() {
         let matcher = crate::routing::paths::LocationMatcher::new([
             vec!["^/blog/[a-z]{8}/(posts|drafts)$".to_string()],

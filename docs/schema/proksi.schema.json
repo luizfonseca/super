@@ -3670,6 +3670,13 @@
     },
     "ServerCfg": {
       "properties": {
+        "allow_misdirected_requests": {
+          "description": "Whether HTTPS requests may be for another host than their TLS handshake was (SNI)\n(default: `false`: they're answered `421 Misdirected Request`, and clients retry them on\na connection of their own). That host's certificate and TLS settings were never applied\nto them. Names of the same host (a wildcard host's) always share connections, and so do\n`trusted_proxies`.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "http3": {
           "description": "Whether HTTP/3 (QUIC, over UDP) is answered on the HTTPS addresses (default: `false`).\nHTTPS responses tell clients it's there (`Alt-Svc`); their UDP port must be reachable.\nSuper only (Proksi ignores it).",
           "type": [

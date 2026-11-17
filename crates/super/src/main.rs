@@ -237,6 +237,11 @@ fn add_listeners(
     let mut handles = vec![];
     // TCP: `tcp` blocks (validated when loading the configuration)
     let tcp_targets = tcp::services::tcp_targets(&listeners.tcp)?;
+    let https_router = proxy_server::https_proxy::Router {
+        listener: proxy_server::listener::Listener::Https,
+        default_address: default_https,
+        allow_misdirected_requests: proxy_config.server.allow_misdirected_requests(),
+    };
 
     // Listen on the HTTP and HTTPS addresses the hosts need
     if !listeners.http.is_empty() {
@@ -257,7 +262,7 @@ fn add_listeners(
         handles.push(server.add_service(proxy_server::services::https_service(
             &server.configuration,
             &https,
-            default_https,
+            https_router,
             &tcp_targets,
             proxy_config.worker_threads,
         )?));
@@ -265,7 +270,7 @@ fn add_listeners(
             handles.push(server.add_service(proxy_server::services::http3_service(
                 &server.configuration,
                 &https,
-                default_https,
+                https_router,
                 proxy_config.worker_threads,
             )?));
         }
@@ -308,7 +313,7 @@ fn add_listeners(
         &listeners.tcp,
         &tcp_targets,
         &listeners.https,
-        (&server.configuration, default_https),
+        (&server.configuration, https_router),
         proxy_config.worker_threads,
     )?));
 

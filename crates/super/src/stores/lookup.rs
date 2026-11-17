@@ -27,6 +27,19 @@ pub fn certificate_name(name: &str) -> std::borrow::Cow<'_, str> {
     certificate_name_in(name, super::has_wildcard_hosts(), get_route_by_key)
 }
 
+/// Whether `server_name` (a TLS handshake's) and `host` (a request's) are served by the same
+/// host, and so with the same certificate: a wildcard host's names are. Most requests are for the
+/// name of their handshake, without a lookup.
+pub fn same_host_certificate(server_name: &str, host: &str) -> bool {
+    if server_name.eq_ignore_ascii_case(host) {
+        return true;
+    }
+    match (named_host(server_name), named_host(host)) {
+        (Some(handshake), Some(request)) => Arc::ptr_eq(&handshake, &request),
+        _ => false,
+    }
+}
+
 /// A host served over HTTPS, needing a certificate
 #[derive(Debug, Clone, PartialEq)]
 pub struct TlsHost {
