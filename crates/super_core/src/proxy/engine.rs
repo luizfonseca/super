@@ -168,8 +168,7 @@ fn summary(session: &Session) -> String {
     let host = request
         .headers
         .get(http::header::HOST)
-        .map(|host| String::from_utf8_lossy(host.as_bytes()))
-        .unwrap_or_default();
+        .map_or_default(|host| String::from_utf8_lossy(host.as_bytes()));
     let path = String::from_utf8_lossy(request.raw_path());
     format!("{} {path}, Host: {host}", request.method)
 }

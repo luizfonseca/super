@@ -54,8 +54,7 @@ impl Validators {
     pub fn new(len: u64, modified: SystemTime) -> Self {
         let modified_secs = modified
             .duration_since(UNIX_EPOCH)
-            .map(|since| since.as_secs())
-            .unwrap_or_default();
+            .map_or_default(|since| since.as_secs());
         Self {
             etag: format!("\"{len:x}-{modified_secs:x}\""),
             last_modified: httpdate::fmt_http_date(modified),

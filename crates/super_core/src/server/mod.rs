@@ -205,8 +205,7 @@ fn start(pending: Pending, configuration: &ServerConf, fds: &ListenFds, shutdown
     let dependencies = handle
         .dependencies
         .lock()
-        .map(|dependencies| dependencies.clone())
-        .unwrap_or_default();
+        .map_or_default(|dependencies| dependencies.clone());
     // Without work stealing: threads of their own each accept connections, and keep them
     let pinned = (!configuration.work_stealing && threads > 1)
         .then(|| start_workers(threads, &name))

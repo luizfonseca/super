@@ -8,7 +8,7 @@ COPY crates/super_admin_ui/ ./
 RUN npm run build
 
 # OpenSSL is built from source (vendored), with the image's perl and make
-FROM rust:1.99-trixie AS build
+FROM rust:1.100-trixie AS build
 WORKDIR /src
 COPY . .
 COPY --from=ui /ui/dist crates/super_admin_ui/dist

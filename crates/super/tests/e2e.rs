@@ -2193,8 +2193,7 @@ async fn test_admin_metrics() {
     let admin_port = proksi.tcp_ports[2];
     let metrics = |token: Option<&str>| {
         let authorization = token
-            .map(|token| format!("Authorization: Bearer {token}\r\n"))
-            .unwrap_or_default();
+            .map_or_default(|token| format!("Authorization: Bearer {token}\r\n"));
         format!("GET /metrics HTTP/1.1\r\nHost: admin\r\n{authorization}Connection: close\r\n\r\n")
     };
 
@@ -3099,8 +3098,7 @@ async fn negotiated_cipher(port: u16, ciphers: Option<&'static str>) -> Result<S
             .map_err(|err| err.to_string())?;
         let cipher = stream.ssl().current_cipher();
         Ok(cipher
-            .map(|cipher| cipher.name().to_string())
-            .unwrap_or_default())
+            .map_or_default(|cipher| cipher.name().to_string()))
     })
     .await
     .unwrap()
@@ -4208,12 +4206,12 @@ async fn test_jwt() {
     let claims = serde_json::json!({
         "sub": "alice", "roles": ["admin", "ops"], "iss": "https://auth.test/", "aud": "api", "exp": now + 600,
     });
-    let secret = EncodingKey::from_secret(b"e2e-secret");
+    let secret = EncodingKey::from_secret(b"e2e-secret").unwrap();
     let valid = encode(&Header::default(), &claims, &secret).unwrap();
     let wrong_key = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(b"other"),
+        &EncodingKey::from_secret(b"other").unwrap(),
     )
     .unwrap();
 
@@ -4553,8 +4551,7 @@ async fn test_waiting_room() {
     let proksi = &harness;
     let get = |cookie: Option<String>| async move {
         let cookie = cookie
-            .map(|cookie| format!("Cookie: {cookie}\r\n"))
-            .unwrap_or_default();
+            .map_or_default(|cookie| format!("Cookie: {cookie}\r\n"));
         let request =
             format!("GET / HTTP/1.1\r\nHost: line.test\r\n{cookie}Connection: close\r\n\r\n");
         proksi.raw_http_on(port, request.as_bytes()).await.unwrap()
@@ -4752,8 +4749,7 @@ host "files.test" {{
     };
     let body = |res: &str| {
         res.split_once("\r\n\r\n")
-            .map(|(_, body)| body.to_string())
-            .unwrap_or_default()
+            .map_or_default(|(_, body)| body.to_string())
     };
 
     // A file, by its path below the location
@@ -4945,8 +4941,7 @@ host "split.test" {
     };
     let body = |res: &str| {
         res.split_once("\r\n\r\n")
-            .map(|(_, body)| body.to_string())
-            .unwrap_or_default()
+            .map_or_default(|(_, body)| body.to_string())
     };
 
     // A new client gets the split, and a cookie telling nothing to keep it

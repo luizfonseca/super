@@ -59,8 +59,7 @@ impl Config {
             let tls = host_block
                 .tls
                 .as_ref()
-                .map(TlsSetting::to_host_tls)
-                .unwrap_or_default();
+                .map_or_default(TlsSetting::to_host_tls);
             host_block.tcp.iter().map(move |(name, block)| {
                 (
                     name,

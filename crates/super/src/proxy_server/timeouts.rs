@@ -28,8 +28,7 @@ pub fn client_timeouts() -> ClientTimeouts {
 pub fn upstream_timeouts() -> crate::config::host::UpstreamTimeouts {
     TIMEOUTS
         .get()
-        .map(|timeouts| timeouts.upstream)
-        .unwrap_or_default()
+        .map_or_default(|timeouts| timeouts.upstream)
 }
 
 /// An HTTP app whose clients get the configured timeouts: idle connections are closed (between

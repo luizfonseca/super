@@ -273,10 +273,9 @@ pub fn tcp(
             let addresses = load_balancers
                 .iter()
                 .find(|(label, _)| *label == block)
-                .map(|(_, load_balancer)| {
+                .map_or_default(|(_, load_balancer)| {
                     crate::routing::build::upstream_addresses(load_balancer, route.upstreams.len())
-                })
-                .unwrap_or_default();
+                });
             TcpStatus {
                 name: route.name.clone(),
                 host: route.host.clone(),
@@ -331,9 +330,7 @@ const SECRET_BLOCKS: [&str; 4] = ["basic_auth", "jwt", "oauth2", "forward_auth"]
 /// Rules as written, without what can be a secret: the values headers, cookies and query
 /// parameters are compared with (API keys), the settings of authentication blocks, and the values of headers they add
 fn written_rules(rules: Option<&crate::rules::Rules>) -> Vec<Value> {
-    rules
-        .map(|rules| rules.source().iter().map(|rule| redact(&rule.0)).collect())
-        .unwrap_or_default()
+    rules.map_or_default(|rules| rules.source().iter().map(|rule| redact(&rule.0)).collect())
 }
 
 fn redact(rule: &Value) -> Value {

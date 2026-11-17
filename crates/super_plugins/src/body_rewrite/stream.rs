@@ -157,7 +157,7 @@ impl<'a> Output<'a> {
         }
         let end = self.part.len();
         self.end_run(end);
-        self.out.map(BytesMut::freeze).unwrap_or_default()
+        self.out.map_or_default(BytesMut::freeze)
     }
 }
 

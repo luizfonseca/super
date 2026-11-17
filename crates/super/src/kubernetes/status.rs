@@ -14,7 +14,7 @@ pub fn addresses(service: &Service) -> Vec<IngressLoadBalancerIngress> {
         .as_ref()
         .and_then(|status| status.load_balancer.as_ref())
         .and_then(|balancer| balancer.ingress.as_ref())
-        .map(|ingress| {
+        .map_or_default(|ingress| {
             ingress
                 .iter()
                 .map(|address| IngressLoadBalancerIngress {
@@ -23,8 +23,7 @@ pub fn addresses(service: &Service) -> Vec<IngressLoadBalancerIngress> {
                     ..IngressLoadBalancerIngress::default()
                 })
                 .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+        });
     if !balancer.is_empty() {
         return balancer;
     }

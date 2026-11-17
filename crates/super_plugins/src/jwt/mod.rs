@@ -25,7 +25,9 @@ impl Jwt {
     pub(super) fn new(plugin: &RoutePlugin) -> Result<Self, String> {
         let settings: settings::Jwt = settings::read("jwt", plugin)?;
         let keys = match (settings.secret, settings.public_key, settings.jwks_url) {
-            (Some(secret), None, None) if !secret.is_empty() => Keys::secret(&secret),
+            (Some(secret), None, None) if !secret.is_empty() => {
+                Keys::secret(&secret).map_err(|err| format!("jwt: {err}"))?
+            }
             (None, Some(pem), None) => {
                 Keys::public_key(&pem).map_err(|err| format!("jwt: {err}"))?
             }

@@ -39,7 +39,7 @@ pub(crate) fn encode_jwt(sub: &str, secret: &[u8]) -> Result<String, anyhow::Err
     Ok(encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(secret),
+        &EncodingKey::from_secret(secret)?,
     )?)
 }
 
@@ -47,7 +47,7 @@ pub(crate) fn encode_jwt(sub: &str, secret: &[u8]) -> Result<String, anyhow::Err
 pub(crate) fn decode_jwt(token: &str, secret: &[u8]) -> Result<JwtClaims, anyhow::Error> {
     let data = jsonwebtoken::decode::<JwtClaims>(
         token,
-        &DecodingKey::from_secret(secret),
+        &DecodingKey::from_secret(secret)?,
         &Validation::default(),
     )?;
 

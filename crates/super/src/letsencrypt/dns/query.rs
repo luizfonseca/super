@@ -37,8 +37,7 @@ pub async fn txt_records(server: SocketAddr, name: &str) -> io::Result<Vec<Strin
 fn query_id() -> u16 {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.subsec_nanos())
-        .unwrap_or_default();
+        .map_or_default(|elapsed| elapsed.subsec_nanos());
     u16::try_from(nanos & 0xffff).unwrap_or_default()
 }
 

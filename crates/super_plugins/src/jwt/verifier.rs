@@ -21,8 +21,10 @@ pub enum Keys {
 
 impl Keys {
     /// `secret` (HMAC) or `public_key` (PEM: RSA, ECDSA or Ed25519)
-    pub fn secret(secret: &str) -> Self {
-        Keys::Static(DecodingKey::from_secret(secret.as_bytes()))
+    pub fn secret(secret: &str) -> Result<Self, String> {
+        DecodingKey::from_secret(secret.as_bytes())
+            .map(Keys::Static)
+            .map_err(|_| "secret is not a valid HMAC key".to_string())
     }
 
     pub fn public_key(pem: &str) -> Result<Self, String> {
@@ -114,12 +116,12 @@ pub mod tests {
     }
 
     fn hmac() -> Verifier {
-        Verifier::new(Keys::secret("secret"), None, None)
+        Verifier::new(Keys::secret("secret").unwrap(), None, None)
     }
 
     #[test]
     fn test_hmac_tokens() {
-        let key = EncodingKey::from_secret(b"secret");
+        let key = EncodingKey::from_secret(b"secret").unwrap();
         let verified = hmac()
             .verify(&token(Algorithm::HS256, &key, &claims()))
             .unwrap();
@@ -128,7 +130,7 @@ pub mod tests {
             .verify(&token(Algorithm::HS512, &key, &claims()))
             .is_ok());
 
-        let other = EncodingKey::from_secret(b"other");
+        let other = EncodingKey::from_secret(b"other").unwrap();
         assert!(hmac()
             .verify(&token(Algorithm::HS256, &other, &claims()))
             .is_err());
@@ -137,7 +139,7 @@ pub mod tests {
 
     #[test]
     fn test_expiry() {
-        let key = EncodingKey::from_secret(b"secret");
+        let key = EncodingKey::from_secret(b"secret").unwrap();
         let mut expired = claims();
         expired["exp"] = json!(now() - 600);
         assert!(hmac()
@@ -198,7 +200,7 @@ pub mod tests {
             .is_ok());
 
         // An HMAC token "signed" with the public key, as if it were a secret
-        let confused = EncodingKey::from_secret(&public);
+        let confused = EncodingKey::from_secret(&public).unwrap();
         assert!(verifier
             .verify(&token(Algorithm::HS256, &confused, &claims()))
             .is_err());
@@ -208,9 +210,9 @@ pub mod tests {
 
     #[test]
     fn test_issuer_and_audience() {
-        let key = EncodingKey::from_secret(b"secret");
+        let key = EncodingKey::from_secret(b"secret").unwrap();
         let verifier = Verifier::new(
-            Keys::secret("secret"),
+            Keys::secret("secret").unwrap(),
             Some("https://auth.test/".to_string()),
             Some(vec!["api".to_string(), "admin".to_string()]),
         );

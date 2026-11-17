@@ -12,8 +12,7 @@ pub fn summary(event: &Event) -> String {
     let detail = event
         .detail
         .as_deref()
-        .map(|detail| format!(": {detail}"))
-        .unwrap_or_default();
+        .map_or_default(|detail| format!(": {detail}"));
     // An upstream of a location, or of a `tcp` block
     let of = match (&event.tcp, &event.location) {
         (Some(block), _) => format!("tcp block {block}"),
@@ -39,8 +38,7 @@ pub fn summary(event: &Event) -> String {
             let by = event
                 .author
                 .as_deref()
-                .map(|author| format!(" by {author}"))
-                .unwrap_or_default();
+                .map_or_default(|author| format!(" by {author}"));
             let change = event.detail.as_deref().unwrap_or("changed");
             match event.version {
                 Some(version) => format!("Host {host} {change}{by} (version {version})"),

@@ -276,8 +276,7 @@ fn add_listeners(
         let (tokens, trusted_origins) = proxy_config
             .admin
             .as_ref()
-            .map(|admin| (admin.tokens.clone(), admin.trusted_origins.clone()))
-            .unwrap_or_default();
+            .map_or_default(|admin| (admin.tokens.clone(), admin.trusted_origins.clone()));
         let instance = admin::status::Instance {
             started: std::time::Instant::now(),
             store_type: format!("{:?}", proxy_config.store.store_type).to_lowercase(),

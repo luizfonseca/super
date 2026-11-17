@@ -617,8 +617,7 @@ impl ProxyHttp for Router {
         let duration = ctx.timings.request_filter_start.elapsed();
         let status_code = session
             .response_written()
-            .map(|v| v.status.as_u16())
-            .unwrap_or_default();
+            .map_or_default(|v| v.status.as_u16());
 
         // Requests no location served are counted by why (`_unknown_host`, `_acme`...)
         if crate::metrics::enabled() {
@@ -933,7 +932,7 @@ fn client_ip(session: &Session) -> String {
                 client.to_string()
             }
         }
-        None => peer.map(ToString::to_string).unwrap_or_default(),
+        None => peer.map_or_default(ToString::to_string),
     }
 }
 
