@@ -307,10 +307,12 @@ mod tests {
         digest.peer_addr().unwrap().to_string()
     }
 
-    async fn rest(mut stream: Stream) -> String {
-        let mut rest = String::new();
-        stream.read_to_string(&mut rest).await.unwrap();
-        rest
+    /// What the connection's client sent after the PROXY header, until it closed: its own
+    /// bytes, none of the header's (read ahead) lost or left
+    async fn after_the_header(mut stream: Stream) -> Vec<u8> {
+        let mut bytes = vec![];
+        stream.read_to_end(&mut bytes).await.unwrap();
+        bytes
     }
 
     #[tokio::test]
@@ -318,13 +320,13 @@ mod tests {
         let mut stream = connection(&[b"PROXY TCP4 203.0.113.7 10.0.0.1 51234 443\r\nGET /"]).await;
         stream.read_proxy_header().await.unwrap();
         assert_eq!(peer(&stream), "203.0.113.7:51234");
-        assert_eq!(rest(stream).await, "GET /");
+        assert_eq!(after_the_header(stream).await, b"GET /");
 
         // In pieces
         let mut stream = connection(&[b"PROXY TCP6 2001:db8::7 ", b"2001:db8::1 1 443\r\nhi"]).await;
         stream.read_proxy_header().await.unwrap();
         assert_eq!(peer(&stream), "[2001:db8::7]:1");
-        assert_eq!(rest(stream).await, "hi");
+        assert_eq!(after_the_header(stream).await, b"hi");
     }
 
     #[tokio::test]
@@ -333,13 +335,13 @@ mod tests {
         let before = peer(&stream);
         stream.read_proxy_header().await.unwrap();
         assert_eq!(peer(&stream), before);
-        assert_eq!(rest(stream).await, "GET / HTTP/1.1\r\n");
+        assert_eq!(after_the_header(stream).await, b"GET / HTTP/1.1\r\n");
 
         // A header without a client (the load balancer's own connection): consumed
         let mut stream = connection(&[b"PROXY UNKNOWN\r\nping"]).await;
         stream.read_proxy_header().await.unwrap();
         assert!(peer(&stream).starts_with("127.0.0.1:"), "{}", peer(&stream));
-        assert_eq!(rest(stream).await, "ping");
+        assert_eq!(after_the_header(stream).await, b"ping");
     }
 
     #[tokio::test]

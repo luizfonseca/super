@@ -35,7 +35,7 @@ Below you can find a full list of the configuration keys and their corresponding
 | `server.http3` | `PROKSI_SERVER__HTTP3` | Whether HTTP/3 (QUIC, UDP) is answered on the HTTPS addresses (`false`; Super only) |
 | `server.allow_misdirected_requests` | `PROKSI_SERVER__ALLOW_MISDIRECTED_REQUESTS` | Whether HTTPS requests may be for another host than their TLS handshake (SNI) was (`false`: answered `421 Misdirected Request`) |
 | `server.proxy_protocol.trusted` | `PROKSI_SERVER__PROXY_PROTOCOL__TRUSTED` | The load balancers whose [PROXY protocol](/routing/headers#proxy-protocol) headers are read (addresses or networks) |
-| `server.proxy_protocol.listen` | `PROKSI_SERVER__PROXY_PROTOCOL__LISTEN` | The addresses they're read on (default: all) |
+| `server.proxy_protocol.listeners` | `PROKSI_SERVER__PROXY_PROTOCOL__LISTENERS` | The listeners it's enabled on, by address (default: all) |
 | `server.proxy_protocol.timeout_secs` | `PROKSI_SERVER__PROXY_PROTOCOL__TIMEOUT_SECS` | How long a header is waited for (`5`) |
 | `server.http_address` | `PROKSI_SERVER__HTTP_ADDRESS` | The default HTTP address (redirects, ACME challenges, hosts without TLS) |
 | `logging.level` | `PROKSI_LOGGING__LEVEL` | The log level |

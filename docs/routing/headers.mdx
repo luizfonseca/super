@@ -77,8 +77,8 @@ Behind a load balancer working on TCP (such as an AWS Network Load Balancer), ev
 server {
   proxy_protocol {
     trusted = ["10.0.0.0/8"]
-    # Optional: only on these addresses (default: all of them)
-    listen = ["0.0.0.0:443"]
+    # Optional: only on the listeners of these addresses (default: all of them)
+    listeners = ["0.0.0.0:443"]
     # Optional: how long a header is waited for, in seconds (default: 5)
     timeout_secs = 5
   }

@@ -32,6 +32,23 @@ impl IpSet {
         Self { ranges: merged }
     }
 
+    /// From addresses and networks as written in the configuration (`10.0.0.1`, `10.0.0.0/8`)
+    ///
+    /// # Errors
+    ///
+    /// When an entry is neither, naming it.
+    pub fn parse(entries: &[String]) -> Result<Self, String> {
+        entries
+            .iter()
+            .map(|entry| {
+                network(entry).ok_or_else(|| {
+                    format!("{entry:?} is not an address or a network (10.0.0.0/8)")
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Self::new)
+    }
+
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.ranges.is_empty()

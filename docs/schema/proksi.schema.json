@@ -1776,8 +1776,8 @@
     "ProxyProtocol": {
       "additionalProperties": false,
       "properties": {
-        "listen": {
-          "description": "The listening addresses it's read on (`\"0.0.0.0:443\"`), of hosts and `tcp` blocks\n(default: all of them)",
+        "listeners": {
+          "description": "The listeners it's enabled on, by the address hosts and `tcp` blocks listen on\n(`\"0.0.0.0:443\"`; default: all of them)",
           "items": {
             "type": "string"
           },

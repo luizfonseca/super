@@ -206,7 +206,7 @@ async fn test_proxy_protocol_headers_are_only_read_from_trusted_addresses_and_li
     // From another address than the trusted ones, or on another listener: not read, so not HTTP
     for server in [
         "proxy_protocol {\n    trusted = [\"10.0.0.0/8\"]\n  }",
-        "proxy_protocol {\n    trusted = [\"127.0.0.1\"]\n    listen = [\"127.0.0.1:1\"]\n  }",
+        "proxy_protocol {\n    trusted = [\"127.0.0.1\"]\n    listeners = [\"127.0.0.1:1\"]\n  }",
     ] {
         let mut harness = Harness::start_with_server_ready_over_http(server, PLAIN_HOST).await;
         let res = harness

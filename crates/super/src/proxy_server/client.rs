@@ -6,7 +6,7 @@ use std::{net::IpAddr, sync::OnceLock};
 use http::{HeaderName, HeaderValue};
 use super_core::protocols::http::server::ip_value;
 
-use crate::ip_set::{network, IpSet};
+use crate::ip_set::IpSet;
 
 /// Proxies (addresses or networks) whose `X-Forwarded-For` is trusted
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -24,17 +24,9 @@ pub const X_REAL_IP: HeaderName = HeaderName::from_static("x-real-ip");
 impl TrustedProxies {
     /// From addresses (`10.0.0.1`) and networks (`10.0.0.0/8`)
     pub fn parse(proxies: &[String]) -> Result<Self, String> {
-        proxies
-            .iter()
-            .map(|proxy| {
-                network(proxy).ok_or_else(|| {
-                    format!(
-                        "trusted_proxies: {proxy:?} is not an address or a network (10.0.0.0/8)"
-                    )
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map(|networks| Self(IpSet::new(networks)))
+        IpSet::parse(proxies)
+            .map(Self)
+            .map_err(|err| format!("trusted_proxies: {err}"))
     }
 
     fn trusts(&self, ip: &IpAddr) -> bool {
