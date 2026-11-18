@@ -17,6 +17,28 @@ use crate::{
 pub struct TcpSocketOptions {
     /// Only IPv6 on an IPv6 address (the system's default when `None`)
     pub ipv6_only: Option<bool>,
+    /// Reading the PROXY protocol header of the connections of load balancers
+    pub proxy_protocol: Option<ProxyProtocol>,
+}
+
+/// Reading the PROXY protocol header (v1 or v2) load balancers send first: the client it gives
+/// becomes the connection's peer. Only trusted peers' are read, before TLS; a connection without
+/// one is served as it is.
+#[derive(Clone)]
+pub struct ProxyProtocol {
+    /// Whether a peer's header is read: others' connections are served as they are
+    pub trusted: Arc<dyn Fn(std::net::IpAddr) -> bool + Send + Sync>,
+    /// How long a header is waited for, before serving the connection as it is (protocols where
+    /// the server speaks first)
+    pub timeout: std::time::Duration,
+}
+
+impl std::fmt::Debug for ProxyProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProxyProtocol")
+            .field("timeout", &self.timeout)
+            .finish_non_exhaustive()
+    }
 }
 
 /// An address to listen on
@@ -126,7 +148,7 @@ async fn accept<A: ServerApp>(
             std::process::exit(1);
         }
     };
-    let tls = endpoint.tls.clone();
+    let tls = (endpoint.tls.clone(), endpoint.options.proxy_protocol.clone());
     let Some(workers) = crate::server::workers() else {
         accept_on(app, listener, tls, shutdown, None).await;
         return;
@@ -153,7 +175,7 @@ async fn accept<A: ServerApp>(
 async fn accept_on<A: ServerApp>(
     app: Arc<A>,
     listener: std::net::TcpListener,
-    tls: Option<Acceptor>,
+    tls: (Option<Acceptor>, Option<ProxyProtocol>),
     mut shutdown: ShutdownWatch,
     on: Option<(&'static Workers, usize)>,
 ) {
@@ -213,13 +235,19 @@ where
     }
 }
 
-/// Serves a connection: its TLS handshake, then its app (again as long as it hands it back)
+/// Serves a connection: its PROXY protocol header, its TLS handshake, then its app (again as long
+/// as it hands it back)
 async fn serve<A: ServerApp>(
     app: Arc<A>,
-    socket: L4Stream,
-    tls: Option<Acceptor>,
+    mut socket: L4Stream,
+    (tls, proxy_protocol): (Option<Acceptor>, Option<ProxyProtocol>),
     shutdown: ShutdownWatch,
 ) {
+    if let Some(proxy_protocol) = &proxy_protocol {
+        if !proxy_header(&mut socket, proxy_protocol).await {
+            return;
+        }
+    }
     let mut stream: Stream = match tls {
         None => Box::new(socket),
         Some(acceptor) => match acceptor.accept(socket).await {
@@ -233,6 +261,21 @@ async fn serve<A: ServerApp>(
     while let Some(again) = app.process_new(stream, &shutdown).await {
         stream = again;
     }
+}
+
+/// Reads the PROXY protocol header of a trusted peer's connection, waiting for it as long as
+/// `proxy_protocol` says. `false` when it's invalid: the connection is closed.
+async fn proxy_header(socket: &mut L4Stream, proxy_protocol: &ProxyProtocol) -> bool {
+    if !socket.peer_ip().is_some_and(|ip| (proxy_protocol.trusted)(ip)) {
+        return true;
+    }
+    let read = tokio::time::timeout(proxy_protocol.timeout, socket.read_proxy_header()).await;
+    let Ok(Err(err)) = read else {
+        // Read, or none came in time: served as it is
+        return true;
+    };
+    tracing::debug!("Downstream PROXY protocol error: {err}");
+    false
 }
 
 /// The listener of `address`: handed over by the previous process, or bound now
@@ -270,4 +313,44 @@ fn listen(
         fds.add(address, listener.as_raw_fd());
     }
     Ok(listener)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::Arc, time::Duration};
+
+    use super::{proxy_header, ProxyProtocol};
+    use crate::protocols::l4::stream::Stream;
+
+    fn trusting(trusted: bool, timeout: Duration) -> ProxyProtocol {
+        ProxyProtocol {
+            trusted: Arc::new(move |_| trusted),
+            timeout,
+        }
+    }
+
+    /// A connection whose client sends nothing, kept open
+    async fn silent() -> (Stream, tokio::net::TcpStream) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = tokio::net::TcpStream::connect(listener.local_addr().unwrap());
+        let (client, accepted) = tokio::join!(client, listener.accept());
+        (Stream::from(accepted.unwrap().0), client.unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_silent_connections_are_served_after_the_timeout() {
+        // Protocols where the server speaks first: nothing comes until it does
+        let (mut stream, _client) = silent().await;
+        let proxy_protocol = trusting(true, Duration::from_millis(50));
+        let waiting = proxy_header(&mut stream, &proxy_protocol);
+        let served = tokio::time::timeout(Duration::from_secs(5), waiting).await;
+        assert_eq!(served.ok(), Some(true));
+
+        // Untrusted peers' aren't waited for at all
+        let (mut stream, _client) = silent().await;
+        let proxy_protocol = trusting(false, Duration::from_secs(60));
+        let waiting = proxy_header(&mut stream, &proxy_protocol);
+        let served = tokio::time::timeout(Duration::from_millis(500), waiting).await;
+        assert_eq!(served.ok(), Some(true));
+    }
 }

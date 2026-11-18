@@ -19,6 +19,7 @@ pub mod host;
 pub mod kubernetes;
 pub mod listeners;
 pub mod notify;
+pub mod proxy_protocol;
 pub mod schema;
 pub mod server_tls;
 pub mod tcp;
@@ -686,6 +687,12 @@ pub struct ServerCfg {
     #[serde(default)]
     pub tls: server_tls::ServerTls,
 
+    /// The PROXY protocol header (v1 or v2) load balancers send first on their connections,
+    /// with their client: read from `trusted` ones (before TLS), off unless set
+    #[arg(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_protocol: Option<proxy_protocol::ProxyProtocol>,
+
     /// Whether worker threads take over each other's connections (default: `false`). Without it,
     /// each connection stays on the thread that accepted it: far less CPU per request with cores
     /// to spare, less throughput when Super gets less CPU than it has threads.
@@ -959,6 +966,7 @@ impl Default for Config {
                 trusted_proxies: vec![],
                 timeouts: ClientTimeouts::default(),
                 tls: server_tls::ServerTls::default(),
+                proxy_protocol: None,
                 shutdown_timeout_secs: None,
                 work_stealing: None,
                 preserve_header_case: None,

@@ -1773,6 +1773,36 @@
       ],
       "type": "string"
     },
+    "ProxyProtocol": {
+      "additionalProperties": false,
+      "properties": {
+        "listen": {
+          "description": "The listening addresses it's read on (`\"0.0.0.0:443\"`), of hosts and `tcp` blocks\n(default: all of them)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout_secs": {
+          "description": "How long a header is waited for, in seconds (default: 5): after, the connection is served\nas it is (protocols where the server speaks first)",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "trusted": {
+          "default": [],
+          "description": "The load balancers sending it: addresses (`10.0.0.1`) and networks (`10.0.0.0/8`). Only\ntheir connections' headers are read, and one of theirs without a header is served as it\nis: other clients connect directly to the same addresses.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "RateLimit": {
       "additionalProperties": false,
       "description": "`rate_limit`: answers `429` to clients over the limit",
@@ -3704,6 +3734,17 @@
             "boolean",
             "null"
           ]
+        },
+        "proxy_protocol": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProxyProtocol"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The PROXY protocol header (v1 or v2) load balancers send first on their connections,\nwith their client: read from `trusted` ones (before TLS), off unless set"
         },
         "rule": {
           "$ref": "#/$defs/RuleList",

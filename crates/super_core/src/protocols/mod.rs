@@ -6,6 +6,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 pub mod http;
 pub mod l4;
+pub mod proxy_protocol;
 pub mod tls;
 
 use l4::socket::SocketAddr;

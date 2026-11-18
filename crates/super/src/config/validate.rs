@@ -26,6 +26,11 @@ pub fn check_config(config: &Config) -> Result<(), anyhow::Error> {
         .tls
         .validate()
         .map_err(|err| anyhow!("server.tls.{err}"))?;
+    if let Some(proxy_protocol) = &config.server.proxy_protocol {
+        proxy_protocol
+            .validate()
+            .map_err(|err| anyhow!("server.proxy_protocol.{err}"))?;
+    }
     crate::rules::Rules::compile(&config.server.rule, "")
         .map_err(|err| anyhow!("server: {err}"))?;
     for (name, block) in &config.notify {

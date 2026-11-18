@@ -237,6 +237,11 @@ fn add_listeners(
     let mut handles = vec![];
     // TCP: `tcp` blocks (validated when loading the configuration)
     let tcp_targets = tcp::services::tcp_targets(&listeners.tcp)?;
+    // Validated when loading the configuration
+    let proxy_protocol = match &proxy_config.server.proxy_protocol {
+        Some(proxy_protocol) => proxy_protocol.listeners().map_err(anyhow::Error::msg)?,
+        None => config::proxy_protocol::ProxyProtocolListeners::default(),
+    };
     let https_router = proxy_server::https_proxy::Router {
         listener: proxy_server::listener::Listener::Https,
         default_address: default_https,
@@ -249,6 +254,7 @@ fn add_listeners(
             &server.configuration,
             &listeners.http,
             default_http,
+            &proxy_protocol,
             proxy_config.worker_threads,
         )));
     }
@@ -264,6 +270,7 @@ fn add_listeners(
             &https,
             https_router,
             &tcp_targets,
+            &proxy_protocol,
             proxy_config.worker_threads,
         )?));
         if proxy_config.server.http3() {
@@ -314,6 +321,7 @@ fn add_listeners(
         &tcp_targets,
         &listeners.https,
         (&server.configuration, https_router),
+        &proxy_protocol,
         proxy_config.worker_threads,
     )?));
 

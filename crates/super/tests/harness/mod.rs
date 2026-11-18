@@ -547,6 +547,37 @@ paths {{
             .await
     }
 
+    /// Like `tls_request`, sending `before` first, outside TLS (a PROXY protocol header)
+    pub async fn tls_request_after(
+        &self,
+        port: u16,
+        before: &[u8],
+        server_name: &str,
+        request: &str,
+    ) -> std::io::Result<String> {
+        let (before, server_name, request) =
+            (before.to_vec(), server_name.to_string(), request.to_string());
+        tokio::task::spawn_blocking(move || {
+            let connector = native_tls::TlsConnector::builder()
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true)
+                .build()
+                .map_err(std::io::Error::other)?;
+            let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))?;
+            stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+            std::io::Write::write_all(&mut stream, &before)?;
+            let mut stream = connector
+                .connect(&server_name, stream)
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
+            std::io::Write::write_all(&mut stream, request.as_bytes())?;
+            let mut response = String::new();
+            std::io::Read::read_to_string(&mut stream, &mut response)?;
+            Ok(response)
+        })
+        .await
+        .unwrap()
+    }
+
     /// Like `tls_request`, offering the protocols `alpn`
     pub async fn tls_request_with_alpn(
         &self,

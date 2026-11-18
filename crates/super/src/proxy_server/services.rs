@@ -13,7 +13,7 @@ use super_core::{
     tls::TlsSettings,
 };
 
-use crate::config::server_tls::ServerTls;
+use crate::config::{proxy_protocol::ProxyProtocolListeners, server_tls::ServerTls};
 use crate::tcp::{
     alpn::{select_protocols, AlpnProtocols},
     on_address,
@@ -60,6 +60,7 @@ pub fn http_service(
     configuration: &Arc<ServerConf>,
     addresses: &BTreeSet<String>,
     default_address: SocketAddr,
+    proxy_protocol: &ProxyProtocolListeners,
     worker_threads: Option<usize>,
 ) -> ProxyService {
     let router = Router {
@@ -74,7 +75,7 @@ pub fn http_service(
     );
     service.threads = worker_threads;
     for address in addresses {
-        service.add_tcp(address);
+        service.add_tcp_with_settings(address, proxy_protocol.options(address));
     }
     service
 }
@@ -85,6 +86,7 @@ pub fn https_service(
     addresses: &BTreeSet<String>,
     router: Router,
     tcp_targets: &Arc<Vec<TcpTarget>>,
+    proxy_protocol: &ProxyProtocolListeners,
     worker_threads: Option<usize>,
 ) -> Result<Service<Counted<HttpsApp>>, anyhow::Error> {
     let app = https_app(configuration, addresses, router, tcp_targets);
@@ -94,7 +96,7 @@ pub fn https_service(
         let mut settings = tls_settings()?;
         let protocols = AlpnProtocols::new(on_address(tcp_targets, address));
         select_protocols(&mut settings, protocols, true);
-        service.add_tls_with_settings(address, None, settings);
+        service.add_tls_with_settings(address, Some(proxy_protocol.options(address)), settings);
     }
     Ok(service)
 }
