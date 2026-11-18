@@ -52,7 +52,7 @@ jobs:
 
       - name: Cache the base binary
         id: base-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: bench-bin/base
           key: super-benchmark-${{ env.BASE_SHA }}
