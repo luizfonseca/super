@@ -108,7 +108,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 26
 
       - name: Build the admin UI
         working-directory: crates/super_admin_ui
@@ -247,7 +247,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 26
 
       - name: Build the admin UI
         working-directory: crates/super_admin_ui
