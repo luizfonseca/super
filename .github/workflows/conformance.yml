@@ -24,7 +24,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v2
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
       - name: Build the admin UI
         working-directory: crates/super_admin_ui
         run: npm ci && npm run build

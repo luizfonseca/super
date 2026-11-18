@@ -1,6 +1,6 @@
 # Builds Super from the sources (the release image, Dockerfile, takes the binary built by the
 # release workflow), against the image's glibc: musl's allocator serves one thread at a time
-FROM node:24-alpine AS ui
+FROM node:26-alpine AS ui
 WORKDIR /ui
 COPY crates/super_admin_ui/package.json crates/super_admin_ui/package-lock.json ./
 RUN npm ci
