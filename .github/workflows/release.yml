@@ -142,7 +142,7 @@ jobs:
           tar czvf ../../../${{ matrix.platform.name }}.tar.gz ${{ matrix.platform.bin }}
 
       - name: Upload artifacts (tar.gz)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.platform.name }}
           path: "super*"
@@ -177,7 +177,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_SECRET }}
 
       - name: Download workflow artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ./data
 
@@ -291,7 +291,7 @@ jobs:
           ref: ${{ needs.release.outputs.tag_name }}
 
       - name: Download workflow artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ./data
 
