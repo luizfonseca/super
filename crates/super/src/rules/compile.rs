@@ -2,18 +2,14 @@
 //! deduplicated and grouped by the field it reads, and each condition as a tree over those tests,
 //! cheapest first
 
-use std::{collections::HashMap, net::IpAddr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use http::{HeaderName, Method};
-use ipnet::IpNet;
 use regex::RegexSet;
 use serde_json::Value;
 
-use super::{
-    actions::Then,
-    model::Rule,
-    text_set::{Ends, Exact, Parts},
-};
+pub(super) use super::fields::text::TextTest;
+use super::{actions::Then, fields, model::Rule};
 
 /// Rules in a scope (the server, a host or a location)
 const MAX_RULES: usize = 1000;
@@ -86,21 +82,6 @@ pub(super) enum Test {
         days: u8,
         negate: bool,
     },
-}
-
-#[derive(Debug)]
-pub(super) enum TextTest {
-    Eq(String),
-    In(Exact),
-    /// Any of them
-    Prefix(Ends),
-    Suffix(Ends),
-    Contains(Parts),
-    /// The parts between `*`s
-    Wildcard(Vec<String>),
-    /// Tested with the regex set of its field
-    Matches,
-    Exists(bool),
 }
 
 impl Test {
@@ -476,7 +457,7 @@ impl Builder {
             _ => return Err(format!(": `{field}` needs a name")),
         };
         let test =
-            parse_test(&field, operator, value).map_err(|err| format!(".{operator}: {err}"))?;
+            fields::parse(&field, operator, value).map_err(|err| format!(".{operator}: {err}"))?;
         let key = format!("{field:?} {operator} {value}");
         if let Some(index) = self.seen.get(&key) {
             return Ok(Node::Test(*index));
@@ -555,267 +536,6 @@ impl Builder {
     }
 }
 
-/// `exists`: for the fields a request can lack
-fn exists(field: &Field, value: &Value) -> Result<TextTest, String> {
-    if matches!(field, Field::Host | Field::Path) {
-        return Err(unsupported(
-            "host and path",
-            "all but `exists`: they're always there",
-        ));
-    }
-    Ok(TextTest::Exists(
-        value.as_bool().ok_or("must be true or false")?,
-    ))
-}
-
-/// What an operator checks, for a field
-fn parse_test(field: &Field, operator: &str, value: &Value) -> Result<Test, String> {
-    let negate = matches!(operator, "neq" | "not_in");
-    match field {
-        Field::Method => {
-            let methods = match operator {
-                "eq" | "neq" => vec![method(value)?],
-                "in" | "not_in" => list(value)?.iter().map(method).collect::<Result<_, _>>()?,
-                _ => return Err(unsupported("method", "`eq`, `neq`, `in` and `not_in`")),
-            };
-            Ok(Test::Method { methods, negate })
-        }
-        Field::Client => {
-            let networks = match operator {
-                "eq" | "neq" => vec![network(value)?],
-                "in" | "not_in" => list(value)?.iter().map(network).collect::<Result<_, _>>()?,
-                _ => return Err(unsupported("client", "`eq`, `neq`, `in` and `not_in`")),
-            };
-            let networks = crate::ip_set::IpSet::new(networks);
-            Ok(Test::Client { networks, negate })
-        }
-        Field::Date => window("date", operator, value, date, u64::MAX),
-        Field::Time => window("time", operator, value, time_of_day, DAY),
-        Field::Weekday => {
-            let days = match operator {
-                "eq" | "neq" => weekday(value)?,
-                "in" | "not_in" => list(value)?
-                    .iter()
-                    .try_fold(0, |days, day| weekday(day).map(|day| days | day))?,
-                _ => return Err(unsupported("weekday", "`eq`, `neq`, `in` and `not_in`")),
-            };
-            Ok(Test::Weekdays { days, negate })
-        }
-        Field::Host | Field::Path | Field::Query(_) | Field::Header(_) | Field::Cookie(_) => {
-            // Hosts are compared ignoring case
-            let fold = |text: String| {
-                if *field == Field::Host {
-                    text.to_ascii_lowercase()
-                } else {
-                    text
-                }
-            };
-            let test = match operator {
-                "eq" | "neq" => TextTest::Eq(fold(text(value)?)),
-                "in" | "not_in" => TextTest::In(Exact::new(
-                    list(value)?
-                        .iter()
-                        .map(|value| text(value).map(fold))
-                        .collect::<Result<_, _>>()?,
-                )),
-                "prefix" => TextTest::Prefix(Ends::new(texts(value, fold)?)),
-                "suffix" => TextTest::Suffix(Ends::new(texts(value, fold)?)),
-                "contains" => TextTest::Contains(Parts::new(texts(value, fold)?)?),
-                "wildcard" => TextTest::Wildcard(
-                    fold(text(value)?)
-                        .split('*')
-                        .map(ToString::to_string)
-                        .collect(),
-                ),
-                "matches" => {
-                    value.as_str().ok_or("must be a regular expression")?;
-                    TextTest::Matches
-                }
-                "exists" => exists(field, value)?,
-                "gt" | "gte" | "lt" | "lte" | "between" => {
-                    return Err("compares dates and times, which this field isn't".to_string())
-                }
-                other => return Err(format!("`{other}` isn't an operator")),
-            };
-            Ok(Test::Text { test, negate })
-        }
-    }
-}
-
-/// Seconds in a day
-pub(super) const DAY: u64 = 86_400;
-
-/// A value as written, in seconds: its start, and the length of what it names (a day for
-/// `2026-11-21`, a minute for `02:00`, a second for `02:00:00`)
-type Moment = (u64, u64);
-
-/// The window of an operator on `field`, whose values `read` gives (`max`: the end of what's
-/// read). A value covers what it names: `lte` includes all of it, `gt` starts after it. Only
-/// `between` wraps past midnight: a window that would be empty is an error.
-fn window(
-    field: &str,
-    operator: &str,
-    value: &Value,
-    read: fn(&Value) -> Result<Moment, String>,
-    max: u64,
-) -> Result<Test, String> {
-    let end = |(start, length): Moment| start.saturating_add(length);
-    let (from, until) = match operator {
-        "gte" => (read(value)?.0, max),
-        "gt" => (end(read(value)?), max),
-        "lt" => (0, read(value)?.0),
-        "lte" => (0, end(read(value)?)),
-        "between" => return between(field, value, read),
-        _ => return Err(unsupported(field, "`gte`, `gt`, `lt`, `lte` and `between`")),
-    };
-    if until <= from {
-        return Err("never holds (nothing is in it)".to_string());
-    }
-    Ok(Test::Window { from, until })
-}
-
-/// `between = [from, until]`: `until` after `from`, except for times of day, which wrap
-fn between(
-    field: &str,
-    value: &Value,
-    read: fn(&Value) -> Result<Moment, String>,
-) -> Result<Test, String> {
-    let Some([from_value, until_value]) = value.as_array().map(Vec::as_slice) else {
-        return Err("must be [from, until]".to_string());
-    };
-    let (from, until) = (read(from_value)?.0, read(until_value)?.0);
-    let wraps = field == "time" && until < from;
-    if until <= from && !wraps {
-        return Err(format!("{until_value} isn't after {from_value}"));
-    }
-    Ok(Test::Window { from, until })
-}
-
-/// A date and time, UTC, in Unix seconds: `2026-11-21` (a day), `2026-11-21T00:00` (a minute)
-/// or `2026-11-21T00:00:00` (a second), optionally ending in `Z`
-fn date(value: &Value) -> Result<Moment, String> {
-    let written = value
-        .as_str()
-        .ok_or("must be a date, such as \"2026-11-21\"")?;
-    let utc = written.strip_suffix('Z').unwrap_or(written);
-    let (day, clock) = match utc.split_once('T') {
-        Some((day, clock)) => (day, Some(clock)),
-        None => (utc, None),
-    };
-    if clock.is_some_and(|clock| clock.contains(['+', '-'])) {
-        return Err(format!(
-            "{written:?}: times are UTC (end with `Z`, or nothing)"
-        ));
-    }
-    let invalid = || {
-        format!("{written:?} isn't a date (2026-11-21, 2026-11-21T00:00 or 2026-11-21T00:00:00)")
-    };
-    let (seconds, length) = match clock {
-        None => (0, DAY),
-        Some(clock) => seconds_of_day(clock).ok_or_else(invalid)?,
-    };
-    let midnight = calendar_day(day).ok_or_else(invalid)?;
-    let start = u64::try_from(midnight.midnight().assume_utc().unix_timestamp())
-        .ok()
-        .and_then(|midnight| midnight.checked_add(seconds))
-        .ok_or_else(invalid)?;
-    Ok((start, length))
-}
-
-/// `YYYY-MM-DD`, a day that exists
-fn calendar_day(day: &str) -> Option<time::Date> {
-    let mut parts = day.split('-');
-    let (year, month, day) = (parts.next()?, parts.next()?, parts.next()?);
-    if parts.next().is_some() || year.len() != 4 || month.len() != 2 || day.len() != 2 {
-        return None;
-    }
-    let month = time::Month::try_from(month.parse::<u8>().ok()?).ok()?;
-    time::Date::from_calendar_date(year.parse().ok()?, month, day.parse().ok()?).ok()
-}
-
-/// A time of day, `HH:MM` (a minute) or `HH:MM:SS` (a second), in seconds since midnight
-fn time_of_day(value: &Value) -> Result<Moment, String> {
-    let written = value
-        .as_str()
-        .ok_or("must be a time of day, such as \"02:00\"")?;
-    seconds_of_day(written)
-        .ok_or_else(|| format!("{written:?} isn't a time of day (HH:MM or HH:MM:SS)"))
-}
-
-/// `HH:MM` (a minute) or `HH:MM:SS` (a second), in seconds since midnight
-fn seconds_of_day(clock: &str) -> Option<Moment> {
-    let mut parts = clock.split(':');
-    let (hours, minutes) = (two_digits(parts.next()?)?, two_digits(parts.next()?)?);
-    let (seconds, length) = match parts.next() {
-        Some(seconds) => (two_digits(seconds)?, 1),
-        None => (0, 60),
-    };
-    if parts.next().is_some() || hours > 23 || minutes > 59 || seconds > 59 {
-        return None;
-    }
-    Some((hours * 3600 + minutes * 60 + seconds, length))
-}
-
-fn two_digits(part: &str) -> Option<u64> {
-    let digits = part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit());
-    digits.then(|| part.parse().ok()).flatten()
-}
-
-/// A day of the week (`mon`...`sun`, ignoring case), as its bit: Monday's is bit 0
-fn weekday(value: &Value) -> Result<u8, String> {
-    const DAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-    let written = value.as_str().ok_or("must be a day, such as \"mon\"")?;
-    DAYS.iter()
-        .zip(0u8..)
-        .find(|(day, _)| written.eq_ignore_ascii_case(day))
-        .map(|(_, index)| 1 << index)
-        .ok_or_else(|| format!("{written:?} isn't a day (mon, tue, wed, thu, fri, sat, sun)"))
-}
-
-fn unsupported(field: &str, supported: &str) -> String {
-    format!("isn't an operator of {field} (it takes {supported})")
-}
-
-fn list(value: &Value) -> Result<&Vec<Value>, String> {
-    value
-        .as_array()
-        .filter(|values| !values.is_empty())
-        .ok_or_else(|| "must be a list of values".to_string())
-}
-
-/// A text, or a list of them, each changed with `fold`
-fn texts(value: &Value, fold: impl Fn(String) -> String) -> Result<Vec<String>, String> {
-    match value {
-        Value::Array(_) => list(value)?
-            .iter()
-            .map(|value| text(value).map(&fold))
-            .collect(),
-        value => Ok(vec![fold(text(value)?)]),
-    }
-}
-
-fn text(value: &Value) -> Result<String, String> {
-    match value {
-        Value::String(text) => Ok(text.clone()),
-        Value::Number(number) => Ok(number.to_string()),
-        Value::Bool(boolean) => Ok(boolean.to_string()),
-        _ => Err("must be text".to_string()),
-    }
-}
-
-fn method(value: &Value) -> Result<Method, String> {
-    let name = value.as_str().ok_or("must be a method, such as \"GET\"")?;
-    Method::from_bytes(name.to_ascii_uppercase().as_bytes())
-        .map_err(|_| format!("{name:?} isn't a method"))
-}
-
-fn network(value: &Value) -> Result<IpNet, String> {
-    let text = value.as_str().ok_or("must be an address or a network")?;
-    text.parse::<IpNet>()
-        .or_else(|_| text.parse::<IpAddr>().map(IpNet::from))
-        .map_err(|_| format!("{text:?} isn't an address or a network (\"10.0.0.0/8\")"))
-}
-
 /// Field names of a written condition map (for tests)
 #[cfg(test)]
 pub(super) fn written(map: &serde_json::Map<String, Value>) -> usize {
@@ -829,15 +549,16 @@ pub(super) mod tests {
     use super::{compile, Field, Node};
     use crate::rules::model::Rule;
 
-    fn rules(values: &[serde_json::Value]) -> Result<super::Compiled, String> {
+    pub(in crate::rules) fn rules(values: &[serde_json::Value]) -> Result<super::Compiled, String> {
         compile(&values.iter().cloned().map(Rule).collect::<Vec<_>>(), "")
     }
 
-    fn err(value: serde_json::Value) -> String {
+    pub(in crate::rules) fn err(value: serde_json::Value) -> String {
         rules(&[value]).err().unwrap_or_default()
     }
 
-    const THEN: fn() -> serde_json::Value = || json!({ "respond": { "status": 403 } });
+    pub(in crate::rules) const THEN: fn() -> serde_json::Value =
+        || json!({ "respond": { "status": 403 } });
 
     /// `condition` in an `and` when it's a field test, as a rule's condition must be
     pub(in crate::rules) fn in_and(condition: serde_json::Value) -> serde_json::Value {
@@ -981,79 +702,6 @@ pub(super) mod tests {
             err(json!({ "name": "a", "and": { "verb": { "eq": "GET" } }, "then": THEN() })),
             "rule \"a\": and: `verb` isn't a condition (`and`, `or`, `not`, `method`, `host`, `path`, \
              `query`, `header`, `cookie`, `client`, `date`, `weekday`, `time`)"
-        );
-    }
-
-    #[test]
-    fn test_time_values_and_errors() {
-        let ok = |condition: serde_json::Value| {
-            rules(&[json!({ "name": "a", "and": condition, "then": THEN() })]).is_ok()
-        };
-        assert!(ok(json!({ "date": { "gte": "2026-11-21" } })));
-        assert!(ok(json!({ "date": { "lt": "2026-11-21T00:00" } })));
-        assert!(ok(
-            json!({ "date": { "between": ["2026-11-21T00:00:00Z", "2026-11-28T00:00"] } })
-        ));
-        // Wraps past midnight
-        assert!(ok(json!({ "time": { "between": ["22:00", "02:00"] } })));
-        assert!(ok(json!({ "time": { "lte": "23:59:59" } })));
-        assert!(ok(json!({ "weekday": { "in": ["Mon", "fri"] } })));
-
-        let error = |condition: serde_json::Value| {
-            err(json!({ "name": "a", "and": condition, "then": THEN() }))
-        };
-        assert_eq!(
-            error(json!({ "date": { "gte": "2026-11-21T00:00+01:00" } })),
-            "rule \"a\": and.date.gte: \"2026-11-21T00:00+01:00\": times are UTC (end with `Z`, \
-             or nothing)"
-        );
-        assert_eq!(
-            error(json!({ "date": { "gte": "21/11/2026" } })),
-            "rule \"a\": and.date.gte: \"21/11/2026\" isn't a date (2026-11-21, 2026-11-21T00:00 \
-             or 2026-11-21T00:00:00)"
-        );
-        assert_eq!(
-            error(json!({ "date": { "between": ["2026-12-01", "2026-11-27"] } })),
-            "rule \"a\": and.date.between: \"2026-11-27\" isn't after \"2026-12-01\""
-        );
-        assert_eq!(
-            error(json!({ "date": { "between": ["2026-12-01"] } })),
-            "rule \"a\": and.date.between: must be [from, until]"
-        );
-        assert_eq!(
-            error(json!({ "time": { "gte": "25:00" } })),
-            "rule \"a\": and.time.gte: \"25:00\" isn't a time of day (HH:MM or HH:MM:SS)"
-        );
-        assert_eq!(
-            error(json!({ "weekday": { "eq": "monday" } })),
-            "rule \"a\": and.weekday.eq: \"monday\" isn't a day (mon, tue, wed, thu, fri, sat, sun)"
-        );
-        assert_eq!(
-            error(json!({ "date": { "eq": "2026-11-21" } })),
-            "rule \"a\": and.date.eq: isn't an operator of date (it takes `gte`, `gt`, `lt`, `lte` \
-             and `between`)"
-        );
-        assert_eq!(
-            error(json!({ "weekday": { "gte": "mon" } })),
-            "rule \"a\": and.weekday.gte: isn't an operator of weekday (it takes `eq`, `neq`, `in` \
-             and `not_in`)"
-        );
-        assert_eq!(
-            error(json!({ "path": { "gte": "/a" } })),
-            "rule \"a\": and.path.gte: compares dates and times, which this field isn't"
-        );
-        // Windows that never hold, rather than ones wrapping to hold all day
-        assert_eq!(
-            error(json!({ "time": { "lt": "00:00" } })),
-            "rule \"a\": and.time.lt: never holds (nothing is in it)"
-        );
-        assert_eq!(
-            error(json!({ "time": { "gt": "23:59:59" } })),
-            "rule \"a\": and.time.gt: never holds (nothing is in it)"
-        );
-        assert_eq!(
-            error(json!({ "time": { "between": ["02:00", "02:00"] } })),
-            "rule \"a\": and.time.between: \"02:00\" isn't after \"02:00\""
         );
     }
 
