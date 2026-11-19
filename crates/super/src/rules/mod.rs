@@ -114,11 +114,13 @@ impl Rules {
         let mut state = eval::State::new(compiled);
         let mut normalized = normalized_path(session);
         let mut client = OnceCell::new();
+        let now = OnceCell::new();
         let mut candidates = self.candidates(&ProxiedRequest {
             session,
             host: &ctx.host,
             normalized: normalized.as_deref(),
             client: &client,
+            now: &now,
         });
         let mut from = 0;
         while let Some(index) = candidates.next(from) {
@@ -132,6 +134,7 @@ impl Rules {
                     host: &ctx.host,
                     normalized: normalized.as_deref(),
                     client: &client,
+                    now: &now,
                 };
                 state.holds(compiled, &rule.condition, &request)
             };
@@ -148,6 +151,7 @@ impl Rules {
                     host: &ctx.host,
                     normalized: normalized.as_deref(),
                     client: &client,
+                    now: &now,
                 });
             }
             if let Some(split) = &rule.then.split {
@@ -295,6 +299,8 @@ struct ProxiedRequest<'a> {
     normalized: Option<&'a str>,
     /// Its client, found the first time a rule reads it
     client: &'a OnceCell<Option<IpAddr>>,
+    /// Now, read from the clock the first time a rule reads it
+    now: &'a OnceCell<u64>,
 }
 
 impl Request for ProxiedRequest<'_> {
@@ -334,6 +340,14 @@ impl Request for ProxiedRequest<'_> {
             .client
             .get_or_init(|| crate::proxy_server::client::of_session(self.session))
     }
+
+    fn now(&self) -> u64 {
+        *self.now.get_or_init(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -370,6 +384,11 @@ mod tests {
             rule(serde_json::json!({ "and": {
                 "client": { "in": ["10.0.0.0/8"] },
                 "query": { "ref": { "eq": "home" } },
+            } })),
+            rule(serde_json::json!({ "and": {
+                "weekday": { "in": ["sat", "sun"] },
+                "time": { "between": ["22:00", "02:00"] },
+                "date": { "between": ["2026-11-27", "2026-12-01"] },
             } })),
         ];
         let rules = Rules::compile(&rules, "").unwrap().unwrap();

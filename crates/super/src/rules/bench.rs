@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use serde_json::json;
 
-use super::{eval::tests::TestRequest, model::Rule, Rules};
+use super::{eval::tests::TestRequest, fields::Request, model::Rule, Rules};
 
 /// Rules on what routing already reads: methods, hosts, paths and clients
 fn request_line_rules(count: usize) -> Vec<Rule> {
@@ -139,8 +139,66 @@ fn bench_text_lists() {
     }
 }
 
+/// What conditions on the time cost: on a request reading the system clock, as the proxy's do,
+/// and on one with a fixed time (the tests alone)
+/// `cargo test --release -p super_proxy --bin super bench_time_conditions -- --ignored --nocapture`
+#[test]
+#[ignore = "a benchmark: run with --release"]
+fn bench_time_conditions() {
+    // Windows in the past: every test runs, none holds
+    let rules = [
+        named(
+            json!({ "and": { "date": { "between": ["2000-01-01", "2000-01-02"] } } }),
+            0,
+        ),
+        named(
+            json!({ "and": {
+                "weekday": { "in": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+                "time": { "between": ["02:00", "04:00"] },
+                "date": { "lt": "2000-01-01" },
+            } }),
+            1,
+        ),
+    ];
+    let rules = Rules::compile(&rules, "").unwrap().unwrap();
+    let fixed = TestRequest::new("GET", "www.example.com", "/").at(946_684_800 + 86_400 * 2);
+    let clocked = Clocked(TestRequest::new("GET", "www.example.com", "/"));
+    let tests = time(&rules, &fixed, 2_000_000);
+    let with_clock = time(&rules, &clocked, 2_000_000);
+    println!("time conditions: {tests:.1}ns, reading the clock: {with_clock:.1}ns");
+}
+
+/// A request reading the system clock, as the proxy's does
+struct Clocked(TestRequest);
+
+impl Request for Clocked {
+    fn method(&self) -> &http::Method {
+        self.0.method()
+    }
+    fn host(&self) -> &str {
+        self.0.host()
+    }
+    fn path(&self) -> &str {
+        self.0.path()
+    }
+    fn query(&self) -> Option<&str> {
+        self.0.query()
+    }
+    fn header(&self, name: &http::HeaderName) -> Option<std::borrow::Cow<'_, str>> {
+        Request::header(&self.0, name)
+    }
+    fn client(&self) -> Option<std::net::IpAddr> {
+        self.0.client()
+    }
+    fn now(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs())
+    }
+}
+
 /// Nanoseconds to run `rules` on `request` (matching none), once warm
-fn time(rules: &Rules, request: &TestRequest, iterations: usize) -> f64 {
+fn time(rules: &Rules, request: &impl Request, iterations: usize) -> f64 {
     let mut matched = 0;
     for _ in 0..iterations {
         matched += rules.matching(request);

@@ -1583,6 +1583,26 @@ host "rules.test" {
     }
   }
 
+  # Windows on the clock: one open since 2000, one closed since then
+  rule "always" {
+    and {
+      path { eq = "/always" }
+      date { gte = "2000-01-01" }
+    }
+    then {
+      respond { status = 418 }
+    }
+  }
+  rule "never" {
+    and {
+      path { eq = "/never" }
+      date { lt = "2000-01-01" }
+    }
+    then {
+      respond { status = 418 }
+    }
+  }
+
   location "/" {
     upstream "127.0.0.1:{http_upstream_port}" {}
 
@@ -1661,6 +1681,12 @@ async fn test_rules() {
     let res = send(request("GET", "old.rules.test", "/a?b=1", "")).await;
     assert!(res.starts_with("HTTP/1.1 301"), "{res}");
     assert_eq!(header(&res, "location"), Some("https://rules.test/a?b=1"));
+
+    // Windows on the clock
+    let res = send(request("GET", "rules.test", "/always", "")).await;
+    assert!(res.starts_with("HTTP/1.1 418"), "{res}");
+    let res = send(request("GET", "rules.test", "/never", "")).await;
+    assert!(res.starts_with("HTTP/1.1 200"), "{res}");
 
     // The host's rule: maintenance, except for the office network
     let res = send(request(
