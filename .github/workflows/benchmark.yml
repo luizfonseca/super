@@ -71,11 +71,13 @@ jobs:
 
       - name: Build the pull request
         if: github.event_name == 'pull_request' && steps.changes.outputs.code == 'true'
-        # The base's workspace crates were built from another checkout into the same target
-        # directory, under the same names: cargo can take them for the pull request's, which
-        # would then be benchmarked (or not build). They're removed, the dependencies are kept.
+        # When the base was just built (from another checkout, into the same target directory,
+        # under the same names), cargo can take its workspace crates for the pull request's,
+        # which would then be benchmarked (or not build). They're removed, the dependencies kept.
         run: |
-          cargo clean --release $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | "-p " + .name')
+          if [ "${{ steps.base-cache.outputs.cache-hit }}" != "true" ]; then
+            cargo clean --release $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | "-p " + .name')
+          fi
           cargo build $BUILD_FLAGS
           cp target/release/super bench-bin/head
 
