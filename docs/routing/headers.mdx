@@ -79,7 +79,7 @@ server {
     trusted = ["10.0.0.0/8"]
     # Optional: only on the listeners of these addresses (default: all of them)
     listeners = ["0.0.0.0:443"]
-    # Optional: how long a header is waited for, in seconds (default: 5)
+    # Optional: how long a header is waited for, in seconds (default: 5, at least 1)
     timeout_secs = 5
   }
 }
@@ -87,6 +87,8 @@ server {
 
 - The address in the header is the client everywhere Super uses one: `X-Forwarded-For` and `X-Real-IP`, access logs, [`ip_filter`](/plugins/ip-filter), [rate limits](/plugins/rate-limit), and `tcp` blocks.
 - Only connections from `trusted` addresses are read. Other clients connect directly to the same addresses, as usual, and a header they send isn't read (an HTTP request starting with one is answered `400`).
+- Any machine in `trusted` can claim any client address, so list the load balancers themselves rather than a whole network they share with other machines.
+- `listeners` are the addresses hosts and `tcp` blocks listen on: one that's none of them is a configuration error.
 - A load balancer's connection without a header (its health checks, for example) is served as it is, from the load balancer's address. So is one that sends nothing before `timeout_secs`, for protocols where the server speaks first.
 - A header that doesn't follow the protocol closes the connection.
 - HTTP/3 (QUIC, over UDP) has no PROXY protocol: its clients are the addresses they connect from.

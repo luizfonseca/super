@@ -270,12 +270,16 @@ async fn proxy_header(socket: &mut L4Stream, proxy_protocol: &ProxyProtocol) -> 
         return true;
     }
     let read = tokio::time::timeout(proxy_protocol.timeout, socket.read_proxy_header()).await;
-    let Ok(Err(err)) = read else {
-        // Read, or none came in time: served as it is
-        return true;
-    };
-    tracing::debug!("Downstream PROXY protocol error: {err}");
-    false
+    match read {
+        Ok(Ok(())) => true,
+        // Nothing came in time (protocols where the server speaks first): served as it is. Part
+        // of a header: closed, rather than serving it as the connection's own bytes.
+        Err(_) => !socket.has_read_ahead(),
+        Ok(Err(err)) => {
+            tracing::debug!("Downstream PROXY protocol error: {err}");
+            false
+        }
+    }
 }
 
 /// The listener of `address`: handed over by the previous process, or bound now
@@ -345,6 +349,15 @@ mod tests {
         let waiting = proxy_header(&mut stream, &proxy_protocol);
         let served = tokio::time::timeout(Duration::from_secs(5), waiting).await;
         assert_eq!(served.ok(), Some(true));
+
+        // Part of a header, then nothing: closed, its bytes aren't served as the connection's
+        let (mut stream, mut client) = silent().await;
+        tokio::io::AsyncWriteExt::write_all(&mut client, b"PROXY TCP4 203.0.113.7")
+            .await
+            .unwrap();
+        let waiting = proxy_header(&mut stream, &proxy_protocol);
+        let served = tokio::time::timeout(Duration::from_secs(5), waiting).await;
+        assert_eq!(served.ok(), Some(false));
 
         // Untrusted peers' aren't waited for at all
         let (mut stream, _client) = silent().await;

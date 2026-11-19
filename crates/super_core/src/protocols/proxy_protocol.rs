@@ -112,14 +112,15 @@ fn parse_v2(bytes: &[u8]) -> Parsed {
     let [.., version_command, family, len_high, len_low] = *fixed else {
         return Parsed::Incomplete;
     };
-    let len = V2_FIXED + usize::from(u16::from_be_bytes([len_high, len_low]));
-    let Some(addresses) = bytes.get(V2_FIXED..len) else {
-        return Parsed::Incomplete;
-    };
+    // Told before waiting for the rest, which can claim up to 64 KiB
     let command = version_command & 0x0f;
     if version_command >> 4 != 2 || command > 1 || family >> 4 > 3 || family & 0x0f > 2 {
         return Parsed::Invalid;
     }
+    let len = V2_FIXED + usize::from(u16::from_be_bytes([len_high, len_low]));
+    let Some(addresses) = bytes.get(V2_FIXED..len) else {
+        return Parsed::Incomplete;
+    };
     let size = match (command, family) {
         (1, 0x11) => 4,
         (1, 0x21) => 16,
@@ -299,6 +300,11 @@ mod tests {
         bytes[12] = 0x11;
         assert_eq!(parse(&bytes), Parsed::Invalid);
         assert_eq!(parse(&v2(2, 0x11, &ipv4, b"")), Parsed::Invalid);
+        // Told from the fixed part, without waiting for the length it claims
+        let mut fixed = v2(1, 0x11, &[], b"");
+        fixed[12] = 0x31;
+        fixed[14..16].copy_from_slice(&u16::MAX.to_be_bytes());
+        assert_eq!(parse(&fixed), Parsed::Invalid);
         // Addresses shorter than their family's
         assert_eq!(parse(&v2(1, 0x11, &ipv4[..8], b"")), Parsed::Invalid);
         assert_eq!(parse(&v2(1, 0x21, &ipv4, b"")), Parsed::Invalid);

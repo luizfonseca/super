@@ -154,6 +154,11 @@ impl Stream {
         Ok(read > 0)
     }
 
+    /// Whether bytes were read ahead that haven't been read yet
+    pub fn has_read_ahead(&self) -> bool {
+        self.ahead_at < self.ahead.len()
+    }
+
     /// The next `len` bytes read ahead are done with: not read again
     fn consume_ahead(&mut self, len: usize) {
         self.ahead_at += len;

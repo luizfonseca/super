@@ -392,7 +392,7 @@ paths {{
 "#,
             https_port = self.https_port,
             http_port = self.http_port,
-            server_config = self.server_config,
+            server_config = self.server_config.replace("{extra_port}", &self.extra_port.to_string()),
             hosts = self.render_hosts(&routes_hcl),
             le = dir.join("le").to_string_lossy(),
             extra_config = self.render_extra_config(),

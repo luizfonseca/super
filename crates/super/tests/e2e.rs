@@ -203,12 +203,24 @@ async fn test_proxy_protocol_headers_give_the_client() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_proxy_protocol_headers_are_only_read_from_trusted_addresses_and_listeners() {
     let request = b"PROXY TCP4 203.0.113.9 10.0.0.1 5555 80\r\nGET /pp HTTP/1.1\r\nHost: plain.test\r\nConnection: close\r\n\r\n";
-    // From another address than the trusted ones, or on another listener: not read, so not HTTP
+    // From another address than the trusted ones, or on another listener than the one it's on
+    // (a second plain host's): not read, so not HTTP
+    let hosts = format!(
+        r#"{PLAIN_HOST}
+host "other.test" {{
+  listen = ["127.0.0.1:{{extra_port}}"]
+  tls = false
+  location "/" {{
+    upstream "127.0.0.1:{{http_upstream_port}}" {{}}
+  }}
+}}
+"#
+    );
     for server in [
         "proxy_protocol {\n    trusted = [\"10.0.0.0/8\"]\n  }",
-        "proxy_protocol {\n    trusted = [\"127.0.0.1\"]\n    listeners = [\"127.0.0.1:1\"]\n  }",
+        "proxy_protocol {\n    trusted = [\"127.0.0.1\"]\n    listeners = [\"127.0.0.1:{extra_port}\"]\n  }",
     ] {
-        let mut harness = Harness::start_with_server_ready_over_http(server, PLAIN_HOST).await;
+        let mut harness = Harness::start_with_server_ready_over_http(server, &hosts).await;
         let res = harness
             .raw_http_on(harness.http_port, request)
             .await

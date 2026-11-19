@@ -6,7 +6,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use serde::{Deserialize, Serialize};
 use super_core::services::listening::{self, TcpSocketOptions};
 
-use crate::ip_set::IpSet;
+use crate::{config::listeners::Listeners, ip_set::IpSet};
 
 /// How long a header is waited for by default
 const DEFAULT_TIMEOUT_SECS: u64 = 5;
@@ -45,6 +45,9 @@ impl ProxyProtocol {
         if self.trusted.is_empty() {
             return Err("trusted: the load balancers sending PROXY protocol headers".to_string());
         }
+        if self.timeout_secs == Some(0) {
+            return Err("timeout_secs: at least 1, for headers to arrive".to_string());
+        }
         let trusted = IpSet::parse(&self.trusted).map_err(|err| format!("trusted: {err}"))?;
         let mut addresses = Vec::with_capacity(self.listeners.len());
         for address in &self.listeners {
@@ -61,6 +64,35 @@ impl ProxyProtocol {
             settings: Some(settings),
             addresses,
         })
+    }
+}
+
+impl ProxyProtocol {
+    /// Whether its `listeners` are Super's: one that isn't would never read a header, and its
+    /// load balancer's connections would fail
+    ///
+    /// # Errors
+    ///
+    /// When one is the address of no host or `tcp` block.
+    pub fn check_listeners(&self, listeners: &Listeners) -> Result<(), String> {
+        let listening = listeners
+            .http
+            .iter()
+            .chain(&listeners.https)
+            .chain(listeners.tcp.iter().map(|tcp| &tcp.listen))
+            .filter_map(|address| address.parse::<SocketAddr>().ok())
+            .collect::<Vec<_>>();
+        let unknown = self.listeners.iter().find(|address| {
+            !address
+                .parse::<SocketAddr>()
+                .is_ok_and(|address| listening.contains(&address))
+        });
+        match unknown {
+            Some(address) => Err(format!(
+                "listeners: {address:?} is the address of no host or `tcp` block"
+            )),
+            None => Ok(()),
+        }
     }
 }
 
@@ -101,20 +133,52 @@ mod tests {
 
     #[test]
     fn test_validation() {
-        assert!(proxy_protocol(&["10.0.0.0/8", "192.0.2.1"], &["0.0.0.0:443"])
-            .validate()
-            .is_ok());
+        assert!(
+            proxy_protocol(&["10.0.0.0/8", "192.0.2.1"], &["0.0.0.0:443"])
+                .validate()
+                .is_ok()
+        );
         assert_eq!(
             proxy_protocol(&[], &[]).validate().unwrap_err(),
             "trusted: the load balancers sending PROXY protocol headers"
         );
         assert_eq!(
-            proxy_protocol(&["lb.internal"], &[]).validate().unwrap_err(),
+            proxy_protocol(&["lb.internal"], &[])
+                .validate()
+                .unwrap_err(),
             "trusted: \"lb.internal\" is not an address or a network (10.0.0.0/8)"
         );
         assert_eq!(
-            proxy_protocol(&["10.0.0.0/8"], &["443"]).validate().unwrap_err(),
+            proxy_protocol(&["10.0.0.0/8"], &["443"])
+                .validate()
+                .unwrap_err(),
             "listeners: \"443\" is not a listening address (0.0.0.0:443)"
+        );
+        let mut instant = proxy_protocol(&["10.0.0.0/8"], &[]);
+        instant.timeout_secs = Some(0);
+        assert_eq!(
+            instant.validate().unwrap_err(),
+            "timeout_secs: at least 1, for headers to arrive"
+        );
+    }
+
+    #[test]
+    fn test_its_listeners_are_super_s() {
+        let listeners = crate::config::listeners::Listeners {
+            https: ["0.0.0.0:443".to_string()].into(),
+            http: ["0.0.0.0:80".to_string()].into(),
+            tcp: vec![],
+            admin: None,
+            metrics: None,
+        };
+        let on = |addresses: &[&str]| proxy_protocol(&["10.0.0.0/8"], addresses);
+        assert!(on(&[]).check_listeners(&listeners).is_ok());
+        assert!(on(&["0.0.0.0:443", "0.0.0.0:80"])
+            .check_listeners(&listeners)
+            .is_ok());
+        assert_eq!(
+            on(&["[::]:443"]).check_listeners(&listeners).unwrap_err(),
+            "listeners: \"[::]:443\" is the address of no host or `tcp` block"
         );
     }
 
