@@ -162,6 +162,8 @@ pub(super) mod tests {
         pub query: Option<String>,
         pub headers: HeaderMap,
         pub client: Option<IpAddr>,
+        /// Unix seconds
+        pub now: u64,
     }
 
     impl TestRequest {
@@ -178,7 +180,14 @@ pub(super) mod tests {
                 query,
                 headers: HeaderMap::new(),
                 client: Some("203.0.113.9".parse().unwrap()),
+                now: 1_795_000_000,
             }
+        }
+
+        /// At `now`, in Unix seconds
+        pub fn at(mut self, now: u64) -> Self {
+            self.now = now;
+            self
         }
 
         pub fn header(mut self, name: &'static str, value: &str) -> Self {
@@ -211,6 +220,9 @@ pub(super) mod tests {
         }
         fn client(&self) -> Option<IpAddr> {
             self.client
+        }
+        fn now(&self) -> u64 {
+            self.now
         }
     }
 
@@ -471,5 +483,106 @@ pub(super) mod tests {
             ["middle"]
         );
         assert!(matching(&rules, &TestRequest::new("GET", "a.test", "/a/b")).is_empty());
+    }
+
+    /// 2026-11-27T00:00:00Z, a Friday
+    const BLACK_FRIDAY: u64 = 1_795_737_600;
+
+    #[test]
+    fn test_window_edges() {
+        let rules = [rule(
+            "bf",
+            json!({ "date": { "between": ["2026-11-27", "2026-12-01"] } }),
+        )];
+        let at = |s: u64| matching(&rules, &TestRequest::new("GET", "a.test", "/").at(s));
+        // 2026-11-26T23:59:59
+        assert!(at(1_795_737_599).is_empty());
+        // From: included
+        assert_eq!(at(BLACK_FRIDAY), ["bf"]);
+        // 2026-11-30T23:59:59
+        assert_eq!(at(1_796_083_199), ["bf"]);
+        // Until: excluded
+        assert!(at(1_796_083_200).is_empty());
+    }
+
+    #[test]
+    fn test_values_cover_the_unit_they_name() {
+        // A day: `lte` includes all of it, `gt` starts after it
+        let rules = [
+            rule("until the 30th", json!({ "date": { "lte": "2026-11-30" } })),
+            rule("after the 27th", json!({ "date": { "gt": "2026-11-27" } })),
+        ];
+        let at = |s: u64| matching(&rules, &TestRequest::new("GET", "a.test", "/").at(s));
+        assert_eq!(at(BLACK_FRIDAY + 86_399), ["until the 30th"]);
+        assert_eq!(
+            at(BLACK_FRIDAY + 86_400),
+            ["until the 30th", "after the 27th"]
+        );
+        // 2026-11-30T23:59:59, then 2026-12-01T00:00:00
+        assert_eq!(at(1_796_083_199), ["until the 30th", "after the 27th"]);
+        assert_eq!(at(1_796_083_200), ["after the 27th"]);
+
+        // A minute, a second
+        let rules = [
+            rule("minute", json!({ "time": { "lte": "02:00" } })),
+            rule("second", json!({ "time": { "lte": "02:00:00" } })),
+        ];
+        let at = |s: u64| {
+            let request = TestRequest::new("GET", "a.test", "/").at(BLACK_FRIDAY + 7200 + s);
+            matching(&rules, &request)
+        };
+        assert_eq!(at(0), ["minute", "second"]);
+        assert_eq!(at(1), ["minute"]);
+        assert_eq!(at(59), ["minute"]);
+        assert!(at(60).is_empty());
+    }
+
+    #[test]
+    fn test_time_windows_wrap_past_midnight() {
+        let rules = [rule(
+            "night",
+            json!({ "time": { "between": ["22:00", "02:00"] } }),
+        )];
+        let at = |hour: u64| {
+            let request = TestRequest::new("GET", "a.test", "/").at(BLACK_FRIDAY + hour * 3600);
+            matching(&rules, &request)
+        };
+        assert_eq!(at(23), ["night"]);
+        assert_eq!(at(1), ["night"]);
+        assert_eq!(at(22), ["night"]);
+        assert!(at(2).is_empty());
+        assert!(at(12).is_empty());
+    }
+
+    #[test]
+    fn test_weekdays() {
+        let rules = [
+            rule("fri", json!({ "weekday": { "eq": "fri" } })),
+            rule("weekend", json!({ "weekday": { "in": ["sat", "sun"] } })),
+            rule("not monday", json!({ "weekday": { "neq": "mon" } })),
+        ];
+        let at = |s: u64| matching(&rules, &TestRequest::new("GET", "a.test", "/").at(s));
+        assert_eq!(at(BLACK_FRIDAY), ["fri", "not monday"]);
+        // Sunday 23:59:59, then Monday 00:00:00
+        assert_eq!(at(1_795_996_799), ["weekend", "not monday"]);
+        assert!(at(1_795_996_800).is_empty());
+        // 1970-01-01, a Thursday
+        assert_eq!(at(0), ["not monday"]);
+    }
+
+    #[test]
+    fn test_time_fields_combine() {
+        let rules = [rule(
+            "backups",
+            json!({ "and": {
+                "weekday": { "in": ["mon", "tue", "wed", "thu", "fri"] },
+                "time": { "between": ["02:00", "04:00"] },
+            } }),
+        )];
+        let at = |s: u64| matching(&rules, &TestRequest::new("GET", "a.test", "/").at(s));
+        assert_eq!(at(BLACK_FRIDAY + 3 * 3600), ["backups"]);
+        assert!(at(BLACK_FRIDAY + 5 * 3600).is_empty());
+        // Saturday 03:00
+        assert!(at(BLACK_FRIDAY + 86_400 + 3 * 3600).is_empty());
     }
 }

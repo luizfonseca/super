@@ -45,7 +45,7 @@ host "example.com" {
 
 - A rule's condition is always one of these blocks, even when it's a single test: `and { method { eq = "GET" } }`.
 - They nest: an `or` can hold `and` blocks, which can hold a `not`...
-- A field can appear several times in the same block: `status { gte = 500 }` and `status { lt = 600 }`, or two `header "x-client"` tests in an `or`.
+- A field can appear several times in the same block: `time { gte = "09:00" }` and `time { lt = "17:00" }`, or two `header "x-client"` tests in an `or`.
 - `not` holds exactly one condition. To negate several, put an `and` or `or` inside it.
 - The order of conditions inside a block doesn't matter: proksi tests cheap fields first and stops as soon as the answer is known.
 
@@ -60,6 +60,9 @@ host "example.com" {
 | `header "<name>"` | the value of a request header (several values joined with `, `); names ignore case |
 | `cookie "<name>"` | the value of a cookie |
 | `client` | the client's address; behind `server.trusted_proxies`, the one they forwarded |
+| `date` | the date and time now, in UTC (see [times](#times)) |
+| `weekday` | the day of the week now, in UTC: `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun` |
+| `time` | the time of day now, in UTC: `HH:MM` or `HH:MM:SS` |
 
 ## Operators
 
@@ -67,12 +70,16 @@ Each test has exactly one operator.
 
 | Operator | Holds when the value... | Fields |
 | --- | --- | --- |
-| `eq`, `neq` | is, isn't, this value | all |
-| `in`, `not_in` | is one of, none of, a list | all; for `client`, addresses and networks (`["10.0.0.0/8", "203.0.113.9"]`) |
+| `eq`, `neq` | is, isn't, this value | all but `date` and `time` |
+| `in`, `not_in` | is one of, none of, a list | all but `date` and `time`; for `client`, addresses and networks (`["10.0.0.0/8", "203.0.113.9"]`) |
 | `prefix`, `suffix`, `contains` | starts with, ends with, contains this text, or one of a list (`contains = ["/.env", "/.git"]`) | text fields |
 | `wildcard` | matches a pattern where `*` is any text (`"/api/*/items"`, `"*.example.com"`) | text fields |
 | `matches` | matches a regular expression (`"(?i)bot"` ignores case) | text fields |
 | `exists` | is there (`exists = true`), or isn't (`exists = false`) | `query`, `header`, `cookie` |
+| `gte`, `gt`, `lt`, `lte` | is at or after, after, before, at or before this value | `date`, `time` |
+| `between` | is from the first value (included) until the second (excluded): `["2026-11-21", "2026-11-28"]` | `date`, `time` |
+
+`weekday` takes `eq`, `neq`, `in` and `not_in`.
 
 Text fields are `host`, `path`, `query`, `header` and `cookie`.
 
@@ -104,6 +111,43 @@ host "example.com" {
 }
 ```
 
+## Times
+
+With `date`, `weekday` and `time`, a rule can switch itself on and off on a schedule: a maintenance week, a sale, or nightly backups. Combine them with `and`, `or` and `not` for windows that repeat, like weekday nights:
+
+```hcl
+host "example.com" {
+  rule "nightly backups" {
+    and {
+      weekday {
+        in = ["mon", "tue", "wed", "thu", "fri"]
+      }
+      time {
+        between = ["02:00", "04:00"]
+      }
+    }
+    then {
+      rate_limit {
+        requests = 10
+        per      = "1m"
+      }
+    }
+  }
+
+  location "/" {
+    upstream "app:3000" {}
+  }
+}
+```
+
+- **All times are in UTC.** You can end a `date` with `Z`, but other offsets like `+01:00` are rejected, so a window never ends up shifted by a few hours without you noticing.
+- Write dates as `"2026-11-21"` (that day's midnight), `"2026-11-21T00:00"` or `"2026-11-21T00:00:00"`, and times of day as `"HH:MM"` or `"HH:MM:SS"`.
+- `between` starts at its first value and stops just before its second: `between = ["2026-11-21", "2026-11-28"]` covers the 21st through the 27th. That way one window can start exactly where the previous one ends.
+- A value means everything it names: a day, a minute or a second. So `date { lte = "2026-11-30" }` lasts until the end of the 30th, `gt = "2026-11-27"` starts on the 28th, and `time { lte = "02:00" }` still matches at 02:00:30.
+- A `time` window can run past midnight: `between = ["22:00", "02:00"]` means 10 p.m. to 2 a.m. A `date` window can't end before it starts, and Super won't load a window that could never match, like `time { lt = "00:00" }`.
+- There's nothing to reload: a window opens and closes on its own, with the first request after its start or end.
+- Dates that move every year, like "the fourth Friday of November", need to be written out for each year.
+
 ## Errors
 
 Rules are checked when the configuration loads: an unknown field or operator, a value of the wrong type, an invalid regular expression or network, a test outside an `and`, `or` or `not` block, or two conditions side by side stop it from loading, with the rule's name and the path to the problem:
@@ -131,6 +175,6 @@ host:
         upstream: { "app:3000": {} }
 ```
 
-A field repeated inside a block is a list: `and: { status: [{ gte: 500 }, { lt: 600 }] }`.
+A field repeated inside a block is a list: `and: { time: [{ gte: "09:00" }, { lt: "17:00" }] }`.
 
 Response fields (`status`, `response_header`) are coming next: rules on the upstream's answer.

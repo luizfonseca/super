@@ -4,7 +4,7 @@ use std::{borrow::Cow, net::IpAddr};
 
 use http::{HeaderName, Method};
 
-use super::compile::{Field, Group, Test, TextTest};
+use super::compile::{Field, Group, Test, TextTest, DAY};
 
 /// What rules read of a request: implemented for the proxy's requests, and for requests built in
 /// tests and benchmarks
@@ -19,6 +19,8 @@ pub(crate) trait Request {
     fn header(&self, name: &HeaderName) -> Option<Cow<'_, str>>;
     /// The client, behind trusted proxies the one they forwarded
     fn client(&self) -> Option<IpAddr>;
+    /// Now, in Unix seconds (UTC)
+    fn now(&self) -> u64;
 }
 
 /// Runs one test of a request-line field (method, host, path, client), reading the field again
@@ -38,6 +40,28 @@ pub(super) fn evaluate_one(field: &Field, test: &Test, request: &impl Request) -
         (Field::Path, Test::Text { test, negate }) => {
             text_test(test, Some(request.path())) != *negate
         }
+        _ => false,
+    }
+}
+
+/// What a time field reads of `now` (Unix seconds, UTC): the seconds themselves (`date`), the
+/// seconds since midnight (`time`), or the day of the week, Monday being 0 (`weekday`):
+/// 1970-01-01 was a Thursday
+fn clock_value(field: &Field, now: u64) -> u64 {
+    match field {
+        Field::Time => now % DAY,
+        Field::Weekday => (now / DAY + 3) % 7,
+        _ => now,
+    }
+}
+
+/// A test of a time field on its value: a window (wrapping past midnight when `until` is before
+/// `from`), or days of the week
+fn time_test(test: &Test, value: u64) -> bool {
+    match test {
+        Test::Window { from, until } if from < until => *from <= value && value < *until,
+        Test::Window { from, until } => value >= *from || value < *until,
+        Test::Weekdays { days, negate } => ((u64::from(*days) >> value) & 1 == 1) != *negate,
         _ => false,
     }
 }
@@ -104,6 +128,12 @@ pub(super) fn evaluate(group: &Group, request: &impl Request, mut set: impl FnMu
         Field::Cookie(name) => {
             let cookies = request.header(&http::header::COOKIE);
             text_tests(group, cookie(cookies.as_deref(), name), set);
+        }
+        Field::Date | Field::Weekday | Field::Time => {
+            let value = clock_value(&group.field, request.now());
+            for (index, test) in &group.tests {
+                set(*index, time_test(test, value));
+            }
         }
     }
 }
