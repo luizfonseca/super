@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.7.0](https://github.com/luizfonseca/super/compare/super-v0.6.3...super-v0.7.0) (2026-11-19)
+
+
+### Features
+
+* answer 421 to HTTPS requests for another host than their handshake ([#50](https://github.com/luizfonseca/super/issues/50)) ([7840c07](https://github.com/luizfonseca/super/commit/7840c07e4f0070243dfe2b29b32d2dce9ac7037a))
+* read the PROXY protocol header of trusted load balancers ([#56](https://github.com/luizfonseca/super/issues/56)) ([5a87f43](https://github.com/luizfonseca/super/commit/5a87f436e113dfb8927e8e8f4d0eee2368bfaf5f))
+* **rules:** date, weekday and time conditions ([#72](https://github.com/luizfonseca/super/issues/72)) ([106fe79](https://github.com/luizfonseca/super/commit/106fe7978ca3e8ed1952912c06328148721b7420))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.6.3 to 0.7.0
+    * super_plugins bumped from 0.6.3 to 0.7.0
+    * super_core bumped from 0.6.3 to 0.7.0
+    * super_store bumped from 0.6.3 to 0.7.0
+  * dev-dependencies
+    * super_plugins bumped from 0.6.3 to 0.7.0
+    * super_store bumped from 0.6.3 to 0.7.0
+
 ## [0.6.3](https://github.com/luizfonseca/super/compare/super-v0.6.2...super-v0.6.3) (2026-11-12)
 
 

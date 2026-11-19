@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/luizfonseca/super/compare/super_core-v0.6.3...super_core-v0.7.0) (2026-11-19)
+
+
+### Features
+
+* read the PROXY protocol header of trusted load balancers ([#56](https://github.com/luizfonseca/super/issues/56)) ([5a87f43](https://github.com/luizfonseca/super/commit/5a87f436e113dfb8927e8e8f4d0eee2368bfaf5f))
+
 ## [0.6.3](https://github.com/luizfonseca/super/compare/super_core-v0.6.2...super_core-v0.6.3) (2026-11-12)
 
 
