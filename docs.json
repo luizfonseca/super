@@ -189,52 +189,60 @@
       "group": "Plugins",
       "pages": [
         {
-          "title": "Request ID",
-          "href": "/plugins/request-id"
+          "title": "Bandwidth limit",
+          "href": "/plugins/bandwidth-limit"
         },
         {
           "title": "Basic auth",
           "href": "/plugins/basic-auth"
         },
         {
-          "title": "OAuth2",
-          "href": "/plugins/oauth2"
-        },
-        {
-          "title": "JWT",
-          "href": "/plugins/jwt"
-        },
-        {
-          "title": "Rate limit",
-          "href": "/plugins/rate-limit"
-        },
-        {
-          "title": "Bandwidth limit",
-          "href": "/plugins/bandwidth-limit"
-        },
-        {
-          "title": "Waiting room",
-          "href": "/plugins/waiting-room"
-        },
-        {
-          "title": "OpenAPI",
-          "href": "/plugins/openapi"
+          "title": "Body limit",
+          "href": "/plugins/body-limit"
         },
         {
           "title": "Body rewrite",
           "href": "/plugins/body-rewrite"
         },
         {
-          "title": "Body limit",
-          "href": "/plugins/body-limit"
-        },
-        {
           "title": "Compress",
           "href": "/plugins/compress"
         },
         {
+          "title": "CORS",
+          "href": "/plugins/cors"
+        },
+        {
+          "title": "Forward auth",
+          "href": "/plugins/forward-auth"
+        },
+        {
+          "title": "IP filter",
+          "href": "/plugins/ip-filter"
+        },
+        {
+          "title": "JWT",
+          "href": "/plugins/jwt"
+        },
+        {
+          "title": "OAuth2",
+          "href": "/plugins/oauth2"
+        },
+        {
+          "title": "OpenAPI",
+          "href": "/plugins/openapi"
+        },
+        {
+          "title": "Rate limit",
+          "href": "/plugins/rate-limit"
+        },
+        {
           "title": "Redirect",
           "href": "/plugins/redirect"
+        },
+        {
+          "title": "Request ID",
+          "href": "/plugins/request-id"
         },
         {
           "title": "Respond",
@@ -245,16 +253,8 @@
           "href": "/plugins/static-files"
         },
         {
-          "title": "IP filter",
-          "href": "/plugins/ip-filter"
-        },
-        {
-          "title": "CORS",
-          "href": "/plugins/cors"
-        },
-        {
-          "title": "Forward auth",
-          "href": "/plugins/forward-auth"
+          "title": "Waiting room",
+          "href": "/plugins/waiting-room"
         }
       ]
     },
