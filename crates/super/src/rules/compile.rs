@@ -645,20 +645,26 @@ fn parse_test(field: &Field, operator: &str, value: &Value) -> Result<Test, Stri
 /// Seconds in a day
 pub(super) const DAY: u64 = 86_400;
 
+/// A value as written, in seconds: its start, and the length of what it names (a day for
+/// `2026-11-21`, a minute for `02:00`, a second for `02:00:00`)
+type Moment = (u64, u64);
+
 /// The window of an operator on `field`, whose values `read` gives (`max`: the end of what's
-/// read). Only `between` wraps past midnight: a window that would be empty is an error.
+/// read). A value covers what it names: `lte` includes all of it, `gt` starts after it. Only
+/// `between` wraps past midnight: a window that would be empty is an error.
 fn window(
     field: &str,
     operator: &str,
     value: &Value,
-    read: fn(&Value) -> Result<u64, String>,
+    read: fn(&Value) -> Result<Moment, String>,
     max: u64,
 ) -> Result<Test, String> {
+    let end = |(start, length): Moment| start.saturating_add(length);
     let (from, until) = match operator {
-        "gte" => (read(value)?, max),
-        "gt" => (read(value)?.saturating_add(1), max),
-        "lt" => (0, read(value)?),
-        "lte" => (0, read(value)?.saturating_add(1)),
+        "gte" => (read(value)?.0, max),
+        "gt" => (end(read(value)?), max),
+        "lt" => (0, read(value)?.0),
+        "lte" => (0, end(read(value)?)),
         "between" => return between(field, value, read),
         _ => return Err(unsupported(field, "`gte`, `gt`, `lt`, `lte` and `between`")),
     };
@@ -672,12 +678,12 @@ fn window(
 fn between(
     field: &str,
     value: &Value,
-    read: fn(&Value) -> Result<u64, String>,
+    read: fn(&Value) -> Result<Moment, String>,
 ) -> Result<Test, String> {
     let Some([from_value, until_value]) = value.as_array().map(Vec::as_slice) else {
         return Err("must be [from, until]".to_string());
     };
-    let (from, until) = (read(from_value)?, read(until_value)?);
+    let (from, until) = (read(from_value)?.0, read(until_value)?.0);
     let wraps = field == "time" && until < from;
     if until <= from && !wraps {
         return Err(format!("{until_value} isn't after {from_value}"));
@@ -685,9 +691,9 @@ fn between(
     Ok(Test::Window { from, until })
 }
 
-/// A date and time, UTC, in Unix seconds: `2026-11-21`, `2026-11-21T00:00` or
-/// `2026-11-21T00:00:00`, optionally ending in `Z`
-fn date(value: &Value) -> Result<u64, String> {
+/// A date and time, UTC, in Unix seconds: `2026-11-21` (a day), `2026-11-21T00:00` (a minute)
+/// or `2026-11-21T00:00:00` (a second), optionally ending in `Z`
+fn date(value: &Value) -> Result<Moment, String> {
     let written = value
         .as_str()
         .ok_or("must be a date, such as \"2026-11-21\"")?;
@@ -704,15 +710,16 @@ fn date(value: &Value) -> Result<u64, String> {
     let invalid = || {
         format!("{written:?} isn't a date (2026-11-21, 2026-11-21T00:00 or 2026-11-21T00:00:00)")
     };
-    let seconds = match clock {
-        None => 0,
+    let (seconds, length) = match clock {
+        None => (0, DAY),
         Some(clock) => seconds_of_day(clock).ok_or_else(invalid)?,
     };
     let midnight = calendar_day(day).ok_or_else(invalid)?;
-    u64::try_from(midnight.midnight().assume_utc().unix_timestamp())
+    let start = u64::try_from(midnight.midnight().assume_utc().unix_timestamp())
         .ok()
         .and_then(|midnight| midnight.checked_add(seconds))
-        .ok_or_else(invalid)
+        .ok_or_else(invalid)?;
+    Ok((start, length))
 }
 
 /// `YYYY-MM-DD`, a day that exists
@@ -726,8 +733,8 @@ fn calendar_day(day: &str) -> Option<time::Date> {
     time::Date::from_calendar_date(year.parse().ok()?, month, day.parse().ok()?).ok()
 }
 
-/// A time of day, `HH:MM` or `HH:MM:SS`, in seconds since midnight
-fn time_of_day(value: &Value) -> Result<u64, String> {
+/// A time of day, `HH:MM` (a minute) or `HH:MM:SS` (a second), in seconds since midnight
+fn time_of_day(value: &Value) -> Result<Moment, String> {
     let written = value
         .as_str()
         .ok_or("must be a time of day, such as \"02:00\"")?;
@@ -735,15 +742,18 @@ fn time_of_day(value: &Value) -> Result<u64, String> {
         .ok_or_else(|| format!("{written:?} isn't a time of day (HH:MM or HH:MM:SS)"))
 }
 
-/// `HH:MM` or `HH:MM:SS`, in seconds since midnight
-fn seconds_of_day(clock: &str) -> Option<u64> {
+/// `HH:MM` (a minute) or `HH:MM:SS` (a second), in seconds since midnight
+fn seconds_of_day(clock: &str) -> Option<Moment> {
     let mut parts = clock.split(':');
     let (hours, minutes) = (two_digits(parts.next()?)?, two_digits(parts.next()?)?);
-    let seconds = parts.next().map_or(Some(0), two_digits)?;
+    let (seconds, length) = match parts.next() {
+        Some(seconds) => (two_digits(seconds)?, 1),
+        None => (0, 60),
+    };
     if parts.next().is_some() || hours > 23 || minutes > 59 || seconds > 59 {
         return None;
     }
-    Some(hours * 3600 + minutes * 60 + seconds)
+    Some((hours * 3600 + minutes * 60 + seconds, length))
 }
 
 fn two_digits(part: &str) -> Option<u64> {

@@ -171,7 +171,7 @@ Behind a load balancer, list it in `server.trusted_proxies`, so `client` is the 
 
 ## Scheduled maintenance
 
-The same maintenance page, only for the week of the work: it starts on the 21st and stops on the 28th by itself, without editing or reloading the configuration. Times are UTC.
+Planning some maintenance? Give the rule a date range and it switches itself on and off: here, the maintenance page shows up on November 21st and goes away on the 28th, without you touching the configuration in between. Dates are in UTC.
 
 ```hcl
 host "app.example.com" {
@@ -203,7 +203,7 @@ host "app.example.com" {
 
 ## A waiting room for Black Friday week
 
-Checkout lets 500 shoppers in at once during Black Friday week, and is open as usual the rest of the year. See [times](/rules/conditions#times) for the windows rules can test.
+Expecting a rush? This lets 500 shoppers into checkout at a time during Black Friday week, while the rest of the year checkout works as usual. A waiting room in a rule needs a `name`, since a rule has no path of its own to name it after. See [times](/rules/conditions#times) for everything you can schedule.
 
 ```hcl
 host "shop.example.com" {
@@ -221,6 +221,7 @@ host "shop.example.com" {
       }
       then {
         waiting_room {
+          name           = "checkout"
           active         = 500
           on_store_error = "admit"
         }

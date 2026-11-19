@@ -506,6 +506,38 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn test_values_cover_the_unit_they_name() {
+        // A day: `lte` includes all of it, `gt` starts after it
+        let rules = [
+            rule("until the 30th", json!({ "date": { "lte": "2026-11-30" } })),
+            rule("after the 27th", json!({ "date": { "gt": "2026-11-27" } })),
+        ];
+        let at = |s: u64| matching(&rules, &TestRequest::new("GET", "a.test", "/").at(s));
+        assert_eq!(at(BLACK_FRIDAY + 86_399), ["until the 30th"]);
+        assert_eq!(
+            at(BLACK_FRIDAY + 86_400),
+            ["until the 30th", "after the 27th"]
+        );
+        // 2026-11-30T23:59:59, then 2026-12-01T00:00:00
+        assert_eq!(at(1_796_083_199), ["until the 30th", "after the 27th"]);
+        assert_eq!(at(1_796_083_200), ["after the 27th"]);
+
+        // A minute, a second
+        let rules = [
+            rule("minute", json!({ "time": { "lte": "02:00" } })),
+            rule("second", json!({ "time": { "lte": "02:00:00" } })),
+        ];
+        let at = |s: u64| {
+            let request = TestRequest::new("GET", "a.test", "/").at(BLACK_FRIDAY + 7200 + s);
+            matching(&rules, &request)
+        };
+        assert_eq!(at(0), ["minute", "second"]);
+        assert_eq!(at(1), ["minute"]);
+        assert_eq!(at(59), ["minute"]);
+        assert!(at(60).is_empty());
+    }
+
+    #[test]
     fn test_time_windows_wrap_past_midnight() {
         let rules = [rule(
             "night",

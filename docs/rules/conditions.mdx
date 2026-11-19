@@ -70,8 +70,8 @@ Each test has exactly one operator.
 
 | Operator | Holds when the value... | Fields |
 | --- | --- | --- |
-| `eq`, `neq` | is, isn't, this value | all |
-| `in`, `not_in` | is one of, none of, a list | all; for `client`, addresses and networks (`["10.0.0.0/8", "203.0.113.9"]`) |
+| `eq`, `neq` | is, isn't, this value | all but `date` and `time` |
+| `in`, `not_in` | is one of, none of, a list | all but `date` and `time`; for `client`, addresses and networks (`["10.0.0.0/8", "203.0.113.9"]`) |
 | `prefix`, `suffix`, `contains` | starts with, ends with, contains this text, or one of a list (`contains = ["/.env", "/.git"]`) | text fields |
 | `wildcard` | matches a pattern where `*` is any text (`"/api/*/items"`, `"*.example.com"`) | text fields |
 | `matches` | matches a regular expression (`"(?i)bot"` ignores case) | text fields |
@@ -113,7 +113,7 @@ host "example.com" {
 
 ## Times
 
-`date`, `weekday` and `time` read the clock, so a rule can turn itself on and off: a maintenance week, a sale, every night's backups. Combined with `and`, `or` and `not`, they write repeating windows too:
+With `date`, `weekday` and `time`, a rule can switch itself on and off on a schedule: a maintenance week, a sale, or nightly backups. Combine them with `and`, `or` and `not` for windows that repeat, like weekday nights:
 
 ```hcl
 host "example.com" {
@@ -140,12 +140,13 @@ host "example.com" {
 }
 ```
 
-- **Every time is UTC.** A `date` may end with `Z`; any other offset (`+01:00`) stops the configuration from loading, rather than shifting the window.
-- `date` values are `"2026-11-21"` (its midnight), `"2026-11-21T00:00"` or `"2026-11-21T00:00:00"`. `time` values are `"HH:MM"` or `"HH:MM:SS"`.
-- `between` includes its first value and excludes its second, so `between = ["2026-11-21", "2026-11-28"]` is the seven days from the 21st to the 27th, and the next window can start where it ends.
-- A `time` window can cross midnight: `between = ["22:00", "02:00"]` is 22:00 to 02:00. A `date` window can't end before it starts, and a window that never holds (`time { lt = "00:00" }`) stops the configuration from loading.
-- A window opens and closes with the first request after its time, to the second: there's nothing to reload.
-- Dates that move every year, like "the fourth Friday of November", are written out for each year.
+- **All times are in UTC.** You can end a `date` with `Z`, but other offsets like `+01:00` are rejected, so a window never ends up shifted by a few hours without you noticing.
+- Write dates as `"2026-11-21"` (that day's midnight), `"2026-11-21T00:00"` or `"2026-11-21T00:00:00"`, and times of day as `"HH:MM"` or `"HH:MM:SS"`.
+- `between` starts at its first value and stops just before its second: `between = ["2026-11-21", "2026-11-28"]` covers the 21st through the 27th. That way one window can start exactly where the previous one ends.
+- A value means everything it names: a day, a minute or a second. So `date { lte = "2026-11-30" }` lasts until the end of the 30th, `gt = "2026-11-27"` starts on the 28th, and `time { lte = "02:00" }` still matches at 02:00:30.
+- A `time` window can run past midnight: `between = ["22:00", "02:00"]` means 10 p.m. to 2 a.m. A `date` window can't end before it starts, and Super won't load a window that could never match, like `time { lt = "00:00" }`.
+- There's nothing to reload: a window opens and closes on its own, with the first request after its start or end.
+- Dates that move every year, like "the fourth Friday of November", need to be written out for each year.
 
 ## Errors
 
