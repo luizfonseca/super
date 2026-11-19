@@ -5,6 +5,12 @@ on:
     branches:
       - main
       # - ci
+  # Builds and publishes a release that already exists again, such as one whose build failed
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release's tag, such as super-v0.7.0"
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -14,15 +20,28 @@ jobs:
   release:
     name: Release
     outputs:
-      release_created: ${{ steps.release.outputs['crates/super--release_created'] }}
-      tag_name: ${{ steps.release.outputs['crates/super--tag_name'] }}
+      release_created: ${{ github.event_name == 'workflow_dispatch' || steps.release.outputs['crates/super--release_created'] }}
+      tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || steps.release.outputs['crates/super--tag_name'] }}
     permissions:
       contents: write
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
+      - name: Check the tag
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! [[ "$TAG" =~ ^super-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "not a release tag of super: $TAG"
+            exit 1
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null
+
       - name: Release
         id: release
+        if: ${{ github.event_name == 'push' }}
         uses: googleapis/release-please-action@v5
         with:
           # A token of its own, so its releases trigger other workflows (the Discord announcement):
@@ -101,6 +120,9 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
+          # Warnings fail CI's checks; a release builds platforms they don't (macOS), and fails
+          # for none of them
+          build-warnings: warn
           components: rustfmt,clippy
           target: ${{ matrix.platform.target }}
           cache: false
@@ -116,7 +138,8 @@ jobs:
 
       - name: Setup Cross
         # TODO: remove workaround once the issue is resolved: https://github.com/cross-rs/cross/issues/1561
-        run: RUSTFLAGS="" cargo install cross --git https://github.com/cross-rs/cross
+        # Pinned: the same build of it for every release
+        run: RUSTFLAGS="" cargo install cross --git https://github.com/cross-rs/cross --rev a9301e91f72bba3850460512685f6b16062015ff --locked
         if: ${{ matrix.platform.cross }}
 
       - name: Install musl-tools on Linux
@@ -242,6 +265,9 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
+          # Warnings fail CI's checks; a release builds platforms they don't (macOS), and fails
+          # for none of them
+          build-warnings: warn
           components: rustfmt,clippy
 
       - name: Setup Node
