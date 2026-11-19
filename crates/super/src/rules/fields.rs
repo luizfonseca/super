@@ -105,6 +105,8 @@ pub(super) fn evaluate(group: &Group, request: &impl Request, mut set: impl FnMu
             let cookies = request.header(&http::header::COOKIE);
             text_tests(group, cookie(cookies.as_deref(), name), set);
         }
+        // Read in the next commit
+        Field::Date | Field::Weekday | Field::Time => {}
     }
 }
 
