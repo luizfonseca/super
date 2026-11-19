@@ -8,6 +8,8 @@ use schemars::{json_schema, Schema, SchemaGenerator};
 use serde::Serialize;
 use serde_json::Value;
 
+use super::fields;
+
 /// A field a condition tests
 #[derive(Debug, Serialize)]
 pub struct Field {
@@ -27,76 +29,20 @@ pub struct Operator {
     pub description: &'static str,
 }
 
-const EQUALITY: &[&str] = &["eq", "neq", "in", "not_in"];
-const WINDOWS: &[&str] = &["gte", "gt", "lt", "lte", "between"];
-const TEXT: &[&str] = &[
-    "eq", "neq", "in", "not_in", "prefix", "suffix", "contains", "wildcard", "matches",
-];
-const NAMED_TEXT: &[&str] = &[
-    "eq", "neq", "in", "not_in", "prefix", "suffix", "contains", "wildcard", "matches", "exists",
-];
+pub(super) const EQUALITY: &[&str] = &["eq", "neq", "in", "not_in"];
 
+/// In the order the admin's editor lists them
 pub const FIELDS: &[Field] = &[
-    Field {
-        name: "method",
-        named: false,
-        description: "The method (GET, POST...), ignoring case",
-        operators: EQUALITY,
-    },
-    Field {
-        name: "host",
-        named: false,
-        description: "The host the request is for, without its port, ignoring case",
-        operators: TEXT,
-    },
-    Field {
-        name: "path",
-        named: false,
-        description: "The path, as used to choose locations",
-        operators: TEXT,
-    },
-    Field {
-        name: "query",
-        named: true,
-        description: "The value of a query parameter, decoded",
-        operators: NAMED_TEXT,
-    },
-    Field {
-        name: "header",
-        named: true,
-        description: "The value of a request header; names ignore case",
-        operators: NAMED_TEXT,
-    },
-    Field {
-        name: "cookie",
-        named: true,
-        description: "The value of a cookie",
-        operators: NAMED_TEXT,
-    },
-    Field {
-        name: "client",
-        named: false,
-        description: "The client's address (behind trusted proxies, the one they forwarded)",
-        operators: EQUALITY,
-    },
-    Field {
-        name: "date",
-        named: false,
-        description: "The date and time now, UTC (2026-11-21, 2026-11-21T00:00)",
-        operators: WINDOWS,
-    },
-    Field {
-        name: "weekday",
-        named: false,
-        description: "The day of the week, UTC (mon, tue...)",
-        operators: EQUALITY,
-    },
-    Field {
-        name: "time",
-        named: false,
-        description: "The time of day, UTC (HH:MM)",
-        operators: WINDOWS,
-    },
+    fields::method::SCHEMA,
+    fields::text::HOST,
+    fields::text::PATH,
+    fields::text::QUERY,
+    fields::text::HEADER,
+    fields::text::COOKIE,
+    fields::client::SCHEMA,
+    fields::time::DATE,
+    fields::time::WEEKDAY,
+    fields::time::TIME,
 ];
 
 pub const OPERATORS: &[Operator] = &[

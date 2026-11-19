@@ -1,81 +1,156 @@
-//! Reading the fields of a request, once each, and running every test of a field on it
+//! Text fields: `host`, `path`, `query "<name>"`, `header "<name>"` and `cookie "<name>"`
 
-use std::{borrow::Cow, net::IpAddr};
+use std::borrow::Cow;
 
-use http::{HeaderName, Method};
+use serde_json::Value;
 
-use super::compile::{Field, Group, Test, TextTest, DAY};
+use super::{list, unsupported};
+use crate::rules::{
+    compile::{Field, Group, Test},
+    schema,
+    text_set::{Ends, Exact, Parts},
+};
 
-/// What rules read of a request: implemented for the proxy's requests, and for requests built in
-/// tests and benchmarks
-pub(crate) trait Request {
-    fn method(&self) -> &Method;
-    /// Without its port
-    fn host(&self) -> &str;
-    /// Normalized, as locations read it: `//a/./b` and `/%61/b` are `/a/b`
-    fn path(&self) -> &str;
-    fn query(&self) -> Option<&str>;
-    /// All the values of a header, joined with `, `
-    fn header(&self, name: &HeaderName) -> Option<Cow<'_, str>>;
-    /// The client, behind trusted proxies the one they forwarded
-    fn client(&self) -> Option<IpAddr>;
-    /// Now, in Unix seconds (UTC)
-    fn now(&self) -> u64;
+const TEXT: &[&str] = &[
+    "eq", "neq", "in", "not_in", "prefix", "suffix", "contains", "wildcard", "matches",
+];
+const NAMED_TEXT: &[&str] = &[
+    "eq", "neq", "in", "not_in", "prefix", "suffix", "contains", "wildcard", "matches", "exists",
+];
+
+pub(in crate::rules) const HOST: schema::Field = schema::Field {
+    name: "host",
+    named: false,
+    description: "The host the request is for, without its port, ignoring case",
+    operators: TEXT,
+};
+pub(in crate::rules) const PATH: schema::Field = schema::Field {
+    name: "path",
+    named: false,
+    description: "The path, as used to choose locations",
+    operators: TEXT,
+};
+pub(in crate::rules) const QUERY: schema::Field = schema::Field {
+    name: "query",
+    named: true,
+    description: "The value of a query parameter, decoded",
+    operators: NAMED_TEXT,
+};
+pub(in crate::rules) const HEADER: schema::Field = schema::Field {
+    name: "header",
+    named: true,
+    description: "The value of a request header; names ignore case",
+    operators: NAMED_TEXT,
+};
+pub(in crate::rules) const COOKIE: schema::Field = schema::Field {
+    name: "cookie",
+    named: true,
+    description: "The value of a cookie",
+    operators: NAMED_TEXT,
+};
+
+#[derive(Debug)]
+pub(in crate::rules) enum TextTest {
+    Eq(String),
+    In(Exact),
+    /// Any of them
+    Prefix(Ends),
+    Suffix(Ends),
+    Contains(Parts),
+    /// The parts between `*`s
+    Wildcard(Vec<String>),
+    /// Tested with the regex set of its field
+    Matches,
+    Exists(bool),
 }
 
-/// Runs one test of a request-line field (method, host, path, client), reading the field again
-pub(super) fn evaluate_one(field: &Field, test: &Test, request: &impl Request) -> bool {
-    match (field, test) {
-        (Field::Method, Test::Method { methods, negate }) => {
-            methods.contains(request.method()) != *negate
+/// A test of `operator` with `value`, on the text field `field`
+pub(super) fn parse(field: &Field, operator: &str, value: &Value) -> Result<Test, String> {
+    // Hosts are compared ignoring case
+    let fold = |text: String| {
+        if *field == Field::Host {
+            text.to_ascii_lowercase()
+        } else {
+            text
         }
-        (Field::Client, Test::Client { networks, negate }) => {
-            let listed = client(request).is_some_and(|client| networks.contains_address(client));
-            listed != *negate
+    };
+    let test = match operator {
+        "eq" | "neq" => TextTest::Eq(fold(text(value)?)),
+        "in" | "not_in" => TextTest::In(Exact::new(
+            list(value)?
+                .iter()
+                .map(|value| text(value).map(fold))
+                .collect::<Result<_, _>>()?,
+        )),
+        "prefix" => TextTest::Prefix(Ends::new(texts(value, fold)?)),
+        "suffix" => TextTest::Suffix(Ends::new(texts(value, fold)?)),
+        "contains" => TextTest::Contains(Parts::new(texts(value, fold)?)?),
+        "wildcard" => TextTest::Wildcard(
+            fold(text(value)?)
+                .split('*')
+                .map(ToString::to_string)
+                .collect(),
+        ),
+        "matches" => {
+            value.as_str().ok_or("must be a regular expression")?;
+            TextTest::Matches
         }
-        (Field::Host, Test::Text { test, negate }) => {
-            let host = lowercase(request.host());
-            text_test(test, Some(&host)) != *negate
+        "exists" => exists(field, value)?,
+        "gt" | "gte" | "lt" | "lte" | "between" => {
+            return Err("compares dates and times, which this field isn't".to_string())
         }
-        (Field::Path, Test::Text { test, negate }) => {
-            text_test(test, Some(request.path())) != *negate
-        }
-        _ => false,
+        other => return Err(format!("`{other}` isn't an operator")),
+    };
+    let negate = matches!(operator, "neq" | "not_in");
+    Ok(Test::Text { test, negate })
+}
+
+/// `exists`: for the fields a request can lack
+fn exists(field: &Field, value: &Value) -> Result<TextTest, String> {
+    if matches!(field, Field::Host | Field::Path) {
+        return Err(unsupported(
+            "host and path",
+            "all but `exists`: they're always there",
+        ));
+    }
+    Ok(TextTest::Exists(
+        value.as_bool().ok_or("must be true or false")?,
+    ))
+}
+
+/// A text, or a list of them, each changed with `fold`
+fn texts(value: &Value, fold: impl Fn(String) -> String) -> Result<Vec<String>, String> {
+    match value {
+        Value::Array(_) => list(value)?
+            .iter()
+            .map(|value| text(value).map(&fold))
+            .collect(),
+        value => Ok(vec![fold(text(value)?)]),
     }
 }
 
-/// What a time field reads of `now` (Unix seconds, UTC): the seconds themselves (`date`), the
-/// seconds since midnight (`time`), or the day of the week, Monday being 0 (`weekday`):
-/// 1970-01-01 was a Thursday
-fn clock_value(field: &Field, now: u64) -> u64 {
-    match field {
-        Field::Time => now % DAY,
-        Field::Weekday => (now / DAY + 3) % 7,
-        _ => now,
+fn text(value: &Value) -> Result<String, String> {
+    match value {
+        Value::String(text) => Ok(text.clone()),
+        Value::Number(number) => Ok(number.to_string()),
+        Value::Bool(boolean) => Ok(boolean.to_string()),
+        _ => Err("must be text".to_string()),
     }
 }
 
-/// A test of a time field on its value: a window (wrapping past midnight when `until` is before
-/// `from`), or days of the week
-fn time_test(test: &Test, value: u64) -> bool {
-    match test {
-        Test::Window { from, until } if from < until => *from <= value && value < *until,
-        Test::Window { from, until } => value >= *from || value < *until,
-        Test::Weekdays { days, negate } => ((u64::from(*days) >> value) & 1 == 1) != *negate,
-        _ => false,
-    }
-}
-
-/// IPv4 as `::ffff:a.b.c.d`, as networks are: an IPv4 client over IPv6 is the same
-fn client(request: &impl Request) -> Option<u128> {
-    request.client().map(crate::ip_set::address)
-}
-
-pub(super) fn lowercase(host: &str) -> Cow<'_, str> {
+pub(in crate::rules) fn lowercase(host: &str) -> Cow<'_, str> {
     if host.bytes().any(|byte| byte.is_ascii_uppercase()) {
         Cow::Owned(host.to_ascii_lowercase())
     } else {
         Cow::Borrowed(host)
+    }
+}
+
+/// Whether `test` holds for `value` (`None`: the field isn't there)
+pub(super) fn holds(test: &Test, value: Option<&str>) -> bool {
+    match test {
+        Test::Text { test, negate } => text_test(test, value) != *negate,
+        _ => false,
     }
 }
 
@@ -94,51 +169,8 @@ fn text_test(test: &TextTest, value: Option<&str>) -> bool {
     }
 }
 
-/// Runs the tests of `group` on `request`, reading its field once: `set` gets each test's result
-pub(super) fn evaluate(group: &Group, request: &impl Request, mut set: impl FnMut(u32, bool)) {
-    match &group.field {
-        Field::Method => {
-            let method = request.method();
-            for (index, test) in &group.tests {
-                let Test::Method { methods, negate } = test else {
-                    continue;
-                };
-                set(*index, methods.contains(method) != *negate);
-            }
-        }
-        Field::Client => {
-            let client = client(request);
-            for (index, test) in &group.tests {
-                let Test::Client { networks, negate } = test else {
-                    continue;
-                };
-                let listed = client.is_some_and(|client| networks.contains_address(client));
-                set(*index, listed != *negate);
-            }
-        }
-        Field::Host => {
-            let host = lowercase(request.host());
-            text_tests(group, Some(&host), set);
-        }
-        Field::Path => {
-            text_tests(group, Some(request.path()), set);
-        }
-        Field::Query(name) => text_tests(group, query(request.query(), name).as_deref(), set),
-        Field::Header(name) => text_tests(group, request.header(name).as_deref(), set),
-        Field::Cookie(name) => {
-            let cookies = request.header(&http::header::COOKIE);
-            text_tests(group, cookie(cookies.as_deref(), name), set);
-        }
-        Field::Date | Field::Weekday | Field::Time => {
-            let value = clock_value(&group.field, request.now());
-            for (index, test) in &group.tests {
-                set(*index, time_test(test, value));
-            }
-        }
-    }
-}
-
-fn text_tests(group: &Group, value: Option<&str>, mut set: impl FnMut(u32, bool)) {
+/// Runs the tests of `group` on `value`, its patterns as one set: `set` gets each result
+pub(super) fn evaluate(group: &Group, value: Option<&str>, mut set: impl FnMut(u32, bool)) {
     for (index, test) in &group.tests {
         let Test::Text { test, negate } = test else {
             continue;
@@ -194,7 +226,7 @@ fn wildcard(parts: &[String], value: &str) -> bool {
 }
 
 /// The value of the first query parameter `name`, decoded (`%20`, `+`)
-fn query<'a>(query: Option<&'a str>, name: &str) -> Option<Cow<'a, str>> {
+pub(super) fn query<'a>(query: Option<&'a str>, name: &str) -> Option<Cow<'a, str>> {
     query?.split('&').find_map(|pair| {
         let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
         (decode(key) == name).then(|| decode(value))
@@ -234,7 +266,7 @@ fn decode_percent(rest: &mut &[u8], decoded: &mut Vec<u8>) {
 }
 
 /// The value of cookie `name` in a `Cookie` header
-fn cookie<'a>(cookies: Option<&'a str>, name: &str) -> Option<&'a str> {
+pub(super) fn cookie<'a>(cookies: Option<&'a str>, name: &str) -> Option<&'a str> {
     cookies?.split(';').find_map(|pair| {
         let (key, value) = pair.trim().split_once('=')?;
         (key == name).then_some(value)
