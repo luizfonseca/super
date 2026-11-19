@@ -3,7 +3,7 @@
 
 use std::net::IpAddr;
 
-use crate::ip_set::{network, IpSet};
+use crate::ip_set::IpSet;
 use anyhow::Result;
 use http::{header, StatusCode};
 use super_core::{http::ResponseHeader, proxy::Session};
@@ -22,17 +22,8 @@ pub(super) struct IpFilter {
 impl IpFilter {
     pub(super) fn new(plugin: &RoutePlugin) -> Result<Self, String> {
         let settings: super::settings::IpFilter = super::settings::read("ip_filter", plugin)?;
-        let networks = |entries: Option<Vec<String>>| -> Result<IpSet, String> {
-            entries
-                .unwrap_or_default()
-                .iter()
-                .map(|entry| {
-                    network(entry).ok_or_else(|| {
-                        format!("ip_filter: {entry:?} is not an address or a network")
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(IpSet::new)
+        let networks = |entries: Option<Vec<String>>| {
+            IpSet::parse(&entries.unwrap_or_default()).map_err(|err| format!("ip_filter: {err}"))
         };
         let (allow, deny) = (networks(settings.allow)?, networks(settings.deny)?);
         if allow.is_empty() && deny.is_empty() {
@@ -113,7 +104,7 @@ mod tests {
             filter(serde_json::json!({ "allow": ["10.0.0"] }))
                 .err()
                 .as_deref(),
-            Some("ip_filter: \"10.0.0\" is not an address or a network")
+            Some("ip_filter: \"10.0.0\" is not an address or a network (10.0.0.0/8)")
         );
         assert!(filter(serde_json::json!({ "deny": "10.0.0.1" })).is_err());
         assert!(filter(serde_json::json!({ "deny": [1] })).is_err());

@@ -392,7 +392,7 @@ paths {{
 "#,
             https_port = self.https_port,
             http_port = self.http_port,
-            server_config = self.server_config,
+            server_config = self.fill_placeholders(&self.server_config),
             hosts = self.render_hosts(&routes_hcl),
             le = dir.join("le").to_string_lossy(),
             extra_config = self.render_extra_config(),
@@ -413,8 +413,13 @@ paths {{
     /// Extra configuration, with `{http_upstream_port}`, `{service_port}`, the ports of proksi, `{cert_pem}`,
     /// `{cert_key}`, `{chain_pem}` and `{chain_key}` replaced
     fn render_extra_config(&self) -> String {
+        self.fill_placeholders(&self.extra_config)
+    }
+
+    /// `config` with its placeholders (`{http_upstream_port}`, `{tcp_port_0}`...) filled in
+    fn fill_placeholders(&self, config: &str) -> String {
         let dir = self.dir.path();
-        let mut config = self.extra_config.clone();
+        let mut config = config.to_string();
         for (index, port) in self.tcp_ports.iter().enumerate() {
             config = config.replace(&format!("{{tcp_port_{index}}}"), &port.to_string());
         }
@@ -545,6 +550,37 @@ paths {{
     ) -> std::io::Result<String> {
         self.tls_request_with_alpn(port, server_name, &[], request)
             .await
+    }
+
+    /// Like `tls_request`, sending `before` first, outside TLS (a PROXY protocol header)
+    pub async fn tls_request_after(
+        &self,
+        port: u16,
+        before: &[u8],
+        server_name: &str,
+        request: &str,
+    ) -> std::io::Result<String> {
+        let (before, server_name, request) =
+            (before.to_vec(), server_name.to_string(), request.to_string());
+        tokio::task::spawn_blocking(move || {
+            let connector = native_tls::TlsConnector::builder()
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true)
+                .build()
+                .map_err(std::io::Error::other)?;
+            let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))?;
+            stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+            std::io::Write::write_all(&mut stream, &before)?;
+            let mut stream = connector
+                .connect(&server_name, stream)
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
+            std::io::Write::write_all(&mut stream, request.as_bytes())?;
+            let mut response = String::new();
+            std::io::Read::read_to_string(&mut stream, &mut response)?;
+            Ok(response)
+        })
+        .await
+        .unwrap()
     }
 
     /// Like `tls_request`, offering the protocols `alpn`

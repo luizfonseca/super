@@ -44,6 +44,7 @@ Super is evolving day by day, and new features are being added with scalability 
 - [x] **Notifications** to webhooks (JSON, Slack, Discord) when upstreams go down, certificates fail or expire, the configuration or the store changes (see [notifications](/configuration/notify))
 - [x] **Certificate files** reloaded when they change, served with their whole chain
 - [x] **Forwarded headers** (`X-Forwarded-For`, `-Proto`, `-Host`, `X-Real-IP`), and clients found behind trusted proxies
+- [x] **PROXY protocol** (v1 and v2) from trusted load balancers: the client's address behind TCP load balancers
 - [x] **Rules**: conditions on the method, host, path, query, headers, cookies or client (`and`, `or`, `not`), and what to do when they hold, in the server, a host or a location (see [rules](/rules))
 - [x] **Timeouts** toward clients and upstreams, and a graceful stop that waits for open connections
 

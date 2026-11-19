@@ -34,6 +34,9 @@ Below you can find a full list of the configuration keys and their corresponding
 | `server.work_stealing` | `PROKSI_SERVER__WORK_STEALING` | Whether worker threads take over each other's connections (`true`, see [performance](/general/performance#worker-threads)) |
 | `server.http3` | `PROKSI_SERVER__HTTP3` | Whether HTTP/3 (QUIC, UDP) is answered on the HTTPS addresses (`false`; Super only) |
 | `server.allow_misdirected_requests` | `PROKSI_SERVER__ALLOW_MISDIRECTED_REQUESTS` | Whether HTTPS requests may be for another host than their TLS handshake (SNI) was (`false`: answered `421 Misdirected Request`) |
+| `server.proxy_protocol.trusted` | `PROKSI_SERVER__PROXY_PROTOCOL__TRUSTED` | The load balancers whose [PROXY protocol](/routing/headers#proxy-protocol) headers are read (addresses or networks) |
+| `server.proxy_protocol.listeners` | `PROKSI_SERVER__PROXY_PROTOCOL__LISTENERS` | The listeners it's enabled on, by address (default: all) |
+| `server.proxy_protocol.timeout_secs` | `PROKSI_SERVER__PROXY_PROTOCOL__TIMEOUT_SECS` | How long a header is waited for before closing the connection (`5`, at least `3`) |
 | `server.http_address` | `PROKSI_SERVER__HTTP_ADDRESS` | The default HTTP address (redirects, ACME challenges, hosts without TLS) |
 | `logging.level` | `PROKSI_LOGGING__LEVEL` | The log level |
 | `logging.format` | `PROKSI_LOGGING__FORMAT` | The log format |

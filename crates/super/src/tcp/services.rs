@@ -10,7 +10,10 @@ use super_core::{
 use super_core::server::configuration::ServerConf;
 
 use crate::{
-    config::tcp::{TcpRoute, TcpTls},
+    config::{
+        proxy_protocol::ProxyProtocolListeners,
+        tcp::{TcpRoute, TcpTls},
+    },
     metrics::TcpMetrics,
     proxy_server::cert_store::CertStore,
     proxy_server::{
@@ -78,6 +81,7 @@ pub fn tcp_services(
     targets: &Arc<Vec<TcpTarget>>,
     https: &BTreeSet<String>,
     (configuration, https_router): (&Arc<ServerConf>, Router),
+    proxy_protocol: &ProxyProtocolListeners,
     worker_threads: Option<usize>,
 ) -> Result<Vec<BoxedService>, anyhow::Error> {
     let mut services: Vec<BoxedService> = vec![];
@@ -107,7 +111,7 @@ pub fn tcp_services(
             Counted::new(sni_router),
         );
         service.threads = worker_threads;
-        service.add_tcp(address);
+        service.add_tcp_with_settings(address, proxy_protocol.options(address));
         services.push(boxed(service));
     }
 
@@ -118,7 +122,7 @@ pub fn tcp_services(
         );
         service.threads = worker_threads;
         for address in &plain {
-            service.add_tcp(address);
+            service.add_tcp_with_settings(address, proxy_protocol.options(address));
         }
         services.push(boxed(service));
     }
@@ -132,7 +136,8 @@ pub fn tcp_services(
             let mut settings = tls_settings()?;
             let protocols = AlpnProtocols::new(on_address(targets, address));
             select_protocols(&mut settings, protocols, false);
-            service.add_tls_with_settings(address, None, settings);
+            let options = proxy_protocol.options(address);
+            service.add_tls_with_settings(address, Some(options), settings);
         }
         services.push(boxed(service));
     }
