@@ -1784,7 +1784,7 @@
           "type": "array"
         },
         "timeout_secs": {
-          "description": "How long a header is waited for, in seconds (default: 5): after, the connection is served\nas it is (protocols where the server speaks first)",
+          "description": "How long a header is waited for, in seconds, before closing the connection (default: 5,\nat least 3)",
           "format": "uint64",
           "minimum": 0,
           "type": [
@@ -1794,7 +1794,7 @@
         },
         "trusted": {
           "default": [],
-          "description": "The load balancers sending it: addresses (`10.0.0.1`) and networks (`10.0.0.0/8`). Only\ntheir connections' headers are read, and one of theirs without a header is served as it\nis: other clients connect directly to the same addresses.",
+          "description": "The load balancers sending it: addresses (`10.0.0.1`) and networks (`10.0.0.0/8`). Their\nconnections must start with a header (it's never guessed whether one does), or they're\nclosed; other clients connect directly to the same addresses, and their headers aren't read.",
           "items": {
             "type": "string"
           },

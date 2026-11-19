@@ -392,7 +392,7 @@ paths {{
 "#,
             https_port = self.https_port,
             http_port = self.http_port,
-            server_config = self.server_config.replace("{extra_port}", &self.extra_port.to_string()),
+            server_config = self.fill_placeholders(&self.server_config),
             hosts = self.render_hosts(&routes_hcl),
             le = dir.join("le").to_string_lossy(),
             extra_config = self.render_extra_config(),
@@ -413,8 +413,13 @@ paths {{
     /// Extra configuration, with `{http_upstream_port}`, `{service_port}`, the ports of proksi, `{cert_pem}`,
     /// `{cert_key}`, `{chain_pem}` and `{chain_key}` replaced
     fn render_extra_config(&self) -> String {
+        self.fill_placeholders(&self.extra_config)
+    }
+
+    /// `config` with its placeholders (`{http_upstream_port}`, `{tcp_port_0}`...) filled in
+    fn fill_placeholders(&self, config: &str) -> String {
         let dir = self.dir.path();
-        let mut config = self.extra_config.clone();
+        let mut config = config.to_string();
         for (index, port) in self.tcp_ports.iter().enumerate() {
             config = config.replace(&format!("{{tcp_port_{index}}}"), &port.to_string());
         }

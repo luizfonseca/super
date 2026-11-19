@@ -101,18 +101,24 @@ impl Stream {
         Ok(true)
     }
 
-    /// Reads the PROXY protocol header (v1 or v2) the connection starts with, if it does: its
-    /// client becomes the connection's peer. The connection's own bytes, read ahead to tell,
-    /// are read again by whoever reads it next.
+    /// Reads the PROXY protocol header (v1 or v2) the connection starts with: its client, if it
+    /// has one, becomes the connection's peer. The connection's own bytes read ahead with it are
+    /// read again by whoever reads it next.
     ///
     /// # Errors
     ///
-    /// When the header doesn't follow the protocol, or the connection fails.
+    /// When the connection doesn't start with a header that follows the protocol (it's never
+    /// guessed whether there's one), is closed before it, or fails.
     pub async fn read_proxy_header(&mut self) -> io::Result<()> {
         loop {
             let unread = self.ahead.get(self.ahead_at..).unwrap_or_default();
             match proxy_protocol::parse(unread) {
-                Parsed::NotProxy => return Ok(()),
+                Parsed::NotProxy => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "no PROXY protocol header",
+                    ))
+                }
                 Parsed::Invalid => {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
@@ -125,9 +131,11 @@ impl Stream {
                 }
                 Parsed::Incomplete => {}
             }
-            // Closed before the header ended: whoever reads it next finds what came
             if !self.read_ahead().await? {
-                return Ok(());
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "closed before its PROXY protocol header",
+                ));
             }
         }
     }
@@ -152,11 +160,6 @@ impl Stream {
         self.ahead
             .extend_from_slice(chunk.get(..read).unwrap_or_default());
         Ok(read > 0)
-    }
-
-    /// Whether bytes were read ahead that haven't been read yet
-    pub fn has_read_ahead(&self) -> bool {
-        self.ahead_at < self.ahead.len()
     }
 
     /// The next `len` bytes read ahead are done with: not read again
@@ -335,14 +338,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_connections_without_a_proxy_header_are_left_as_they_are() {
+    async fn test_connections_without_a_proxy_header_are_errors() {
+        // Not guessed: a connection reading one must start with one
         let mut stream = connection(&[b"GET / HTTP/1.1\r\n"]).await;
-        let before = peer(&stream);
-        stream.read_proxy_header().await.unwrap();
-        assert_eq!(peer(&stream), before);
-        assert_eq!(after_the_header(stream).await, b"GET / HTTP/1.1\r\n");
+        let err = stream.read_proxy_header().await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        // Closed before it ended, or before anything came
+        let mut stream = connection(&[b"PROXY TCP4 203.0.113.7"]).await;
+        let err = stream.read_proxy_header().await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+        let mut stream = connection(&[]).await;
+        let err = stream.read_proxy_header().await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
 
-        // A header without a client (the load balancer's own connection): consumed
+    #[tokio::test]
+    async fn test_headers_without_a_client_keep_the_peer() {
+        // The load balancer's own connection (a health check): consumed
         let mut stream = connection(&[b"PROXY UNKNOWN\r\nping"]).await;
         stream.read_proxy_header().await.unwrap();
         assert!(peer(&stream).starts_with("127.0.0.1:"), "{}", peer(&stream));

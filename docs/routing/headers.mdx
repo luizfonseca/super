@@ -71,7 +71,7 @@ They're set before a location's `headers`, which can still change or remove them
 
 ## PROXY protocol
 
-Behind a load balancer working on TCP (such as an AWS Network Load Balancer), every connection comes from the load balancer's address, and it can't add `X-Forwarded-For` to HTTPS it doesn't decrypt. With the PROXY protocol, it sends the client's address first on each connection, in a header (version 1 or 2). Super reads it from the load balancers listed in `trusted`, before TLS:
+Behind a load balancer working on TCP (such as an AWS Network Load Balancer), every connection comes from the load balancer's address, and it can't add `X-Forwarded-For` to HTTPS it doesn't decrypt. With the [PROXY protocol](https://www.haproxy.org/download/3.2/doc/proxy-protocol.txt), it sends the client's address first on each connection, in a header (version 1 or 2). Super reads it from the load balancers listed in `trusted`, before TLS:
 
 ```hcl
 server {
@@ -79,7 +79,7 @@ server {
     trusted = ["10.0.0.0/8"]
     # Optional: only on the listeners of these addresses (default: all of them)
     listeners = ["0.0.0.0:443"]
-    # Optional: how long a header is waited for, in seconds (default: 5, at least 1)
+    # Optional: how long a header is waited for, in seconds (default: 5, at least 3)
     timeout_secs = 5
   }
 }
@@ -89,6 +89,6 @@ server {
 - Only connections from `trusted` addresses are read. Other clients connect directly to the same addresses, as usual, and a header they send isn't read (an HTTP request starting with one is answered `400`).
 - Any machine in `trusted` can claim any client address, so list the load balancers themselves rather than a whole network they share with other machines.
 - `listeners` are the addresses hosts and `tcp` blocks listen on: one that's none of them is a configuration error.
-- A load balancer's connection without a header (its health checks, for example) is served as it is, from the load balancer's address. So is one that sends nothing before `timeout_secs`, for protocols where the server speaks first.
-- A header that doesn't follow the protocol closes the connection.
+- As the protocol requires, a `trusted` address's connections must start with a header: Super never guesses whether one does. One without a header, with a header that doesn't follow the protocol, or without one within `timeout_secs`, is closed. So send headers on every connection of the listeners it's on, health checks included: their headers say they're the load balancer's own (`LOCAL` in version 2), and they're served from its address.
+- To serve a load balancer's connections both with and without headers, give them different `listeners`.
 - HTTP/3 (QUIC, over UDP) has no PROXY protocol: its clients are the addresses they connect from.

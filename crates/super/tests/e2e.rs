@@ -153,13 +153,34 @@ fn status_and_client(res: &str) -> (String, String) {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_proxy_protocol_headers_give_the_client() {
     let get = |host: &str| format!("GET /pp HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-    let mut harness = Harness::start_with_server(
-        vec![Route::new("app.test", Upstream::Http)],
-        "proxy_protocol {\n    trusted = [\"127.0.0.1\"]\n  }",
-        PLAIN_HOST,
-    )
-    .await;
-    let (http, https) = (harness.http_port, harness.https_port);
+    // On listeners of their own: the harness's (its readiness checks) send no headers
+    let server = r#"proxy_protocol {
+    trusted = ["127.0.0.1"]
+    listeners = ["127.0.0.1:{extra_port}", "127.0.0.1:{tcp_port_0}"]
+  }"#;
+    let hosts = r#"
+host "plain.test" {
+  listen = ["127.0.0.1:{extra_port}"]
+  tls = false
+  location "/" {
+    upstream "127.0.0.1:{http_upstream_port}" {}
+  }
+}
+host "app.test" {
+  listen = ["127.0.0.1:{tcp_port_0}"]
+  tls {
+    certificate {
+      pem = "{cert_pem}"
+      key = "{cert_key}"
+    }
+  }
+  location "/" {
+    upstream "127.0.0.1:{http_upstream_port}" {}
+  }
+}
+"#;
+    let mut harness = Harness::start_with_server(vec![], server, hosts).await;
+    let (http, https) = (harness.extra_port, harness.tcp_ports[0]);
     let raw = |header: &[u8], request: String| [header, request.as_bytes()].concat();
 
     // v1, then HTTP
@@ -181,19 +202,22 @@ async fn test_proxy_protocol_headers_give_the_client() {
         .unwrap();
     assert_eq!(status_and_client(&res), ("200".into(), "2001:db8::9".into()), "{res}");
 
-    // Without a header: the load balancer's own connection
+    // The load balancer's own connection (a health check, v2 LOCAL): from its address
+    let local = b"\r\n\r\n\0\r\nQUIT\n\x20\x00\x00\x00";
     let res = harness
-        .raw_http_on(http, get("plain.test").as_bytes())
+        .raw_http_on(http, &raw(local, get("plain.test")))
         .await
         .unwrap();
     assert_eq!(status_and_client(&res), ("200".into(), "127.0.0.1".into()), "{res}");
 
-    // An invalid header: closed, unanswered
-    let res = harness
-        .raw_http_on(http, &raw(b"PROXY TCP4 nope\r\n", get("plain.test")))
-        .await
-        .unwrap_or_default();
-    assert!(!res.starts_with("HTTP"), "{res}");
+    // Without a header, or with an invalid one: closed, unanswered (never guessed)
+    for before in [&b""[..], b"PROXY TCP4 nope\r\n"] {
+        let res = harness
+            .raw_http_on(http, &raw(before, get("plain.test")))
+            .await
+            .unwrap_or_default();
+        assert!(!res.starts_with("HTTP"), "{res}");
+    }
 
     let log = harness.access_log("/pp");
     assert!(log.contains("\"client_ip\":\"203.0.113.9:5555\""), "{log}");

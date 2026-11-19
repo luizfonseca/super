@@ -22,14 +22,13 @@ pub struct TcpSocketOptions {
 }
 
 /// Reading the PROXY protocol header (v1 or v2) load balancers send first: the client it gives
-/// becomes the connection's peer. Only trusted peers' are read, before TLS; a connection without
-/// one is served as it is.
+/// becomes the connection's peer. Trusted peers' connections must start with one, read before
+/// TLS: one without it is closed (<https://www.haproxy.org/download/3.2/doc/proxy-protocol.txt>).
 #[derive(Clone)]
 pub struct ProxyProtocol {
-    /// Whether a peer's header is read: others' connections are served as they are
+    /// Whether a peer sends headers: others' connections are served as they are, unread
     pub trusted: Arc<dyn Fn(std::net::IpAddr) -> bool + Send + Sync>,
-    /// How long a header is waited for, before serving the connection as it is (protocols where
-    /// the server speaks first)
+    /// How long a header is waited for, before closing the connection
     pub timeout: std::time::Duration,
 }
 
@@ -264,7 +263,8 @@ async fn serve<A: ServerApp>(
 }
 
 /// Reads the PROXY protocol header of a trusted peer's connection, waiting for it as long as
-/// `proxy_protocol` says. `false` when it's invalid: the connection is closed.
+/// `proxy_protocol` says. `false` when there's none, in time, that follows the protocol: the
+/// connection is closed.
 async fn proxy_header(socket: &mut L4Stream, proxy_protocol: &ProxyProtocol) -> bool {
     if !socket.peer_ip().is_some_and(|ip| (proxy_protocol.trusted)(ip)) {
         return true;
@@ -272,11 +272,12 @@ async fn proxy_header(socket: &mut L4Stream, proxy_protocol: &ProxyProtocol) -> 
     let read = tokio::time::timeout(proxy_protocol.timeout, socket.read_proxy_header()).await;
     match read {
         Ok(Ok(())) => true,
-        // Nothing came in time (protocols where the server speaks first): served as it is. Part
-        // of a header: closed, rather than serving it as the connection's own bytes.
-        Err(_) => !socket.has_read_ahead(),
         Ok(Err(err)) => {
             tracing::debug!("Downstream PROXY protocol error: {err}");
+            false
+        }
+        Err(_) => {
+            tracing::debug!("Downstream PROXY protocol error: no header in time");
             false
         }
     }
@@ -342,15 +343,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_silent_connections_are_served_after_the_timeout() {
-        // Protocols where the server speaks first: nothing comes until it does
+    async fn test_trusted_connections_without_a_header_in_time_are_closed() {
+        // Nothing, then the timeout
         let (mut stream, _client) = silent().await;
         let proxy_protocol = trusting(true, Duration::from_millis(50));
         let waiting = proxy_header(&mut stream, &proxy_protocol);
         let served = tokio::time::timeout(Duration::from_secs(5), waiting).await;
-        assert_eq!(served.ok(), Some(true));
+        assert_eq!(served.ok(), Some(false));
 
-        // Part of a header, then nothing: closed, its bytes aren't served as the connection's
+        // Part of a header, then nothing
         let (mut stream, mut client) = silent().await;
         tokio::io::AsyncWriteExt::write_all(&mut client, b"PROXY TCP4 203.0.113.7")
             .await

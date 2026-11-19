@@ -10,20 +10,22 @@ use crate::{config::listeners::Listeners, ip_set::IpSet};
 
 /// How long a header is waited for by default
 const DEFAULT_TIMEOUT_SECS: u64 = 5;
+/// The shortest wait: a TCP retransmit (the spec's "at least 3 seconds")
+const MIN_TIMEOUT_SECS: u64 = 3;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct ProxyProtocol {
-    /// The load balancers sending it: addresses (`10.0.0.1`) and networks (`10.0.0.0/8`). Only
-    /// their connections' headers are read, and one of theirs without a header is served as it
-    /// is: other clients connect directly to the same addresses.
+    /// The load balancers sending it: addresses (`10.0.0.1`) and networks (`10.0.0.0/8`). Their
+    /// connections must start with a header (it's never guessed whether one does), or they're
+    /// closed; other clients connect directly to the same addresses, and their headers aren't read.
     pub trusted: Vec<String>,
     /// The listeners it's enabled on, by the address hosts and `tcp` blocks listen on
     /// (`"0.0.0.0:443"`; default: all of them)
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub listeners: Vec<String>,
-    /// How long a header is waited for, in seconds (default: 5): after, the connection is served
-    /// as it is (protocols where the server speaks first)
+    /// How long a header is waited for, in seconds, before closing the connection (default: 5,
+    /// at least 3)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_secs: Option<u64>,
 }
@@ -45,8 +47,10 @@ impl ProxyProtocol {
         if self.trusted.is_empty() {
             return Err("trusted: the load balancers sending PROXY protocol headers".to_string());
         }
-        if self.timeout_secs == Some(0) {
-            return Err("timeout_secs: at least 1, for headers to arrive".to_string());
+        if self.timeout_secs.is_some_and(|secs| secs < MIN_TIMEOUT_SECS) {
+            return Err(format!(
+                "timeout_secs: at least {MIN_TIMEOUT_SECS}, for a TCP retransmit"
+            ));
         }
         let trusted = IpSet::parse(&self.trusted).map_err(|err| format!("trusted: {err}"))?;
         let mut addresses = Vec::with_capacity(self.listeners.len());
@@ -154,12 +158,14 @@ mod tests {
                 .unwrap_err(),
             "listeners: \"443\" is not a listening address (0.0.0.0:443)"
         );
-        let mut instant = proxy_protocol(&["10.0.0.0/8"], &[]);
-        instant.timeout_secs = Some(0);
+        let mut short = proxy_protocol(&["10.0.0.0/8"], &[]);
+        short.timeout_secs = Some(2);
         assert_eq!(
-            instant.validate().unwrap_err(),
-            "timeout_secs: at least 1, for headers to arrive"
+            short.validate().unwrap_err(),
+            "timeout_secs: at least 3, for a TCP retransmit"
         );
+        short.timeout_secs = Some(3);
+        assert!(short.validate().is_ok());
     }
 
     #[test]
