@@ -216,7 +216,7 @@ jobs:
           sed -E 's#(\[[^]]*\])\(\.\/([^)]+)\)#\1(https://github.com/${{ github.repository }}/raw/${{ needs.release.outputs.tag_name }}/\2)#g' README.md > docker.README.md
 
       - name: Update Docker Images Description
-        uses: peter-evans/dockerhub-description@v3
+        uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_SECRET }}
