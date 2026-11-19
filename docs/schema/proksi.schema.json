@@ -2717,6 +2717,81 @@
           "description": "The value of a cookie",
           "type": "object"
         },
+        "date": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "description": "The date and time now, UTC (2026-11-21, 2026-11-21T00:00)",
+              "maxProperties": 1,
+              "minProperties": 1,
+              "properties": {
+                "between": {
+                  "description": "is from the first until the second",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "gt": {
+                  "description": "is after",
+                  "type": "string"
+                },
+                "gte": {
+                  "description": "is at or after",
+                  "type": "string"
+                },
+                "lt": {
+                  "description": "is before",
+                  "type": "string"
+                },
+                "lte": {
+                  "description": "is at or before",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "items": {
+                "additionalProperties": false,
+                "description": "The date and time now, UTC (2026-11-21, 2026-11-21T00:00)",
+                "maxProperties": 1,
+                "minProperties": 1,
+                "properties": {
+                  "between": {
+                    "description": "is from the first until the second",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "gt": {
+                    "description": "is after",
+                    "type": "string"
+                  },
+                  "gte": {
+                    "description": "is at or after",
+                    "type": "string"
+                  },
+                  "lt": {
+                    "description": "is before",
+                    "type": "string"
+                  },
+                  "lte": {
+                    "description": "is at or before",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          ]
+        },
         "header": {
           "additionalProperties": {
             "anyOf": [
@@ -3651,6 +3726,178 @@
           },
           "description": "The value of a query parameter, decoded",
           "type": "object"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "description": "The time of day, UTC (HH:MM)",
+              "maxProperties": 1,
+              "minProperties": 1,
+              "properties": {
+                "between": {
+                  "description": "is from the first until the second",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "gt": {
+                  "description": "is after",
+                  "type": "string"
+                },
+                "gte": {
+                  "description": "is at or after",
+                  "type": "string"
+                },
+                "lt": {
+                  "description": "is before",
+                  "type": "string"
+                },
+                "lte": {
+                  "description": "is at or before",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "items": {
+                "additionalProperties": false,
+                "description": "The time of day, UTC (HH:MM)",
+                "maxProperties": 1,
+                "minProperties": 1,
+                "properties": {
+                  "between": {
+                    "description": "is from the first until the second",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "gt": {
+                    "description": "is after",
+                    "type": "string"
+                  },
+                  "gte": {
+                    "description": "is at or after",
+                    "type": "string"
+                  },
+                  "lt": {
+                    "description": "is before",
+                    "type": "string"
+                  },
+                  "lte": {
+                    "description": "is at or before",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "weekday": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "description": "The day of the week, UTC (mon, tue...)",
+              "maxProperties": 1,
+              "minProperties": 1,
+              "properties": {
+                "eq": {
+                  "description": "is",
+                  "type": "string"
+                },
+                "in": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ],
+                  "description": "is one of"
+                },
+                "neq": {
+                  "description": "is not",
+                  "type": "string"
+                },
+                "not_in": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ],
+                  "description": "is none of"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "items": {
+                "additionalProperties": false,
+                "description": "The day of the week, UTC (mon, tue...)",
+                "maxProperties": 1,
+                "minProperties": 1,
+                "properties": {
+                  "eq": {
+                    "description": "is",
+                    "type": "string"
+                  },
+                  "in": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    ],
+                    "description": "is one of"
+                  },
+                  "neq": {
+                    "description": "is not",
+                    "type": "string"
+                  },
+                  "not_in": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    ],
+                    "description": "is none of"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          ]
         }
       },
       "type": "object"

@@ -169,6 +169,67 @@ host "app.example.com" {
 
 Behind a load balancer, list it in `server.trusted_proxies`, so `client` is the visitor's address rather than the load balancer's.
 
+## Scheduled maintenance
+
+The same maintenance page, only for the week of the work: it starts on the 21st and stops on the 28th by itself, without editing or reloading the configuration. Times are UTC.
+
+```hcl
+host "app.example.com" {
+  rule "maintenance week" {
+    and {
+      date {
+        between = ["2026-11-21", "2026-11-28"]
+      }
+      not {
+        client {
+          in = ["203.0.113.0/24"]
+        }
+      }
+    }
+    then {
+      respond {
+        status       = 503
+        body         = "We're upgrading, back on the 28th"
+        content_type = "text/plain"
+      }
+    }
+  }
+
+  location "/" {
+    upstream "app:3000" {}
+  }
+}
+```
+
+## A waiting room for Black Friday week
+
+Checkout lets 500 shoppers in at once during Black Friday week, and is open as usual the rest of the year. See [times](/rules/conditions#times) for the windows rules can test.
+
+```hcl
+host "shop.example.com" {
+  location "/" {
+    upstream "shop:3000" {}
+
+    rule "black friday checkout" {
+      and {
+        path {
+          prefix = "/checkout"
+        }
+        date {
+          between = ["2026-11-27", "2026-12-01"]
+        }
+      }
+      then {
+        waiting_room {
+          active         = 500
+          on_store_error = "admit"
+        }
+      }
+    }
+  }
+}
+```
+
 ## Keep crawlers off expensive pages
 
 ```hcl

@@ -28,6 +28,7 @@ pub struct Operator {
 }
 
 const EQUALITY: &[&str] = &["eq", "neq", "in", "not_in"];
+const WINDOWS: &[&str] = &["gte", "gt", "lt", "lte", "between"];
 const TEXT: &[&str] = &[
     "eq", "neq", "in", "not_in", "prefix", "suffix", "contains", "wildcard", "matches",
 ];
@@ -77,6 +78,24 @@ pub const FIELDS: &[Field] = &[
         named: false,
         description: "The client's address (behind trusted proxies, the one they forwarded)",
         operators: EQUALITY,
+    },
+    Field {
+        name: "date",
+        named: false,
+        description: "The date and time now, UTC (2026-11-21, 2026-11-21T00:00)",
+        operators: WINDOWS,
+    },
+    Field {
+        name: "weekday",
+        named: false,
+        description: "The day of the week, UTC (mon, tue...)",
+        operators: EQUALITY,
+    },
+    Field {
+        name: "time",
+        named: false,
+        description: "The time of day, UTC (HH:MM)",
+        operators: WINDOWS,
     },
 ];
 
@@ -130,6 +149,32 @@ pub const OPERATORS: &[Operator] = &[
         name: "exists",
         value: "bool",
         description: "is there",
+    },
+    Operator {
+        name: "gte",
+        value: "text",
+        description: "is at or after",
+    },
+    Operator {
+        name: "gt",
+        value: "text",
+        description: "is after",
+    },
+    Operator {
+        name: "lt",
+        value: "text",
+        description: "is before",
+    },
+    Operator {
+        name: "lte",
+        value: "text",
+        description: "is at or before",
+    },
+    // A list in the admin's editor; exactly two values in the configuration's schema
+    Operator {
+        name: "between",
+        value: "list",
+        description: "is from the first until the second",
     },
 ];
 
@@ -249,6 +294,15 @@ fn one_or_many(schema: &Value) -> Value {
 /// What an operator takes: a text, one or more texts, or true/false
 fn operator_schema(operator: &Operator) -> Value {
     let description = operator.description;
+    if operator.name == "between" {
+        return serde_json::json!({
+            "description": description,
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2,
+        });
+    }
     match operator.value {
         "list" => serde_json::json!({
             "description": description,
@@ -271,8 +325,18 @@ mod tests {
         let one = match field {
             "method" => json!("GET"),
             "client" => json!("10.0.0.1"),
+            "date" => json!("2026-11-21"),
+            "weekday" => json!("mon"),
+            "time" => json!("02:00"),
             _ => json!("x"),
         };
+        if operator == "between" {
+            return match field {
+                "date" => json!(["2026-11-21", "2026-11-28"]),
+                "time" => json!(["02:00", "04:00"]),
+                _ => json!([one, one]),
+            };
+        }
         match OPERATORS
             .iter()
             .find(|known| known.name == operator)
@@ -292,6 +356,34 @@ mod tests {
         } else {
             json!({ field.name: test })
         }
+    }
+
+    #[test]
+    fn test_time_fields_and_their_operators() {
+        let operators = |name: &str| {
+            FIELDS
+                .iter()
+                .find(|field| field.name == name)
+                .map(|field| field.operators.to_vec())
+        };
+        let windows = Some(vec!["gte", "gt", "lt", "lte", "between"]);
+        assert_eq!(operators("date"), windows);
+        assert_eq!(operators("time"), windows);
+        assert_eq!(
+            operators("weekday"),
+            Some(vec!["eq", "neq", "in", "not_in"])
+        );
+        // Exactly [from, until]
+        let between = OPERATORS
+            .iter()
+            .find(|operator| operator.name == "between")
+            .map(super::operator_schema)
+            .unwrap();
+        assert_eq!(between["type"], "array");
+        assert_eq!(
+            (between["minItems"].clone(), between["maxItems"].clone()),
+            (json!(2), json!(2))
+        );
     }
 
     #[test]
