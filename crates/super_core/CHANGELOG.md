@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/luizfonseca/super/compare/super_core-v0.7.0...super_core-v0.7.1) (2026-11-20)
+
+
+### Miscellaneous Chores
+
+* **super_core:** Synchronize super versions
+
 ## [0.7.0](https://github.com/luizfonseca/super/compare/super_core-v0.6.3...super_core-v0.7.0) (2026-11-19)
 
 

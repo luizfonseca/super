@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.1](https://github.com/luizfonseca/super/compare/super_plugins-v0.7.0...super_plugins-v0.7.1) (2026-11-20)
+
+
+### Miscellaneous Chores
+
+* **super_plugins:** Synchronize super versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_core bumped from 0.7.0 to 0.7.1
+    * super_store bumped from 0.7.0 to 0.7.1
+  * dev-dependencies
+    * super_core bumped from 0.7.0 to 0.7.1
+
 ## [0.7.0](https://github.com/luizfonseca/super/compare/super_plugins-v0.6.3...super_plugins-v0.7.0) (2026-11-19)
 
 
