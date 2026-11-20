@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.7.0...super_admin_ui-v0.7.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **admin-ui:** draw the p99 sparkline flat when there are no requests ([#76](https://github.com/luizfonseca/super/issues/76)) ([ab4d97c](https://github.com/luizfonseca/super/commit/ab4d97c28dc076e79364e0375db2c70b9301afa4))
+
 ## [0.7.0](https://github.com/luizfonseca/super/compare/super_admin_ui-v0.6.3...super_admin_ui-v0.7.0) (2026-11-19)
 
 
