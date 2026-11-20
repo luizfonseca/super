@@ -192,7 +192,7 @@ export function Overview() {
           values={take(history, (point) => point.errors * 100)}
           color="var(--color-error)"
         />
-        <Card label="Latency p99" value={last?.p99 ?? null} format={ms} detail={last ? `p50 ${ms(last.p50)}` : undefined} values={take(history, (point) => point.p99)} color="var(--chart-3)" />
+        <Card label="Latency p99" value={last?.p99 ?? null} format={ms} detail={last ? `p50 ${ms(last.p50)}` : undefined} values={take(history, (point) => point.p99 ?? 0)} color="var(--chart-3)" />
         <Card
           label="CPU"
           value={last?.cpu ?? null}
