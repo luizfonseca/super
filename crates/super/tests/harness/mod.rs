@@ -41,6 +41,9 @@ use tokio_tungstenite::{tungstenite::Message, Connector, MaybeTlsStream, WebSock
 
 /// Host that is always routed to the HTTP upstream, used to know when proksi is ready
 const READY_HOST: &str = "ready.test";
+/// The path readiness asks for: it must reach the harness's own upstream, so another test's
+/// proksi, on a port both were handed, isn't taken for this one
+const READY_PATH: &str = "/_ready";
 
 /// Header added by the HTTP upstream when the path contains `utf8`
 pub const UTF8_CONTENT_DISPOSITION: &str = "attachment; filename=\"résumé.pdf\"";
@@ -457,16 +460,18 @@ paths {{
         for _ in 0..100 {
             assert!(self.is_alive(), "proksi exited:\n{}", self.logs());
 
-            let ready = if self.without_https {
-                self.get_http_port(READY_HOST, "/")
+            let answered = if self.without_https {
+                self.get_http_port(READY_HOST, READY_PATH)
                     .await
                     .is_ok_and(|res| res.starts_with("HTTP/1.1 200"))
             } else {
-                self.get(READY_HOST, "/")
+                self.get(READY_HOST, READY_PATH)
                     .await
                     .is_ok_and(|res| res.status == 200)
             };
-            if ready {
+            // By this proksi: free ports are free until bound, so a test running alongside can be
+            // handed the same one, and its proksi (also serving `ready.test`) bind it first
+            if answered && self.http_upstream.hits(READY_PATH) > 0 {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
