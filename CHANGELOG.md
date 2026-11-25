@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.7.2](https://github.com/luizfonseca/super/compare/super-v0.7.1...super-v0.7.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **deps:** update kube to 5.2.0 (RUSTSEC-2026-0600) ([#83](https://github.com/luizfonseca/super/issues/83)) ([863d887](https://github.com/luizfonseca/super/commit/863d887b0e752e328fedb54288aec1418d4c3ef1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * super_admin_ui bumped from 0.7.1 to 0.7.2
+    * super_plugins bumped from 0.7.1 to 0.7.2
+    * super_core bumped from 0.7.1 to 0.7.2
+    * super_store bumped from 0.7.1 to 0.7.2
+  * dev-dependencies
+    * super_plugins bumped from 0.7.1 to 0.7.2
+    * super_store bumped from 0.7.1 to 0.7.2
+
 ## [0.7.1](https://github.com/luizfonseca/super/compare/super-v0.7.0...super-v0.7.1) (2026-11-20)
 
 
